@@ -14,4 +14,4 @@
 sed -i 's/192.168.1.1/192.168.88.1/g' package/base-files/files/bin/config_generate
 
 #复制内核5.10版本CPU超频补丁
-cp mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch target/linux/ramips/patches-5.10/
+wget https://github.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/blob/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch target/linux/ramips/patches-5.10/
