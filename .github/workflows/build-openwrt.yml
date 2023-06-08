@@ -189,7 +189,7 @@ jobs:
         keep_minimum_runs: 2
 
     - name: Delete Older Releases
-      uses: dev-drprasad/delete-older-releases@main
+      uses: dev-drprasad/delete-older-releases@v0.2.1
       with:
         #repo: <owner>/<repoName> # defaults to current repo
         keep_latest: 5
