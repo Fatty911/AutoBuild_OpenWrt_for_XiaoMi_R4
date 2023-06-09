@@ -8,7 +8,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: Build OpenWrt
+name: Build OpenWrt for XIAOMI_R4
 
 on:
   repository_dispatch:
@@ -19,6 +19,12 @@ on:
         required: false
         default: 'false'
   push:
+    branches: 
+      - master
+  # schedule:
+  #   - cron: 0 20 * * *
+  release:
+    types: [published]
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
@@ -172,19 +178,21 @@ jobs:
         echo "{status}={success}" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
-      uses: softprops/action-gh-release@v0.1.15
+      uses: svenstaro/upload-release-action@2.6.1
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
       with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
+          repo_token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+          file: ./artifact/firmware/*
+          tag: ${{ steps.tag.outputs.release_tag }}
+          file_glob: true
+          #tag_name: ${{ steps.tag.outputs.release_tag }}
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
       with:
-        token: ${{ github.token }}
+        token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         repository: ${{ github.repository }}
         retain_days: 30
         keep_minimum_runs: 2
@@ -196,4 +204,4 @@ jobs:
         keep_latest: 5
         #delete_tag_pattern: beta # defaults to ""
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
