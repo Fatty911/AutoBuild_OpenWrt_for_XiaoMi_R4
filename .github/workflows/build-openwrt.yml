@@ -166,7 +166,7 @@ jobs:
         echo "{url}={$(cat wetransfer.log | grep https | cut -f3 -d" ")}" >> $GITHUB_OUTPUT
 
     - name: Generate release tag
-      id: tag
+      id: generate_release_tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         #echo "::set-output name=release_tag::$(date +"%Y.%m.%d-%H%M")"
@@ -185,8 +185,8 @@ jobs:
       with:
           repo_token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           file: ${{ env.FIRMWARE }}/*
-          #tag: ${{ steps.tag.outputs.release_tag }}
-          tag: ${{ github.ref }}
+          release_name: XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
+          #tag: ${{ github.ref }}
           file_glob: true
           #tag_name: ${{ steps.tag.outputs.release_tag }}
 
