@@ -23,8 +23,6 @@ on:
       - master
   # schedule:
   #   - cron: 0 20 * * *
-  #release:
-    #types: [published]
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
@@ -160,6 +158,7 @@ jobs:
       with:
           repo_token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           file: ${{ env.firmware_path }}/*
+          tag_name: XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
           release_name: XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
           #release_name: Openwrt_XIAOMI_R4_{$(date +"%Y.%m.%d-%H%M")}
           #release_name: Openwrt_XIAOMI_R4_${(date +"%Y.%m.%d-%H%M")}
