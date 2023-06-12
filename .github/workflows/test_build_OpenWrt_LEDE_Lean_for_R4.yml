@@ -154,7 +154,7 @@ jobs:
       uses: svenstaro/upload-release-action@2.6.1
       if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       env:
-        GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # This token is provided by Actions, you do not need to create your own token
       with:
           repo_token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           file: ${{ env.firmware_path }}/*
