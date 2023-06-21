@@ -109,17 +109,15 @@ jobs:
         cd openwrt
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s
-        
-        echo "::set-output name=status::success"
-        #echo "{status}={success}" >> $GITHUB_OUTPUT
+        echo "{status}={success}" >> $GITHUB_OUTPUT
         echo "compile_status: --- ${{ steps.compile.outputs.status }} --- "
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-#     - name: Check space usage
-#       if: (!cancelled())
-#       run: df -hT
+    - name: Check space usage
+      if: (!cancelled())
+      run: df -hT
 
     - name: Upload bin directory
       uses: actions/upload-artifact@v3
@@ -134,8 +132,7 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
-        echo "{firmware_path}={$pwd}" >> $GITHUB_ENV
-        #echo "::set-output name=status::success"
+        echo "firmware_path=$pwd" >> $GITHUB_ENV
         echo "{status}={success}" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
@@ -157,7 +154,7 @@ jobs:
 
     - name: Upload firmware to WeTransfer
       id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true'
       run: |
         curl -fsSL git.io/file-transfer | sh
         ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
@@ -180,7 +177,7 @@ jobs:
 
     - name: Upload firmware to release
       uses: svenstaro/upload-release-action@2.6.1
-      if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true'
       env:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
       with:
