@@ -1,4 +1,4 @@
-name: Build OpenWrt for XIAOMI_R4
+name: Build OpenWrt for XIAOMI_R4-test1
 
 on:
   repository_dispatch:
