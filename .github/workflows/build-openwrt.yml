@@ -179,13 +179,9 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
       with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
-          file: ${{ env.firmware_path }}/*
+          files: ${{ env.firmware_path }}/*
           name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
-          #release_name: Openwrt_XIAOMI_R4_{$(date +"%Y.%m.%d-%H%M")}
-          #release_name: Openwrt_XIAOMI_R4_${(date +"%Y.%m.%d-%H%M")}
-          #tag: ${{ github.ref }}
-          #file_glob: true
-          #tag_name: ${{ steps.tag.outputs.release_tag }}
+          tag: main
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
