@@ -131,7 +131,7 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
-        echo "firmware_path=$pwd" >> $GITHUB_ENV
+        echo "firmware_path=${{pwd}}" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
