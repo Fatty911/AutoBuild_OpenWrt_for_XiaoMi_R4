@@ -28,7 +28,7 @@ env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: MiR4-188M-maybe-r3g.config
+  CONFIG_FILE: MiR4-20230815.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: true
@@ -107,8 +107,12 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        #echo -e "$(nproc) thread compile"
-        #make -j$(nproc) || make -j1 || make -j1 V=s
+        #超频5.10内核至1000Mhz
+        mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
+        cp mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch
+        #开始编译
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -139,9 +143,7 @@ jobs:
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: |
-          ${{ env.firmware_path }}
-          /workdir/openwrt/.config
+        path: ${{ env.firmware_path }}
 
     - name: Upload firmware to cowtransfer
       id: cowtransfer
@@ -183,7 +185,7 @@ jobs:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           files: ${{ env.firmware_path }}/*
           name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: full
+          tag_name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
