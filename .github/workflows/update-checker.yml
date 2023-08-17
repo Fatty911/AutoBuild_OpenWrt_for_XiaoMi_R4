@@ -33,7 +33,6 @@ jobs:
         #echo "::set-output name=commitHash::$(git rev-parse HEAD)"
         echo "{commitHash}={$(git rev-parse HEAD)}" >> $GITHUB_OUTPUT
         echo "commitHash为：$commitHash"
-        echo ${(git rev-parse HEAD)}
 
     - name: Compare Commit Hash
       id: cacheHash
