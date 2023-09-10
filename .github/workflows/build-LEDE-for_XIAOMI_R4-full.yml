@@ -182,8 +182,8 @@ jobs:
       with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           files: ${{ env.firmware_path }}/*
-          name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: full
+          name: LEDE_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
+          tag_name: LEDE_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
