@@ -125,7 +125,7 @@ jobs:
         
     - name: Compile the firmware
       id: compile
-      run: 
+      run: |
         #开始编译
         cd openwrt
         echo -e "$(nproc) thread compile"
