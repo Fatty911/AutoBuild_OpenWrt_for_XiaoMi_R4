@@ -8,7 +8,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: test-Build OpenWRT-LEDE for XIAOMI_R4 FULL
+name: Build OpenWRT-LEDE for XIAOMI_R4 FULL
 
 on:
   repository_dispatch:
