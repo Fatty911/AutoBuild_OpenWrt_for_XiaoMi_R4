@@ -111,7 +111,7 @@ jobs:
         find dl -size -1024c -exec rm -f {} \;
 
     - name: SSH connection to Actions
-      uses: P3TERX/ssh2actions@master
+      uses: P3TERX/ssh2actions@v1
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
       env:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -207,7 +207,7 @@ jobs:
           tag_name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@master
+      uses: Mattraks/delete-workflow-runs@v2
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         repository: ${{ github.repository }}
