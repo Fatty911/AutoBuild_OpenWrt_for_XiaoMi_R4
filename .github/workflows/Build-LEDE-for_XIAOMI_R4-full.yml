@@ -110,7 +110,7 @@ jobs:
         find dl -size -1024c -exec rm -f {} \;
 
     - name: SSH connection to Actions
-      uses: P3TERX/ssh2actions@v1.0.0
+      uses: P3TERX/ssh2actions@master
       if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
       env:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -137,7 +137,7 @@ jobs:
       run: df -hT
 
     - name: Upload bin directory
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@master
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
@@ -155,7 +155,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@master
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
@@ -193,7 +193,7 @@ jobs:
         echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
 
     - name: Upload firmware to release
-      uses: softprops/action-gh-release@v0.1.15
+      uses: softprops/action-gh-release@master
       if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true'
       env:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
@@ -206,7 +206,7 @@ jobs:
           tag_name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@v2
+      uses: Mattraks/delete-workflow-runs@master
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         repository: ${{ github.repository }}
@@ -214,7 +214,7 @@ jobs:
         keep_minimum_runs: 2
 
     - name: Delete Older Releases
-      uses: dev-drprasad/delete-older-releases@v0.2.1
+      uses: dev-drprasad/delete-older-releases@master
       with:
         #repo: <owner>/<repoName> # defaults to current repo
         keep_latest: 5
