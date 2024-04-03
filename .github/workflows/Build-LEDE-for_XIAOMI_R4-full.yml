@@ -28,7 +28,7 @@ env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: MiR4-20230815.config
+  CONFIG_FILE: MiR4.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: true
@@ -116,15 +116,18 @@ jobs:
       env:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        
+    # - name: Modify overclocking settings
+    #   run: |
+    #     cd openwrt
+    #     #超频5.10内核至1000Mhz
+    #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
+    #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
+  
 
     - name: Compile the firmware
       id: compile
       run: |
-        cd openwrt
-        #超频5.10内核至1000Mhz
-        mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
-        #cp mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch
-        wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
         #开始编译
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' /home/runner/work/AutoBuild_OpenWRT_for_Mi_R4/AutoBuild_OpenWRT_for_Mi_R4/openwrt/feeds/packages/lang/rust/Makefile && make -j1 V=s
