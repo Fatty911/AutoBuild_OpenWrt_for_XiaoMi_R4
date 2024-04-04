@@ -58,9 +58,6 @@ jobs:
           
     - name: Checkout
       uses: actions/checkout@main
-      with:
-        user: "Fatty911"
-        email: "fattyvirgo911@gmail.com"
 
     - name: Initialization environment
       env:
@@ -131,6 +128,8 @@ jobs:
       run: |
         cd openwrt
         wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
+        git config --global user.email fattyvirgo911@gmail.com
+        git config --global user.name Fatty911
         git am 0006-fix-build-with-kernel-6.6.patch
         
     - name: Compile the firmware
