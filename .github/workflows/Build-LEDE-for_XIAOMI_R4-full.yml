@@ -58,6 +58,9 @@ jobs:
           
     - name: Checkout
       uses: actions/checkout@main
+      with:
+        user: "Fatty911"
+        email: "fattyvirgo911@gmail.com"
 
     - name: Initialization environment
       env:
