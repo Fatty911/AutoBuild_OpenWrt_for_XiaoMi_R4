@@ -40,7 +40,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
     
@@ -124,15 +124,15 @@ jobs:
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
   
-    - name: Apply patch
-      run: |
-        cd openwrt
-        wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
-        tar -xvzf 2023.3-batman-adv.tar.gz -C package/feeds/routing/batman-adv
-        wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
-        git config --global user.email fattyvirgo911@gmail.com
-        git config --global user.name Fatty911
-        # git am 0006-fix-build-with-kernel-6.6.patch
+    # - name: Apply patch
+    #   run: |
+    #     cd openwrt
+    #     wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
+    #     tar -xvzf 2023.3-batman-adv.tar.gz -C package/feeds/routing/batman-adv
+    #     wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
+    #     git config --global user.email fattyvirgo911@gmail.com
+    #     git config --global user.name Fatty911
+    #     # git am 0006-fix-build-with-kernel-6.6.patch
         
     - name: Compile the firmware
       id: compile
@@ -154,7 +154,7 @@ jobs:
       uses: actions/upload-artifact@master
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt.org_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: |
           openwrt/bin
           openwrt/.config
@@ -172,7 +172,7 @@ jobs:
       uses: actions/upload-artifact@master
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt.org_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
 
     - name: Upload firmware to cowtransfer
@@ -216,8 +216,8 @@ jobs:
           files: |
             ${{ env.firmware_path }}/*
             openwrt/.config
-          name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
+          name: OpenWRT.org_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
+          tag_name: OpenWRT.org_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
