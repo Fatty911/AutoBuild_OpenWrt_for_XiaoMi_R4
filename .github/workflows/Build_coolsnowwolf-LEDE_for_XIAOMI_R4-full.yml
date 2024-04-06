@@ -71,10 +71,12 @@ jobs:
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir/openwrt
-        sudo chown -R $USER:$GROUPS ${{ github.repository }} && sudo chown -R $USER:$GROUPS /workdir
+        # sudo chown -R $USER:$GROUPS ${{ github.repository }}    解析为Fatty911/AutoBuild~
+        sudo chown -R $USER:$GROUPS /workdir
+        sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
 
     - name: Clone source code
-      working-directory: ${{ github.repository }}
+      working-directory: /workdir
       run: |
         df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
