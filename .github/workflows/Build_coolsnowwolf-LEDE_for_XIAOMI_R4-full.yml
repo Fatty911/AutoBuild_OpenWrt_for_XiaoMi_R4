@@ -131,16 +131,16 @@ jobs:
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
   
-    - name: Apply patch
-      run: |
-        cd openwrt
-        wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
-        tar -xvzf 2023.3-batman-adv.tar.gz -C package/feeds/routing/batman-adv
-        tar -xvzf 2023.3-batman-adv.tar.gz -C package/network/services/batman-adv
-        wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
-        git config --global user.email fattyvirgo911@gmail.com
-        git config --global user.name Fatty911
-        cp 0006-fix-build-with-kernel-6.6.patch package/network/services/batman-adv/patches/. && cd package/network/services/batman-adv && git am 0006-fix-build-with-kernel-6.6.patch
+    # - name: Apply patch
+    #   run: |
+    #     cd openwrt
+    #     wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
+    #     tar -xvzf 2023.3-batman-adv.tar.gz -C package/feeds/routing/batman-adv
+    #     tar -xvzf 2023.3-batman-adv.tar.gz -C package/network/services/batman-adv
+    #     wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
+    #     git config --global user.email fattyvirgo911@gmail.com
+    #     git config --global user.name Fatty911
+    #     cp 0006-fix-build-with-kernel-6.6.patch package/network/services/batman-adv/patches/. && cd package/network/services/batman-adv && git am 0006-fix-build-with-kernel-6.6.patch
         
         
     - name: Compile the firmware
@@ -166,7 +166,7 @@ jobs:
       uses: actions/upload-artifact@master
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_coolsnowwolf_LEDE_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: |
           openwrt/bin
           openwrt/.config
@@ -184,7 +184,7 @@ jobs:
       uses: actions/upload-artifact@master
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_coolsnowwolf_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_coolsnowwolf_LEDE_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
 
     - name: Upload firmware to cowtransfer
@@ -228,7 +228,7 @@ jobs:
           files: |
             ${{ env.firmware_path }}/*
             openwrt/.config
-          name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
+          name: OpenWRT_XIAOMI_R4_coolsnowwolf_LEDE_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
