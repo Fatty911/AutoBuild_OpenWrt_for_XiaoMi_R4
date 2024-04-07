@@ -140,7 +140,8 @@ jobs:
         wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
         git config --global user.email fattyvirgo911@gmail.com
         git config --global user.name Fatty911
-        cd package/network/services/batman-adv && git am 0006-fix-build-with-kernel-6.6.patch
+        cp 0006-fix-build-with-kernel-6.6.patch package/network/services/batman-adv/patches/. && cd package/network/services/batman-adv && git am 0006-fix-build-with-kernel-6.6.patch
+        
         
     - name: Compile the firmware
       id: compile
