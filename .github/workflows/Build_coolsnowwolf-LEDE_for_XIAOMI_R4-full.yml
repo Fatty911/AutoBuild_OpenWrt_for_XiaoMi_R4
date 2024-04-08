@@ -89,6 +89,7 @@ jobs:
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
+        echo 'src-git routing https://github.com/coolsnowwolf/routing.git;5437d2c91fd9f15e06fbea46677abb529ed3547c' >>feeds.conf.default
 
     - name: Update feeds
       run: cd openwrt && ./scripts/feeds update -a
