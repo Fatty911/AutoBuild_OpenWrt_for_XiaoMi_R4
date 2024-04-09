@@ -140,13 +140,13 @@ jobs:
         cd openwrt
         # wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
         wget https://downloads.open-mesh.org/batman/releases/batman-adv-2024.1/batman-adv-2024.1.tar.gz
-        rm -rf package/feeds/routing/batman-adv && tar -xvzf batman-adv-2024.1.tar.gz && mv -f batman-adv package/feeds/routing/
-        make package/feeds/routing/batman-adv/compile V=s | make -j1 package/feeds/routing/batman-adv/compile V=s
+        tar -xvzf batman-adv-2024.1.tar.gz && mv batman-adv-2024.1 batman-adv && mv -f batman-adv package/feeds/routing/
+        # make package/feeds/routing/batman-adv/compile V=s | make -j1 package/feeds/routing/batman-adv/compile V=s
 
 
         
         # tar -xvzf 2023.3-batman-adv.tar.gz -C package/network/services/batman-adv
-    #     tar -xvzf 2023.3-batman-adv.tar.gz && mv -T batman-adv/* build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/batman-adv-2023.3/ 
+    #     tar -xvzf 2023.3-batman-adv.tar.gz && mv  batman-adv/* build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/batman-adv-2023.3/ 
     #     wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
     #     git config --global user.email fattyvirgo911@gmail.com
     #     git config --global user.name Fatty911
