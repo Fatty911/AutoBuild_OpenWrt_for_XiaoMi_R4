@@ -107,14 +107,6 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-    - name: Fix batman-adv bug
-      id: fix
-      run: |
-        cd openwrt
-        # wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
-        wget https://downloads.open-mesh.org/batman/releases/batman-adv-2024.1/batman-adv-2024.1.tar.gz
-        rm -rf package/feeds/routing/batman-adv && tar -xvzf batman-adv-2024.1.tar.gz && mv -f batman-adv-2024.1 package/feeds/routing/batman-adv
-        cd  package/feeds/routing/batman-adv/ && make download && make V=s | make -j1 V=s
 
     - name: Download package
       id: package
@@ -143,6 +135,14 @@ jobs:
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
   
+    - name: Fix batman-adv bug
+      id: fix
+      run: |
+        cd openwrt
+        # wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
+        wget https://downloads.open-mesh.org/batman/releases/batman-adv-2024.1/batman-adv-2024.1.tar.gz
+        rm -rf package/feeds/routing/batman-adv && tar -xvzf batman-adv-2024.1.tar.gz && mv -f batman-adv-2024.1 package/feeds/routing/batman-adv
+        cd  package/feeds/routing/batman-adv/ && make V=s | make -j1 V=s
 
 
         
