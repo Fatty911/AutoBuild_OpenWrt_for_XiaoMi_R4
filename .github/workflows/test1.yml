@@ -113,7 +113,7 @@ jobs:
         cd openwrt
         # wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
         wget https://downloads.open-mesh.org/batman/releases/batman-adv-2024.1/batman-adv-2024.1.tar.gz
-        rm -rf package/feeds/routing/batman-adv && tar -xvzf batman-adv-2024.1.tar.gz && mv -f batman-adv package/feeds/routing/
+        rm -rf package/feeds/routing/batman-adv && tar -xvzf batman-adv-2024.1.tar.gz && mv -f batman-adv-2024.1 package/feeds/routing/batman-adv
         cd  package/feeds/routing/batman-adv/ && make download && make V=s | make -j1 V=s
 
     - name: Download package
