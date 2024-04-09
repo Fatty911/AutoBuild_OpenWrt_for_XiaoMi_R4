@@ -139,7 +139,7 @@ jobs:
       run: |
         cd openwrt
         wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
-        tar -xvzf 2023.3-batman-adv.tar.gz && mv -T batman-adv package/feeds/routing/
+        tar -xvzf 2023.3-batman-adv.tar.gz && mv -T batman-adv/* package/feeds/routing/batman-adv/
         make package/feeds/routing/batman-adv/compile V=s | make -j1 package/feeds/routing/batman-adv/compile V=s
 
 
