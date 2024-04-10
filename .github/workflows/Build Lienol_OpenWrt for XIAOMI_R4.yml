@@ -20,13 +20,13 @@ on:
         default: 'false'
   push:
     branches: 
-      - '23.05'
+      - master
   # schedule:
   #   - cron: 0 20 * * *
 
 env:
   REPO_URL: https://github.com/Lienol/openwrt
-  REPO_BRANCH: master
+  REPO_BRANCH: 23.05
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: config20240407
   DIY_P1_SH: diy-part1.sh
