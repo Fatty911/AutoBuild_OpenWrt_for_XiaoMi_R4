@@ -127,6 +127,13 @@ jobs:
       env:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        
+    - name: Specify kernel version
+      run: |
+        cd openwrt
+        sed -i 's/^KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/' target/linux/ramips/Makefile
+        sed -i 's/^KERNEL_TESTING_PATCHVER:=.*/KERNEL_TESTING_PATCHVER:=6.6/' target/linux/ramips/Makefile
+
 
 
 
