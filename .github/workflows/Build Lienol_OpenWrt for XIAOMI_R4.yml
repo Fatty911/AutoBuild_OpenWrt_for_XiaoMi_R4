@@ -20,7 +20,7 @@ on:
         default: 'false'
   push:
     branches: 
-      - master
+      - 23.05
   # schedule:
   #   - cron: 0 20 * * *
 
