@@ -128,11 +128,11 @@ jobs:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         
-    - name: Specify kernel version
-      run: |
-        cd openwrt
-        sed -i 's/^KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/' target/linux/ramips/Makefile
-        sed -i 's/^KERNEL_TESTING_PATCHVER:=.*/KERNEL_TESTING_PATCHVER:=6.6/' target/linux/ramips/Makefile
+    # - name: Specify kernel version
+    #   run: |
+    #     cd openwrt
+    #     sed -i 's/^KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/' target/linux/ramips/Makefile
+    #     sed -i 's/^KERNEL_TESTING_PATCHVER:=.*/KERNEL_TESTING_PATCHVER:=6.6/' target/linux/ramips/Makefile
 
 
 
@@ -145,19 +145,20 @@ jobs:
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
   
-    # - name: Fix batman-adv bug
-    #   run: |
-    #     cd openwrt
+    - name: Fix batman-adv bug
+      run: |
+        cd openwrt
+        git config --global user.email fattyvirgo911@gmail.com
+        git config --global user.name Fatty911
+        cd package/feeds/routing/ && git reset 5437d2c91fd9f15e06fbea46677abb529ed3547c
     #     # wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
     #     wget https://downloads.open-mesh.org/batman/releases/batman-adv-2024.1/batman-adv-2024.1.tar.gz
     #     tar -xvzf batman-adv-2024.1.tar.gz && mv batman-adv-2024.1 batman-adv && mv -f batman-adv package/feeds/routing/
     #     # make package/feeds/routing/batman-adv/compile V=s | make -j1 package/feeds/routing/batman-adv/compile V=s
-     
         # tar -xvzf 2023.3-batman-adv.tar.gz -C package/network/services/batman-adv
     #     tar -xvzf 2023.3-batman-adv.tar.gz && mv  batman-adv/* build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/batman-adv-2023.3/ 
     #     wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
-    #     git config --global user.email fattyvirgo911@gmail.com
-    #     git config --global user.name Fatty911
+        
     #     cp 0006-fix-build-with-kernel-6.6.patch build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/batman-adv-2023.3/ && cd build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/batman-adv-2023.3/ && git am 0006-fix-build-with-kernel-6.6.patch
 
 
