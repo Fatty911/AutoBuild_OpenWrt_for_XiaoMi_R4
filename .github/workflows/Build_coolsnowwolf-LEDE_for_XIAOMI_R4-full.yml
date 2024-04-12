@@ -150,7 +150,7 @@ jobs:
         cd openwrt
         git config --global user.email fattyvirgo911@gmail.com
         git config --global user.name Fatty911
-        cd package/feeds/routing/ && git reset 5437d2c91fd9f15e06fbea46677abb529ed3547c
+        cd package/feeds/ && rm -rf routing && git clone https://github.com/coolsnowwolf/routing.git routing && cd routing && git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
     #     # wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
     #     wget https://downloads.open-mesh.org/batman/releases/batman-adv-2024.1/batman-adv-2024.1.tar.gz
     #     tar -xvzf batman-adv-2024.1.tar.gz && mv batman-adv-2024.1 batman-adv && mv -f batman-adv package/feeds/routing/
