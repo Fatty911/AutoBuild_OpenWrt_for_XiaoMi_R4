@@ -9,7 +9,7 @@
 # Description: Source code update checker
 #
 
-name: Update Checker 
+name: Update Checker for OpenWrt.org
 
 env:
   # REPO_URL: https://github.com/coolsnowwolf/lede
@@ -54,6 +54,7 @@ jobs:
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         event-type: Source Code Update
+        client-payload: '{"repo_url": "${{ env.REPO_URL }}"}' # 传递源码仓库的URL
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
