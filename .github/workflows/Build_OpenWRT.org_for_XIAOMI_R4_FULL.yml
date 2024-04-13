@@ -12,6 +12,7 @@ name: Build OpenWRT.org for XIAOMI_R4 FULL
 
 on:
   repository_dispatch:
+    types: Openwrt.org Source Code Update
   workflow_dispatch:
     inputs:
       ssh:
