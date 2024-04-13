@@ -44,7 +44,7 @@ env:
 
 jobs:
   build:
-    if: github.event.inputs.repo_url == env.REPO_URL # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
+    if: github.event.inputs.repo_url == ${{ env.REPO_URL }} # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
     runs-on: ubuntu-20.04
     steps:
     
