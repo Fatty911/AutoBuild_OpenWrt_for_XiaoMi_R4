@@ -8,7 +8,7 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: Build Lienol_OpenWrt for XIAOMI_R4
+name: Build Lienol for XIAOMI_R4
 
 on:
   repository_dispatch:
@@ -18,6 +18,10 @@ on:
         description: 'SSH connection to Actions'
         required: false
         default: 'false'
+      repo_url:
+        description: 'The URL of the source code repository'
+        required: true
+        default: https://github.com/Lienol/openwrt
   push:
     branches: 
       - master
@@ -40,8 +44,8 @@ env:
 
 jobs:
   build:
+    if: github.event.inputs.repo_url == env.REPO_URL # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
     runs-on: ubuntu-20.04
-
     steps:
     
     - name: Maximize build space
