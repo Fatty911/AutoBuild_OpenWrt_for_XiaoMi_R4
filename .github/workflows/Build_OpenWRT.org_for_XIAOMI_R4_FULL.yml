@@ -49,7 +49,7 @@ jobs:
     
     - name: Check Repo URL
       run: |
-            if: github.event.inputs.repo_url != ${{ env.REPO_URL }} # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
+            if: ${{ github.event.inputs.repo_url }} != ${{ env.REPO_URL }} # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
               echo "The source code repository URL does not match. Skipping build."
               exit 1
             fi
