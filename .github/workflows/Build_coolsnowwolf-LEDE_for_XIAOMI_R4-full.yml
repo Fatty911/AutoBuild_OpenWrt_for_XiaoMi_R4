@@ -19,10 +19,10 @@ on:
         description: 'SSH connection to Actions'
         required: false
         default: 'false'
-      repo_url:
-        description: 'The URL of the source code repository'
-        required: true
-        default: https://github.com/coolsnowwolf/lede
+      # repo_url:
+      #   description: 'The URL of the source code repository'
+      #   required: true
+      #   default: https://github.com/coolsnowwolf/lede
   push:
     branches: 
       - master
@@ -48,12 +48,12 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
 
-    - name: Check Repo URL
-      run: |
-            if [ "${{ github.event.inputs.repo_url }}" != "${{ env.REPO_URL }}" ]; then # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
-              echo "The source code repository URL does not match. Skipping build."
-              exit 1
-            fi
+    # - name: Check Repo URL
+    #   run: |
+    #         if [ "${{ github.event.inputs.repo_url }}" != "${{ env.REPO_URL }}" ]; then # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
+    #           echo "The source code repository URL does not match. Skipping build."
+    #           exit 1
+    #         fi
             
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
