@@ -105,11 +105,8 @@ jobs:
         #sed -i '/^src-git routing.*/c\src-git routing https:\/\/github.com\/coolsnowwolf\/routing.git;5437d2c91fd9f15e06fbea46677abb529ed3547c' feeds.conf.default
 
 
-    - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+    - name: Update feeds and Install feeds
+      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
