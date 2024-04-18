@@ -47,13 +47,6 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-
-    # - name: Check Repo URL
-    #   run: |
-    #         if [ "${{ github.event.inputs.repo_url }}" != "${{ env.REPO_URL }}" ]; then # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
-    #           echo "The source code repository URL does not match. Skipping build."
-    #           exit 1
-    #         fi
             
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
@@ -77,8 +70,19 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -y purge azure-cli* docker* ghc* zulu* hhvm* llvm* firefox* google* dotnet* aspnetcore* powershell* openjdk* adoptopenjdk* mysql* php* mongodb* moby* snap* || true
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004) libpam0g-dev liblzma-dev libsnmp-dev gcc g++ build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc-s1 libc6-dev-i386 uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool
+        # sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004)
+        sudo -E apt-get -qq install libpam0g-dev liblzma-dev libsnmp-dev gcc g++ build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc-s1 libc6-dev-i386 uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool
         sudo -E apt-get -qq install libcrypto++-dev  qtbase5-dev qtbase5-dev-tools qtchooser qt5-qmake qtbase5-private-dev libqt5sql5 libqt5sql5-mysql libqt5sql5-odbc libqt5sql5-psql libqt5sql5-sqlite libqt5sql5-tds qttools5-dev-tools
+        # 检查Ubuntu版本并安装相应的包
+        UBUNTU_VERSION=$(lsb_release -rs)
+        if [[ $UBUNTU_VERSION == 20.04 ]]; then
+            sudo apt-get -y install lib32gcc1
+        elif [[ $UBUNTU_VERSION == 22.04 ]]; then
+            sudo apt-get -y install lib32gcc-s1
+        else
+            sudo apt-get -y install lib32gcc-s1
+            echo "非Ubuntu20.04或22.04系统，安装lib32gcc可能失败，如果失败请检查对应系统安装libgcc32的命令"
+        fi
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
