@@ -165,12 +165,9 @@ jobs:
         #如果编译的不是此CPU的固件，目录名要更换架构和型号
         echo "DEVICE_NAME=$DEVICE_NAME"
         echo "kernel_version=$kernel_version"
-        for file in openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}*; do
-          new_name="${file/${{ env.DEVICE_NAME }}/${{ env.DEVICE_NAME }}_${{ env.kernel_version }}_${{ env.FILE_DATE }}}"
-          if [ "$file" != "$new_name" ]; then
-            mv "$file" "$new_name"
-          fi
-        done
+        for file in bin/targets/ramips/mt7621/openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}*; do
+            mv "$file" "${file//openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}/openwrt-ramips-mt7621_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}}"
+          done
 
 
     - name: Check space usage after compile
@@ -226,7 +223,7 @@ jobs:
       id: generate_release_tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
         [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
         [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
@@ -243,7 +240,7 @@ jobs:
           files: |
             ${{ env.firmware_path }}/*
             openwrt/.config
-          name: OpenWRT_Lienol_{{ steps.generate_release_tag.outputs.release_tag }}
+          name: OpenWRT_Lienol_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_Lienol_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
