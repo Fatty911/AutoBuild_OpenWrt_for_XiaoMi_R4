@@ -163,9 +163,15 @@ jobs:
         echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
         cd bin/targets/ramips/mt7621/
         #如果编译的不是此CPU的固件，目录名要更换架构和型号
+        echo "DEVICE_NAME=$DEVICE_NAME"
+        echo "kernel_version=$kernel_version"
         for file in openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}*; do
-        mv "$file" "${file/${{ env.DEVICE_NAME }}/${{ env.DEVICE_NAME }}_${{ env.kernel_version }}_${{ env.FILE_DATE }}}"
+          new_name="${file/${{ env.DEVICE_NAME }}/${{ env.DEVICE_NAME }}_${{ env.kernel_version }}_${{ env.FILE_DATE }}}"
+          if [ "$file" != "$new_name" ]; then
+            mv "$file" "$new_name"
+          fi
         done
+
 
     - name: Check space usage after compile
       if: (!cancelled())
