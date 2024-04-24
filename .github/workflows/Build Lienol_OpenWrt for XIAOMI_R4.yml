@@ -154,17 +154,24 @@ jobs:
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 || make -j1 V=s || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' ${{ github.workspace }}/openwrt/feeds/packages/lang/rust/Makefile && make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
+        
         KERNEL_VERSION=version=$(ls build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
+        echo "检查是否获取到内核版本号：$KERNEL_VERSION"
         #如果不是这个处理器，目录名更换架构和型号
         echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV   
+        echo "检查是否获取到env.kernel_version：${{ env.kernel_version }}"
         # echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+        
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        echo "检查是否获取到DEVICE_NAME：$DEVICE_NAME"
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        echo "检查是否正确赋值给env.DEVICE_NAME：${{ env.DEVICE_NAME }}"
+        
         echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        
         cd bin/targets/ramips/mt7621/
         #如果编译的不是此CPU的固件，目录名要更换架构和型号
-        echo "DEVICE_NAME=$DEVICE_NAME"
-        echo "kernel_version=$kernel_version"
+        
         for file in bin/targets/ramips/mt7621/openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}*; do
             mv "$file" "${file//openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}/openwrt-ramips-mt7621_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}}"
           done
