@@ -155,7 +155,7 @@ jobs:
         make -j$(nproc) || make -j1 || make -j1 V=s || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' ${{ github.workspace }}/openwrt/feeds/packages/lang/rust/Makefile && make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         
-        KERNEL_VERSION=version=$(ls build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
+        KERNEL_VERSION=$(ls build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
         echo "检查是否获取到内核版本号：$KERNEL_VERSION"
         #如果不是这个处理器，目录名更换架构和型号
         echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV   
