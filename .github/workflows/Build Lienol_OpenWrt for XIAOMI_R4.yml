@@ -46,15 +46,8 @@ env:
 jobs:
   build:    
     runs-on: ubuntu-20.04
-    steps:
+    steps:    
     
-    # - name: Check Repo URL
-    #   run: |
-    #         if [ "${{ github.event.inputs.repo_url }}" != "${{ env.REPO_URL }}" ]; then # 检查传入的源码仓库URL是否与该工作流文件对应的源码仓库URL匹配
-    #           echo "The source code repository URL does not match. Skipping build."
-    #           exit 1
-    #         fi
-            
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
       with:
@@ -101,10 +94,6 @@ jobs:
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
-        # echo 'src-git routing https://github.com/coolsnowwolf/routing.git;5437d2c91fd9f15e06fbea46677abb529ed3547c' >>feeds.conf.default
-        # sed -i 's/src-git routing https:\/\/github.com\/coolsnowwolf\/routing.git.*/src-git routing https:\/\/github.com\/coolsnowwolf\/routing.git;5437d2c91fd9f15e06fbea46677abb529ed3547c/g' feeds.conf.default
-        #sed -i '/^src-git routing.*/c\src-git routing https:\/\/github.com\/coolsnowwolf\/routing.git;5437d2c91fd9f15e06fbea46677abb529ed3547c' feeds.conf.default
-
 
     - name: Update and Install feeds
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
@@ -144,7 +133,6 @@ jobs:
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
   
-
        
     - name: Compile the firmware
       id: compile
@@ -155,27 +143,47 @@ jobs:
         make -j$(nproc) || make -j1 || make -j1 V=s || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' ${{ github.workspace }}/openwrt/feeds/packages/lang/rust/Makefile && make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         
-        KERNEL_VERSION=$(ls build_dir/target-mipsel_24kc_musl/linux-ramips_mt7621/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
-        echo "检查是否获取到内核版本号：$KERNEL_VERSION"
-        #如果不是这个处理器，目录名更换架构和型号
-        echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV   
-        echo "检查是否获取到env.kernel_version：${{ env.kernel_version }}"
-        # echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+        TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')
+        TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')
+        TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/')
         
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        echo "检查是否获取到DEVICE_NAME：$DEVICE_NAME"
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "检查是否正确赋值给env.DEVICE_NAME：${{ env.DEVICE_NAME }}"
+        KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
+        echo "检查是否获取到内核版本号：$KERNEL_VERSION"
+        echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+        
+        echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_ENV
+        echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_ENV
+        echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
         
         echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+          
+    - name: Upload firmware
+      uses: actions/upload-artifact@v3
+      with:
+        name: OpenWrt_firmware
+        path: openwrt/bin/targets/
         
-        cd bin/targets/ramips/mt7621/
-        #如果编译的不是此CPU的固件，目录名要更换架构和型号
+  rename:
+    runs-on: ubuntu-20.04
+    needs: build
+    
+    steps:
+    - name: Download firmware
+      uses: actions/download-artifact@v3
+      with:
+        name: OpenWrt_firmware
         
-        for file in bin/targets/ramips/mt7621/openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}*; do
-            mv "$file" "${file//openwrt-ramips-mt7621-${{ env.DEVICE_NAME }}/openwrt-ramips-mt7621_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}}"
-          done
-
+    - name: Rename firmware files
+      run: |
+        cd targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+        
+        for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE }}-*; do
+          if [ -f "$file" ]; then
+            new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE }}}"
+            mv "$file" "$new_file"
+            echo "Renamed $file to $new_file"
+          fi
+        done
 
     - name: Check space usage after compile
       if: (!cancelled())
@@ -206,25 +214,6 @@ jobs:
         name: OpenWrt_Lienol_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
 
-    - name: Upload firmware to cowtransfer
-      id: cowtransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
-        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        #echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
-        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware to WeTransfer
-      id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true'
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        #echo "::set-output name=url::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
-        echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
     - name: Generate release tag
       id: generate_release_tag
