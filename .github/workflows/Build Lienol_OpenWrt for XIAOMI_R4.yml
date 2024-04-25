@@ -163,7 +163,7 @@ jobs:
         name: OpenWrt_firmware
         path: openwrt/bin/targets/
         
-  rename:
+  rename_and_release:
     runs-on: ubuntu-20.04
     needs: build
     
