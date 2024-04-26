@@ -143,25 +143,31 @@ jobs:
         TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')
         echo "检测TARGET_BOARD是否在.config中成功找到：$TARGET_BOARD"
         echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_ENV
-        echo "检测TARGET_BOARD是否赋值给env.TARGET_BOARD：${{ env.TARGET_BOARD }}" 
+
         
         TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')
         echo "检测TARGET_SUBTARGET是否在.config中成功找到：$TARGET_SUBTARGET"
         echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_ENV
-        echo "检测TARGET_SUBTARGET是否赋值给env.TARGET_SUBTARGET：${{ env.TARGET_SUBTARGET }}" 
+        
 
         
         TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/')
         echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
         echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
-        echo "检测TARGET_PROFILE是否赋值给env.TARGET_PROFILE：${{ env.TARGET_PROFILE }}" 
+        
 
         KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
         echo "检查是否获取到内核版本号：$KERNEL_VERSION"
         echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
-        echo "检查是否赋值给env.kernel_version成功：${{ env.kernel_version }}"
 
         echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        
+    - name: Check Env Vars
+      run: |
+          echo "检测TARGET_BOARD是否赋值给env.TARGET_BOARD：${{ env.TARGET_BOARD }}" 
+          echo "检测TARGET_SUBTARGET是否赋值给env.TARGET_SUBTARGET：${{ env.TARGET_SUBTARGET }}" 
+          echo "检测TARGET_PROFILE是否赋值给env.TARGET_PROFILE：${{ env.TARGET_PROFILE }}" 
+          echo "检查是否赋值给env.kernel_version：${{ env.kernel_version }}"
           
     - name: Upload firmware
       uses: actions/upload-artifact@master
