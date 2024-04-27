@@ -189,11 +189,11 @@ jobs:
         
     - name: Set environment variables from Outputs
       run: |
-        echo "TARGET_BOARD=${{ needs.build.outputs.TARGET_BOARD }}" >> $GITHUB_ENV
-        echo "TARGET_SUBTARGET=${{ needs.build.outputs.TARGET_SUBTARGET }}" >> $GITHUB_ENV
-        echo "TARGET_PROFILE=${{ needs.build.outputs.TARGET_PROFILE }}" >> $GITHUB_ENV
-        echo "FILE_DATE=${{ needs.build.outputs.FILE_DATE }}" >> $GITHUB_ENV
-        echo "kernel_version=${{ needs.build.outputs.kernel_version }}" >> $GITHUB_ENV
+        echo "TARGET_BOARD=${{ needs.build.steps.output_vars.outputs.TARGET_BOARD }}" >> $GITHUB_ENV
+        echo "TARGET_SUBTARGET=${{ needs.build.steps.output_vars.outputs.TARGET_SUBTARGET }}" >> $GITHUB_ENV
+        echo "TARGET_PROFILE=${{ needs.build.steps.output_vars.outputs.TARGET_PROFILE }}" >> $GITHUB_ENV
+        echo "FILE_DATE=${{ needs.build.steps.output_vars.outputs.FILE_DATE }}" >> $GITHUB_ENV
+        echo "kernel_version=${{ needs.build.steps.output_vars.outputs.kernel_version }}" >> $GITHUB_ENV
         
     - name: Rename firmware files
       run: |
