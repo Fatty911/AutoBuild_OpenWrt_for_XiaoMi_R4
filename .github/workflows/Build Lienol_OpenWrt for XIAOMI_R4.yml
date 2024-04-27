@@ -163,10 +163,11 @@ jobs:
         
 
         
-        TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/')
+        TARGET_PROFILE=$(TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//'))
         echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
         # echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
         echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_OUTPUT
+        echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_OUTPUT
         
 
         KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
@@ -198,17 +199,16 @@ jobs:
         echo "TARGET_BOARD=${{ needs.build.outputs.TARGET_BOARD }}" >> $GITHUB_ENV
         echo "TARGET_SUBTARGET=${{ needs.build.outputs.TARGET_SUBTARGET }}" >> $GITHUB_ENV
         echo "TARGET_PROFILE=${{ needs.build.outputs.TARGET_PROFILE }}" >> $GITHUB_ENV
+        echo "DEVICE_NAME=${{ needs.build.outputs.DEVICE_NAME }}" >> $GITHUB_ENV
         echo "FILE_DATE=${{ needs.build.outputs.FILE_DATE }}" >> $GITHUB_ENV
         echo "KERNEL_VERSION=${{ needs.build.outputs.KERNEL_VERSION }}" >> $GITHUB_ENV
         
     - name: Rename firmware files
       run: |
         cd targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
-        # 使用bash的字符串替换功能去掉TARGET_PROFILE中的DEVICE_前缀
-        PROFILE=${{ env.TARGET_PROFILE/#DEVICE_/ }}
-        for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${PROFILE}-*; do
+        for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
           if [ -f "$file" ]; then
-            new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${PROFILE}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${PROFILE}}"
+            new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${PROFILE}}"
             mv "$file" "$new_file"
             echo "Renamed $file to $new_file"
           fi
