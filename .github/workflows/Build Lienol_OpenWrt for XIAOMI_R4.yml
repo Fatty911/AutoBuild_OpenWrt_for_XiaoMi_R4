@@ -38,6 +38,12 @@ env:
 jobs:
   build:    
     runs-on: ubuntu-20.04
+    outputs:
+      TARGET_BOARD: ${{ steps.output_vars.outputs.TARGET_BOARD }}
+      TARGET_SUBTARGET: ${{ steps.output_vars.outputs.TARGET_SUBTARGET }}
+      TARGET_PROFILE: ${{ steps.output_vars.outputs.TARGET_PROFILE }}
+      FILE_DATE: ${{ steps.output_vars.outputs.FILE_DATE }}
+      KERNEL_VERSION: ${{ steps.output_vars.outputs.kernel_version }}
     steps:    
     
     - name: Maximize build space
@@ -189,11 +195,11 @@ jobs:
         
     - name: Set environment variables from Outputs
       run: |
-        echo "TARGET_BOARD=${{ needs.build.steps.output_vars.outputs.TARGET_BOARD }}" >> $GITHUB_ENV
-        echo "TARGET_SUBTARGET=${{ needs.build.steps.output_vars.outputs.TARGET_SUBTARGET }}" >> $GITHUB_ENV
-        echo "TARGET_PROFILE=${{ needs.build.steps.output_vars.outputs.TARGET_PROFILE }}" >> $GITHUB_ENV
-        echo "FILE_DATE=${{ needs.build.steps.output_vars.outputs.FILE_DATE }}" >> $GITHUB_ENV
-        echo "kernel_version=${{ needs.build.steps.output_vars.outputs.kernel_version }}" >> $GITHUB_ENV
+        echo "TARGET_BOARD=${{ needs.build.outputs.TARGET_BOARD }}" >> $GITHUB_ENV
+        echo "TARGET_SUBTARGET=${{ needs.build.outputs.TARGET_SUBTARGET }}" >> $GITHUB_ENV
+        echo "TARGET_PROFILE=${{ needs.build.outputs.TARGET_PROFILE }}" >> $GITHUB_ENV
+        echo "FILE_DATE=${{ needs.build.outputs.FILE_DATE }}" >> $GITHUB_ENV
+        echo "KERNEL_VERSION=${{ needs.build.outputs.KERNEL_VERSION }}" >> $GITHUB_ENV
         
     - name: Rename firmware files
       run: |
@@ -211,7 +217,7 @@ jobs:
 
     - name: Upload bin directory
       uses: actions/upload-artifact@master
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      if: needs.build.steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_Lienol_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: |
@@ -229,7 +235,7 @@ jobs:
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@master
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: needs.build.steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_Lienol_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
