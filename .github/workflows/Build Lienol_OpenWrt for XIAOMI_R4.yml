@@ -204,10 +204,11 @@ jobs:
     - name: Rename firmware files
       run: |
         cd targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
-        
-        for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE }}-*; do
+        # 使用bash的字符串替换功能去掉TARGET_PROFILE中的DEVICE_前缀
+        PROFILE=${{ env.TARGET_PROFILE/#DEVICE_/ }}
+        for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${PROFILE}-*; do
           if [ -f "$file" ]; then
-            new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE }}}"
+            new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${PROFILE}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${PROFILE}}"
             mv "$file" "$new_file"
             echo "Renamed $file to $new_file"
           fi
