@@ -167,7 +167,7 @@ jobs:
         echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
         # echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
         echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_OUTPUT
-        echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_OUTPUT
+        echo "DEVICE_NAME=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')" >> $GITHUB_OUTPUT
         
 
         KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
