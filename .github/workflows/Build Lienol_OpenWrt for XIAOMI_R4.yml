@@ -167,6 +167,7 @@ jobs:
         TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')
         echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
         echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
+        echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
         # echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_OUTPUT
         # echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_OUTPUT
         
