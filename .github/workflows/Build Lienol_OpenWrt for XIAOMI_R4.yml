@@ -153,30 +153,30 @@ jobs:
         #设置env传递给next job失败
         TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')
         echo "检测TARGET_BOARD是否在.config中成功找到：$TARGET_BOARD"
-        # echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_ENV
-        echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_OUTPUT
+        echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_ENV
+        # echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_OUTPUT
 
         
         TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')
         echo "检测TARGET_SUBTARGET是否在.config中成功找到：$TARGET_SUBTARGET"
-        # echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_ENV
-        echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_OUTPUT
+        echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_ENV
+        # echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_OUTPUT
         
 
         
         TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')
         echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
-        # echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
-        echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_OUTPUT
-        echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_OUTPUT
+        echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
+        # echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_OUTPUT
+        # echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_OUTPUT
         
 
         KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
         echo "检查是否获取到内核版本号：$KERNEL_VERSION"
-        # echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
-        echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
+        echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+        # echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_OUTPUT
 
-        echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_OUTPUT
+        echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
         
           
     - name: Upload firmware
@@ -185,44 +185,8 @@ jobs:
         name: OpenWrt_firmware
         path: openwrt/bin
         
-  rename_and_release:
-    runs-on: ubuntu-20.04
-    needs: build
-    
-    steps:
-    - name: Download firmware
-      uses: actions/download-artifact@master
-      with:
-        name: OpenWrt_firmware
-        path: extracted-firmware
-        
-    - name: Set environment variables from Outputs
+    - name: Rename
       run: |
-        echo "TARGET_BOARD=${{ needs.build.outputs.TARGET_BOARD }}" >> $GITHUB_ENV
-        echo "TARGET_SUBTARGET=${{ needs.build.outputs.TARGET_SUBTARGET }}" >> $GITHUB_ENV
-        echo "TARGET_PROFILE=${{ needs.build.outputs.TARGET_PROFILE }}" >> $GITHUB_ENV
-        echo "DEVICE_NAME=${{ needs.build.outputs.DEVICE_NAME }}" >> $GITHUB_ENV
-        echo "FILE_DATE=${{ needs.build.outputs.FILE_DATE }}" >> $GITHUB_ENV
-        echo "kernel_version=${{ needs.build.outputs.KERNEL_VERSION }}" >> $GITHUB_ENV
-        
-    - name: Rename firmware files
-      run: |
-        mkdir -p openwrt
-        # 动态查找固件文件的路径
-        firmware_path=$(find extracted-firmware -type f -name "openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE }}-*.bin")
-        echo "Firmware path: $firmware_path"
-        
-        if [ -z "$firmware_path" ]; then
-          echo "Firmware file not found."
-          exit 1
-        fi
-        
-        # 获取固件文件所在的目录
-        firmware_dir=$(dirname "$firmware_path")
-        echo "Firmware directory: $firmware_dir"
-        
-        mv $firmware_dir/bin openwrt/
-
         cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
         for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
           if [ -f "$file" ]; then
