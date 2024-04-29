@@ -183,7 +183,7 @@ jobs:
       uses: actions/upload-artifact@master
       with:
         name: OpenWrt_firmware
-        path: openwrt/bin/targets/
+        path: openwrt/bin
         
   rename_and_release:
     runs-on: ubuntu-20.04
@@ -207,8 +207,23 @@ jobs:
         
     - name: Rename firmware files
       run: |
-        cd extracted-firmware
-        cd targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+        mkdir -p openwrt
+        # 动态查找固件文件的路径
+        firmware_path=$(find extracted-firmware -type f -name "openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE }}-*.bin")
+        echo "Firmware path: $firmware_path"
+        
+        if [ -z "$firmware_path" ]; then
+          echo "Firmware file not found."
+          exit 1
+        fi
+        
+        # 获取固件文件所在的目录
+        firmware_dir=$(dirname "$firmware_path")
+        echo "Firmware directory: $firmware_dir"
+        
+        mv $firmware_dir/bin openwrt/
+
+        cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
         for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
           if [ -f "$file" ]; then
             new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE}}}"
