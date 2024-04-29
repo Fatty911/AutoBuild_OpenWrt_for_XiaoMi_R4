@@ -136,17 +136,7 @@ jobs:
     #     #超频5.10内核至1000Mhz
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
-  
-    # - name: Apply patch
-    #   run: |
-    #     cd openwrt
-    #     wget https://github.com/coolsnowwolf/lede/files/14081054/2023.3-batman-adv.tar.gz
-    #     tar -xvzf 2023.3-batman-adv.tar.gz -C package/feeds/routing/batman-adv
-    #     wget https://github.com/coolsnowwolf/lede/files/14080071/0006-fix-build-with-kernel-6.6.patch
-    #     git config --global user.email fattyvirgo911@gmail.com
-    #     git config --global user.name Fatty911
-    #     # git am 0006-fix-build-with-kernel-6.6.patch
-        
+
     - name: Compile the firmware
       id: compile
       run: |
@@ -160,6 +150,28 @@ jobs:
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')
+        echo "检测TARGET_BOARD是否在.config中成功找到：$TARGET_BOARD"
+        echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_ENV
+        TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')
+        echo "检测TARGET_SUBTARGET是否在.config中成功找到：$TARGET_SUBTARGET"
+        echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_ENV
+        TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')
+        echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
+        echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
+        echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
+        KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
+        echo "检查是否获取到内核版本号：$KERNEL_VERSION"
+        echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+        cd bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+        for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
+          if [ -f "$file" ]; then
+            new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE}}}"
+            mv "$file" "$new_file"
+            echo "Renamed $file to $new_file"
+          fi
+        done
+
 
     - name: Check space usage after compile
       if: (!cancelled())
@@ -169,7 +181,7 @@ jobs:
       uses: actions/upload-artifact@master
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
-        name: OpenWrt.org_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt.org_bin${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: |
           openwrt/bin
           openwrt/.config
@@ -187,7 +199,7 @@ jobs:
       uses: actions/upload-artifact@master
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt.org_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
 
     - name: Upload firmware to cowtransfer
@@ -214,7 +226,7 @@ jobs:
       id: generate_release_tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
         [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
         [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
@@ -231,8 +243,8 @@ jobs:
           files: |
             ${{ env.firmware_path }}/*
             openwrt/.config
-          name: OpenWRT.org_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: OpenWRT.org_XIAOMI_R4_${{ steps.generate_release_tag.outputs.release_tag }}
+          name: OpenWRT.org_${{ steps.generate_release_tag.outputs.release_tag }}
+          tag_name: OpenWRT.org_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
