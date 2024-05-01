@@ -163,7 +163,9 @@ jobs:
         KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
         echo "检查是否获取到内核版本号：$KERNEL_VERSION"
         echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
-        echo "当前在文件夹：$(pwd)"
+        
+    - name: Rename
+      run: |
         cd bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
         echo "进入文件夹：$(pwd)"
         for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
