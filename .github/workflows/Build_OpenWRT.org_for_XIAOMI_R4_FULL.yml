@@ -170,7 +170,7 @@ jobs:
         echo "进入文件夹：$(pwd)"
         for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
           if [ -f "$file" ]; then
-            new_file="openwrt_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE}}}"
+            new_file="openwrt_org_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE}}}"
             mv "$file" "$new_file"
             echo "Renamed $file to $new_file"
           fi
