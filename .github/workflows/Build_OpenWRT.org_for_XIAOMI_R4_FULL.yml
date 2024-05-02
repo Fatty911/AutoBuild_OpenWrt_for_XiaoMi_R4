@@ -166,7 +166,7 @@ jobs:
         
     - name: Rename
       run: |
-        cd bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+        cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
         echo "进入文件夹：$(pwd)"
         for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
           if [ -f "$file" ]; then
