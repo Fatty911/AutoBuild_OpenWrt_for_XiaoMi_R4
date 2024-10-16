@@ -196,6 +196,7 @@ jobs:
             echo "Renamed $file to $new_file"
           fi
         done
+        zip -r zip_rootfs0_kernel1_${{ env.DEVICE_NAME }}_${{ env.FILE_DATE }}.zip *rootfs0.bin *kernel1.bin
 
 
 
