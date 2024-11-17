@@ -303,6 +303,6 @@ jobs:
       with:
         #repo: <owner>/<repoName> # defaults to current repo
         keep_latest: 5
-        #delete_tag_pattern: beta # defaults to ""
+        delete_tag_pattern: coolsnowwolf
       env:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
