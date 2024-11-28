@@ -247,8 +247,8 @@ jobs:
           files: |
             ${{ env.firmware_path }}/*
             openwrt/.config
-          name: OpenWRT.org_${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: OpenWRT.org_${{ steps.generate_release_tag.outputs.release_tag }}
+          name: ${{ steps.generate_release_tag.outputs.release_tag }}
+          tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
