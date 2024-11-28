@@ -229,7 +229,7 @@ jobs:
       id: generate_release_tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
-        echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "release_tag=Lienol_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
         echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
@@ -244,8 +244,8 @@ jobs:
           files: |
             ${{ env.firmware_path }}/*
             openwrt/.config
-          name: OpenWRT_Lienol_${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: OpenWRT_Lienol_${{ steps.generate_release_tag.outputs.release_tag }}
+          name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
+          tag_name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
