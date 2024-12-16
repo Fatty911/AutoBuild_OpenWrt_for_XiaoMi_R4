@@ -157,7 +157,7 @@ jobs:
         echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
         sed -i 's/CONFIG_KERNEL_PATCHVER=.*$/CONFIG_KERNEL_PATCHVER="5.15"/' .config
         sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/Makefile
-        sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/$TARGET_SUBTARGET/Makefile
+        # sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/$TARGET_SUBTARGET/Makefile 会报错
         
 
         echo -e "$(nproc) thread compile"
