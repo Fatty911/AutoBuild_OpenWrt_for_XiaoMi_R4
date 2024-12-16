@@ -155,8 +155,8 @@ jobs:
         echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
         echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
         echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
-        sed -i 's/CONFIG_KERNEL_PATCHVER=.*$/CONFIG_KERNEL_PATCHVER="5.15"/' .config
-        sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/Makefile
+        #sed -i 's/CONFIG_KERNEL_PATCHVER=.*$/CONFIG_KERNEL_PATCHVER="5.15"/' .config
+        #sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/Makefile
         # sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/$TARGET_SUBTARGET/Makefile 会报错
         
 
@@ -204,13 +204,25 @@ jobs:
         rm -rf packages
         echo "firmware_path=$(pwd)" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
+        
+    - name: Check for .bin files
+      id: check_bin
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      run: |
+        if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
+          echo "No .bin files found in firmware_path. Stopping workflow."
+          exit 1
+        fi
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@master
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: steps.organize.check_bin.conclusion == 'success' && !cancelled()
       with:
         name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
+        
+
+
 
     - name: Upload firmware to cowtransfer
       id: cowtransfer
@@ -234,7 +246,7 @@ jobs:
 
     - name: Generate release tag
       id: generate_release_tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.organize.check_bin.conclusion == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
