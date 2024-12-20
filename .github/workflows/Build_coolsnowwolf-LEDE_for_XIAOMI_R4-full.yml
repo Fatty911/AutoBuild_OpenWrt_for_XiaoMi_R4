@@ -246,6 +246,14 @@ jobs:
         name: OpenWrt_LEDE_coolsnowwolf_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
 
+    - name: Check for .bin files
+      id: check_bin
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      run: |
+        if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
+          echo "No .bin files found in firmware_path. Stopping workflow."
+          exit 1
+        fi
     - name: Upload firmware to cowtransfer
       id: cowtransfer
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
@@ -268,7 +276,7 @@ jobs:
 
     - name: Generate release tag
       id: generate_release_tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled() && steps.check_bin.conclusion == 'success'
       run: |
         echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
@@ -286,7 +294,6 @@ jobs:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           files: |
             ${{ env.firmware_path }}/*
-            openwrt/.config
           name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
 
