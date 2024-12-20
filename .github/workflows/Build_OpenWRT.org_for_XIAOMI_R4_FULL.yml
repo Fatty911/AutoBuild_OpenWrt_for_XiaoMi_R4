@@ -191,7 +191,7 @@ jobs:
       uses: actions/upload-artifact@master
       if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
       with:
-        name: OpenWrt.org_bin${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+        name: OpenWrt.org_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: |
           openwrt/bin
           openwrt/.config
@@ -205,6 +205,15 @@ jobs:
         echo "firmware_path=$(pwd)" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
         
+
+
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@master
+      if: steps.organize.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+        path: ${{ env.firmware_path }}
+        
     - name: Check for .bin files
       id: check_bin
       if: steps.organize.outputs.status == 'success' && !cancelled()
@@ -213,15 +222,6 @@ jobs:
           echo "No .bin files found in firmware_path. Stopping workflow."
           exit 1
         fi
-
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@master
-      if: steps.organize.check_bin.conclusion == 'success' && !cancelled()
-      with:
-        name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
-        path: ${{ env.firmware_path }}
-        
-
 
 
     - name: Upload firmware to cowtransfer
