@@ -43,7 +43,9 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   ACTIONS_STEP_DEBUG: true
-
+permissions:
+  contents: write
+  packages: write
 jobs:
   build:
     runs-on: ubuntu-22.04
