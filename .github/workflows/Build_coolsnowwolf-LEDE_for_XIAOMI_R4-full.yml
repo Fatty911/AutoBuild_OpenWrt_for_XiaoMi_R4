@@ -299,8 +299,6 @@ jobs:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           files: |
             ${{ env.firmware_path }}/*
-          timeout-minutes: 30
-          retry-max-time: 5
           name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
 
