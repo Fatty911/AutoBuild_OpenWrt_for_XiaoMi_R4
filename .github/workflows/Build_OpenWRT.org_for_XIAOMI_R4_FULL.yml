@@ -25,7 +25,7 @@ on:
       #   default: https://github.com/openwrt/openwrt
   push:
     branches: 
-      - 24.10
+      - openwrt-24.10
   # schedule:
   #   - cron: 0 20 * * *
 
