@@ -109,7 +109,20 @@ jobs:
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-
+        
+    - name: Transplant Xiaomi Mi Router 4 support
+      run: |
+        cd openwrt
+        # 克隆 coolsnowwolf/lede 源码以获取小米路由4的 DTS 文件
+        git clone https://github.com/coolsnowwolf/lede.git lede-source
+        # 复制小米路由4的 DTS 文件
+        cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
+        # 复制小米路由4的配置文件
+        cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
+        cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
+        # 清理临时文件
+        rm -rf lede-source
+        
     - name: Download package
       id: package
       run: |
