@@ -77,6 +77,7 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -y purge azure-cli* docker* ghc* llvm* firefox* google* dotnet* aspnetcore* powershell* mysql* php* mongodb* snap* || true
         sudo -E apt-get -qq update
+        sudo apt install -y software-properties-common
         sudo add-apt-repository universe
         sudo add-apt-repository multiverse
         sudo apt update
