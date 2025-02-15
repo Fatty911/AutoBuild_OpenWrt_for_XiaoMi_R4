@@ -75,11 +75,15 @@ jobs:
         DEBIAN_FRONTEND: noninteractive
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -y purge azure-cli* docker* ghc* zulu* hhvm* llvm* firefox* google* dotnet* aspnetcore* powershell* openjdk* adoptopenjdk* mysql* php* mongodb* moby* snap* || true
+        sudo -E apt-get -y purge azure-cli* docker* ghc* llvm* firefox* google* dotnet* aspnetcore* powershell* mysql* php* mongodb* snap* || true
         sudo -E apt-get -qq update
+        sudo add-apt-repository universe
+        sudo add-apt-repository multiverse
+        sudo apt update
+        sudo dpkg --add-architecture i386
         # 更新软件源并安装依赖
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq install build-essential gcc g++ asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc1 gcc-multilib g++-multilib p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool libcrypto++-dev qtbase5-dev qtbase5-dev-tools qtchooser qt5-qmake libqt5sql5-mysql libqt5sql5-odbc libqt5sql5-psql libqt5sql5-sqlite libqt5sql5-tds qttools5-dev-tools
+        sudo apt update
+        sudo apt install -y build-essential gcc g++ gcc-x86-64-linux-gnu g++-x86-64-linux-gnu asciidoctor binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc-s1 p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool libcryptopp-dev qtbase5-dev qtbase5-dev-tools qtchooser qt5-qmake libqt5sql5-mysql libqt5sql5-odbc libqt5sql5-psql libqt5sql5-sqlite libqt5sql5-tds qttools5-dev-tools
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
