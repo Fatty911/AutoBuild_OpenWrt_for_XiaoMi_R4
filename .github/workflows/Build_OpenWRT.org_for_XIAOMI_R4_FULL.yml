@@ -25,7 +25,7 @@ on:
       #   default: https://github.com/openwrt/openwrt
   push:
     branches: 
-      - openwrt-24.10
+      - master
   # schedule:
   #   - cron: 0 20 * * *
 
@@ -45,7 +45,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
     
     # - name: Check Repo URL
@@ -127,6 +127,11 @@ jobs:
         ls target/linux/ramips/mt7621/
         # 清理临时文件
         rm -rf lede-source
+
+        echo "查看target/linux/ramips/image/mt7621.mk确保文件中包含小米路由4的固件生成规则"
+        cat target/linux/ramips/image/mt7621.mk
+        echo "检查内核分区表兼容性,确认移植的 DTS 文件 mt7621_xiaomi_mi-router-4.dts 中的分区表定义与 OpenWrt 官方源码的生成脚本兼容"
+        cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
         
     - name: Download package
       id: package
@@ -176,7 +181,8 @@ jobs:
         #sed -i 's/CONFIG_KERNEL_PATCHVER=.*$/CONFIG_KERNEL_PATCHVER="5.15"/' .config
         #sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/Makefile
         # sed -i 's/KERNEL_PATCHVER:=.*$/KERNEL_PATCHVER:="5.15"/'  target/linux/$TARGET_BOARD/$TARGET_SUBTARGET/Makefile 会报错
-        
+
+       
 
         echo -e "$(nproc) thread compile"
         make -j$(nproc) V=Sc || make -j1 || make -j1 V=s && df -hT || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' $GITHUB_WORKSPACE/openwrt/feeds/packages/lang/rust/Makefile && make -j1 V=s && df -hT|| sed -i 's/DEPENDS:=\(.*\)/DEPENDS:=\1 +libiconv/g' $GITHUB_WORKSPACE/openwrt/package/libs/gettext-full/Makefile && make -j1 V=s && df -hT
