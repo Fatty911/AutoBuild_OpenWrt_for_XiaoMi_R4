@@ -77,7 +77,7 @@ jobs:
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -y purge azure-cli* docker* ghc* llvm* firefox* google* dotnet* aspnetcore* powershell* mysql* php* mongodb* snap* || true
         sudo -E apt-get -qq update
-        #sudo apt-get install genisoimage -y
+        sudo apt install software-properties-common -y
         sudo sed -i 's/^# deb/deb/g' /etc/apt/sources.list
         sudo add-apt-repository universe
         sudo add-apt-repository multiverse
@@ -85,7 +85,7 @@ jobs:
         #sudo dpkg --add-architecture i386
         # 更新软件源并安装依赖
         sudo apt update
-        sudo apt install -y build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-distutils rsync bc wget ccache software-properties-common|sudo apt install -y build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file software-properties-common python3 python3-venv python3-pip rsync bc wget ccache | sudo apt policy build-essential git gettext subversion ccache python3-distutils
+        sudo apt install -y build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-distutils rsync bc wget ccache || sudo apt install -y build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-venv python3-pip rsync bc wget ccache || sudo apt policy build-essential git gettext subversion ccache python3-distutils
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
