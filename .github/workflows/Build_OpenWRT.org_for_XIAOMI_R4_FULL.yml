@@ -119,8 +119,10 @@ jobs:
         git clone https://github.com/coolsnowwolf/lede.git lede-source
         # 复制小米路由4的 DTS 文件
         cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-        echo "查看DTS设备树文件目录"
-        ls target/linux/ramips/dts/
+        echo "查看DTS设备树文件目录,确保小米路由4的文件存在ls target/linux/ramips/dts/ |grep xiaomi"
+        ls target/linux/ramips/dts/ |grep xiaomi
+        echo "分区适配：若需调整闪存分区（如扩容根目录），需修改target/linux/ramips/dts/mt7621.dtsi文件，但需谨慎操作以避免固件无法启动,cat查看文件"
+        cat target/linux/ramips/dts/mt7621.dtsi
         # 复制小米路由4的配置文件
         cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
         echo "查看配置文件目录"
@@ -130,9 +132,19 @@ jobs:
         # 清理临时文件
         rm -rf lede-source
 
-        echo "查看target/linux/ramips/image/mt7621.mk确保文件中包含小米路由4的固件生成规则"
-        cat target/linux/ramips/image/mt7621.mk
-        echo "检查内核分区表兼容性,确认移植的 DTS 文件 mt7621_xiaomi_mi-router-4.dts 中的分区表定义与 OpenWrt 官方源码的生成脚本兼容"
+        #echo "查看target/linux/ramips/image/mt7621.mk确保文件中包含小米路由4的固件生成规则"
+        echo "检查 target/linux/ramips/image/mt7621.mk 文件中是否定义了小米路由4的固件生成规则：grep -A4 "define Device/xiaomi_mi-router-4" target/linux/ramips/image/mt7621.mk"
+        grep -A4 "define Device/xiaomi_mi-router-4" target/linux/ramips/image/mt7621.mk
+        echo "预期正确输出：\
+                    如果文件中存在小米路由4的定义，会显示类似以下内容：
+              define Device/xiaomi_mi-router-4 \
+                IMAGE_SIZE := 16064k \
+                DEVICE_VENDOR := Xiaomi \
+                DEVICE_MODEL := Mi Router 4 \
+                DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3 kmod-usb-ledtrig-usbport \
+              endef \
+              TARGET_DEVICES += xiaomi_mi-router-4"
+        echo "cat检查内核分区表兼容性,确认移植的 DTS 文件 mt7621_xiaomi_mi-router-4.dts 中的分区表定义与 OpenWrt 官方源码的生成脚本兼容"
         cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
         
     - name: Download package
