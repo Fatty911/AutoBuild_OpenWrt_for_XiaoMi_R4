@@ -119,8 +119,9 @@ jobs:
         git clone https://github.com/coolsnowwolf/lede.git lede-source
         # 复制小米路由4的 DTS 文件
         cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-        echo "查看DTS设备树文件目录,确保小米路由4的文件存在ls target/linux/ramips/dts/ |grep xiaomi"
-        ls target/linux/ramips/dts/ |grep xiaomi
+        # 关键修复：调整IMAGE_SIZE参数
+        sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 16064k/' lede-source/target/linux/ramips/image/mt7621.mk
+        cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
         echo "分区适配：若需调整闪存分区（如扩容根目录），需修改target/linux/ramips/dts/mt7621.dtsi文件，但需谨慎操作以避免固件无法启动,cat查看文件"
         cat target/linux/ramips/dts/mt7621.dtsi
         # 复制小米路由4的配置文件
@@ -146,6 +147,16 @@ jobs:
               TARGET_DEVICES += xiaomi_mi-router-4"
         echo "cat检查内核分区表兼容性,确认移植的 DTS 文件 mt7621_xiaomi_mi-router-4.dts 中的分区表定义与 OpenWrt 官方源码的生成脚本兼容"
         cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
+        echo "修改target/linux/ramips/image/mt7621.mk文件，修改小米4的固件生成规则，直接使用官方的生成方法。删除$(Device/xiaomi_nand_separate)，并且核对修改IMAGE_SIZE大小，更改为16064k。"
+        #修改mt7621.mk文件
+        sed -i 's/$(Device\/xiaomi_nand_separate)//g' target/linux/ramips/image/mt7621.mk
+        sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 16064k/g' target/linux/ramips/image/mt7621.mk
+        echo "增加分区偏移验证"
+        grep -A10 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts | grep 'reg = <0x0'
+        if [ $? -ne 0 ]; then
+          echo "❌ 分区表偏移未从0x0开始，需要适配官方生成规则";
+          exit 1;
+        fi
         
     - name: Download package
       id: package
