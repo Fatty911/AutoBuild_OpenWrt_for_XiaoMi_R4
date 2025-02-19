@@ -123,7 +123,7 @@ jobs:
         sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 16064k/' lede-source/target/linux/ramips/image/mt7621.mk
         cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
         #修复Device/xiaomi_nand_separate宏缺失,在移植步骤中增加宏定义移植（从lede源码复制相关宏）：
-        cp lede-source/target/linux/ramips/image/xiaomi_nand_separate.mk target/linux/ramips/image/
+        #cp lede-source/target/linux/ramips/image/xiaomi_nand_separate.mk target/linux/ramips/image/
         echo "分区适配：若需调整闪存分区（如扩容根目录），需修改target/linux/ramips/dts/mt7621.dtsi文件，但需谨慎操作以避免固件无法启动,cat查看文件"
         cat target/linux/ramips/dts/mt7621.dtsi
         # 复制小米路由4的配置文件
