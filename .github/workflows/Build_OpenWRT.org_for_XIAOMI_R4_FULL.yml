@@ -49,7 +49,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo -E apt-get -y purge azure-cli* docker* ghc* llvm* ...
+          sudo -E apt-get -y purge azure-cli* docker* ghc* llvm* 
           sudo sed -i 's/^# deb/deb/g' /etc/apt/sources.list || true
           sudo -E apt-get -qq update
           sudo apt install software-properties-common -y || true
