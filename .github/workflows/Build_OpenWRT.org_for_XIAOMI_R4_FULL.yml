@@ -72,7 +72,6 @@ jobs:
 
       - name: Load custom feeds
         run: |
-          echo "src-git qttools https://github.com/openwrt/packages.git;master" >> feeds.conf.default
           [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
           chmod +x $DIY_P1_SH
           cd openwrt
