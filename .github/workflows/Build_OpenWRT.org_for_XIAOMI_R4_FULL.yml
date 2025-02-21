@@ -22,8 +22,6 @@ env:
   DIY_P2_SH: diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
-  UPLOAD_COWTRANSFER: false
-  UPLOAD_WETRANSFER: false
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
@@ -88,35 +86,62 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
           
-      - name: Fix bash syntax
-        run: |
-          size=$((1024 * 1024))
-          echo "Size is $size"
-    
-      - name: Transplant Xiaomi Mi Router 4 support
+
+  
+      - name: Download package
+        id: package
         run: |
           cd openwrt
+          make defconfig
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: Check space usage after download
+        if: (!cancelled())
+        run: df -hT
+
+      - name: SSH connection to Actions
+        uses: P3TERX/ssh2actions@v1.0.0
+        if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
+        env:
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+   
+      - name: Setup and Build OpenWrt for Xiaomi Mi Router 4
+        run: |
+          cd openwrt
+          
+          # Clone the lede-source repository
           git clone https://github.com/coolsnowwolf/lede.git lede-source
+          
+          # Copy DTS file for Xiaomi Mi Router 4
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-          sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 16064k/' lede-source/target/linux/ramips/image/mt7621.mk
+          
+          # Copy mt7621.mk file
           cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
-          echo "分区适配：若需调整闪存分区（如扩容根目录），需修改target/linux/ramips/dts/mt7621.dtsi文件，但需谨慎操作以避免固件无法启动,cat查看文件"
-          cat target/linux/ramips/dts/mt7621.dtsi
-          cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
-          echo "查看配置文件目录"
-          ls target/linux/ramips/image/
+          
+          # Copy base-files
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
-          ls target/linux/ramips/mt7621/
+          
+          # Remove cloned repository to save space
           rm -rf lede-source
-          echo "检查 target/linux/ramips/image/mt7621.mk 文件中是否定义了小米路由4的固件生成规则：grep -A4 "define Device/xiaomi_mi-router-4" target/linux/ramips/image/mt7621.mk"
-          grep -A4 "define Device/xiaomi_mi-router-4" target/linux/ramips/image/mt7621.mk
-          echo "cat检查内核分区表兼容性,确认移植的 DTS 文件 mt7621_xiaomi_mi-router-4.dts 中的分区表定义与 OpenWrt 官方源码的生成脚本兼容"
-          cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          sed -i 's/$(Device\/xiaomi_nand_separate)//g' target/linux/ramips/image/mt7621.mk
+          
+          # Modify IMAGE_SIZE to 16064k in mt7621.mk
           sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 16064k/g' target/linux/ramips/image/mt7621.mk
+          
+          # Remove unnecessary Xiaomi NAND separate device definition
+          sed -i 's/$(Device\/xiaomi_nand_separate)//g' target/linux/ramips/image/mt7621.mk
+          
+          # Add DEVICE_VENDOR and DEVICE_PACKAGES for Xiaomi Mi Router 4
           sed -i '/define Device\/xiaomi_mi-router-4/a\  DEVICE_VENDOR := Xiaomi\n  DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3' target/linux/ramips/image/mt7621.mk
+          
+          # Adjust DTS partition size to 16MB (0x1000000) for consistency with IMAGE_SIZE
+          sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x1000000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
+          
+          # Check and define partitions in DTS if not present
           if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
-            echo "❌ 分区未定义，正在修复..."
+            echo "❌ Partition not defined, fixing..."
             sed -i '/partitions {/a\
               compatible = "fixed-partitions";\
               #address-cells = <1>;\
@@ -138,31 +163,20 @@ jobs:
             };\
             partition@50000 {\
               label = "firmware";\
-              reg = <0x50000 0xfb0000>;\
+              reg = <0x50000 0x1000000>;\
             };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           else
-            echo "✅ 分区定义存在"
+            echo "✅ Partition definition exists"
           fi
           
-      - name: Download package
-        id: package
-        run: |
-          cd openwrt
-          make defconfig
-          make download -j8
-          find dl -size -1024c -exec ls -l {} \;
-          find dl -size -1024c -exec rm -f {} \;
-
-      - name: Check space usage after download
-        if: (!cancelled())
-        run: df -hT
-
-      - name: SSH connection to Actions
-        uses: P3TERX/ssh2actions@v1.0.0
-        if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
-        env:
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          # Verify modifications (optional debugging)
+          echo "Checking device definition in mt7621.mk:"
+          grep -A10 "define Device/xiaomi_mi-router-4" target/linux/ramips/image/mt7621.mk
+          echo "Checking DTS file:"
+          cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
+          
+          # Clean and compile
+          make target/linux/clean
           
       - name: Compile the firmware
         id: compile
@@ -240,23 +254,6 @@ jobs:
             exit 1
           fi
 
-      - name: Upload firmware to cowtransfer
-        id: cowtransfer
-        if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
-        run: |
-          curl -fsSL git.io/file-transfer | sh
-          ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
-          echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-          echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
-
-      - name: Upload firmware to WeTransfer
-        id: wetransfer
-        if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true'
-        run: |
-          curl -fsSL git.io/file-transfer | sh
-          ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-          echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-          echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
 
       - name: Generate release tag
         id: generate_release_tag
@@ -264,8 +261,6 @@ jobs:
         run: |
           echo "release_tag=OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           touch release.txt
-          [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
-          [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
           echo "release_tag_status=success" >> $GITHUB_OUTPUT
           echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
 
