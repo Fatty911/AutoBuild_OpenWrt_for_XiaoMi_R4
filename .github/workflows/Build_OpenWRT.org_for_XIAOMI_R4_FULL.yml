@@ -127,8 +127,9 @@ jobs:
           # Remove cloned repository to save space
           rm -rf lede-source
           
-          # Modify IMAGE_SIZE to 16064k in mt7621.mk
-          sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 16064k/g' target/linux/ramips/image/mt7621.mk
+          # Modify IMAGE_SIZE to 61440k (60MB) in mt7621.mk
+          sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 61440k/g' target/linux/ramips/image/mt7621.mk
+          sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 61440k/g' target/linux/ramips/image/mt7621.mk
           
           # Remove unnecessary Xiaomi NAND separate device definition
           sed -i 's/$(Device\/xiaomi_nand_separate)//g' target/linux/ramips/image/mt7621.mk
@@ -136,8 +137,9 @@ jobs:
           # Add DEVICE_VENDOR and DEVICE_PACKAGES for Xiaomi Mi Router 4
           sed -i '/define Device\/xiaomi_mi-router-4/a\  DEVICE_VENDOR := Xiaomi\n  DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3' target/linux/ramips/image/mt7621.mk
           
-          # Adjust DTS partition size to 16MB (0x1000000) for consistency with IMAGE_SIZE
-          sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x1000000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
+          # Adjust DTS partition size to 60MB (0x3c00000) for firmware
+          sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x3c00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
+          sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x3c00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           
           # Check and define partitions in DTS if not present
           if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
@@ -163,7 +165,7 @@ jobs:
             };\
             partition@50000 {\
               label = "firmware";\
-              reg = <0x50000 0x1000000>;\
+              reg = <0x50000 0x3c00000>;\
             };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           else
             echo "✅ Partition definition exists"
