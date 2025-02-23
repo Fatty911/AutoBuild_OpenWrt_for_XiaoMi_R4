@@ -176,9 +176,14 @@ jobs:
           grep -A10 "define Device/xiaomi_mi-router-4" target/linux/ramips/image/mt7621.mk
           echo "Checking DTS file:"
           cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          
-          # Clean and compile
-          make target/linux/clean
+
+          echo "检查CONFIG_TARGET_ROOTFS_PARTSIZE是否被正确赋值"
+          echo "CONFIG_TARGET_ROOTFS_PARTSIZE=${CONFIG_TARGET_ROOTFS_PARTSIZE}"
+          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-128} * 1024 * 1024 )))|' openwrt/target/linux/ramips/image/Makefile
+          echo "检查openwrt/target/linux/ramips/image/Makefile脚本中的ROOTFS_PARTSIZE是否被正确赋值，先备份再检查修改后的差异"
+          cp openwrt/target/linux/ramips/image/Makefile openwrt/target/linux/ramips/image/Makefile.bak
+          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-128} * 1024 * 1024 )))|' openwrt/target/linux/ramips/image/Makefile
+          diff openwrt/target/linux/ramips/image/Makefile.bak openwrt/target/linux/ramips/image/Makefile
           
       - name: Compile the firmware
         id: compile
