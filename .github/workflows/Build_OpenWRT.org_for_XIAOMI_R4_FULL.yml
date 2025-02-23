@@ -86,6 +86,7 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
           
+          
 
   
       - name: Download package
@@ -179,11 +180,11 @@ jobs:
 
           echo "检查CONFIG_TARGET_ROOTFS_PARTSIZE是否被正确赋值"
           echo "CONFIG_TARGET_ROOTFS_PARTSIZE=${CONFIG_TARGET_ROOTFS_PARTSIZE}"
-          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-128} * 1024 * 1024 )))|' openwrt/target/linux/ramips/image/Makefile
-          echo "检查openwrt/target/linux/ramips/image/Makefile脚本中的ROOTFS_PARTSIZE是否被正确赋值，先备份再检查修改后的差异"
-          cp openwrt/target/linux/ramips/image/Makefile openwrt/target/linux/ramips/image/Makefile.bak
-          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-128} * 1024 * 1024 )))|' openwrt/target/linux/ramips/image/Makefile
-          diff openwrt/target/linux/ramips/image/Makefile.bak openwrt/target/linux/ramips/image/Makefile
+          #sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-128} * 1024 * 1024 )))|' openwrt/target/linux/ramips/image/Makefile
+          echo "检查openwrt/include/image.mk脚本中的ROOTFS_PARTSIZE是否被正确赋值，先备份再检查修改后的差异"
+          cp openwrt/include/image.mk openwrt/include/image.mk.bak
+          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-60} * 1024 * 1024 )))|' openwrt/include/image.mk
+          diff openwrt/include/image.mk.bak openwrt/include/image.mk
           
       - name: Compile the firmware
         id: compile
