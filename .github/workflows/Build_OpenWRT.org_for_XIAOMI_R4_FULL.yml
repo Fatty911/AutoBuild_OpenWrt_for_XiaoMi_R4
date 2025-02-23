@@ -178,9 +178,9 @@ jobs:
           
           # Fix ROOTFS_PARTSIZE in include/image.mk to 110MB
           echo "Fixing ROOTFS_PARTSIZE=110MB in include/image.mk先备份再修改再对比差异"
-          cp openwrt/include/image.mk openwrt/include/image.mk.bak
-          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' openwrt/include/image.mk
-          diff openwrt/include/image.mk.bak openwrt/include/image.mk || echo "No changes made to include/image.mk"
+          cp include/image.mk include/image.mk.bak
+          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
+          diff include/image.mk.bak include/image.mk || echo "No changes made to include/image.mk"
           
           # Verify modifications
           echo "Checking device definition in mt7621.mk:"
