@@ -85,16 +85,19 @@ jobs:
           chmod +x $DIY_P2_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
-          # 添加调试输出，确认配置
-          echo "Checking CONFIG_TARGET_ROOTFS_PARTSIZE in .config:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, adding default" && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
-          # Run make defconfig to apply the config
+          echo "Before defconfig, setting CONFIG_TARGET_ROOTFS_PARTSIZE:"
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
           make defconfig
+          echo "After defconfig, checking CONFIG_TARGET_ROOTFS_PARTSIZE:"
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Lost after defconfig, reapplying..." && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config)
+          echo "Final check after reapplication:"
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
       - name: Checking .config After diy-part2.sh
         run: |
           cd openwrt
           echo "After diy-part2.sh, checking .config:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit" && exit 1
+          #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
 
   
       - name: Download package
@@ -181,6 +184,7 @@ jobs:
           fi
           
           # Fix ROOTFS_PARTSIZE in include/image.mk to 110MB
+          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
           # echo "Fixing ROOTFS_PARTSIZE=110MB in include/image.mk先备份再修改再对比差异"
           # cp include/image.mk include/image.mk.bak
           # sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
