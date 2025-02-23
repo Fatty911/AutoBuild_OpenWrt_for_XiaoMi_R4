@@ -14,12 +14,11 @@
 #sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
 
 # Add a feed source
+echo "src-git qttools https://github.com/openwrt/packages.git;master" >> feeds.conf.default
+echo "src-git lucihttp https://github.com/openwrt/packages.git" >> feeds.conf.default
 echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
 echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 echo 'src-git OpenClash https://github.com/vernesong/OpenClash' >>feeds.conf.default
 echo 'src-git small8 https://github.com/kenzok8/small-package' >>feeds.conf.default
 #echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
-#echo 'src-git liuran001_packages https://github.com/liuran001/openwrt-packages' >>feeds.conf.default
-echo 'src-git haiibo https://github.com/haiibo/openwrt-packages' >>feeds.conf.default
-echo "src-git qttools https://github.com/openwrt/packages.git;master" >> feeds.conf.default
-echo "src-git lucihttp https://github.com/openwrt/packages.git" >> feeds.conf.default
+
