@@ -78,6 +78,12 @@ jobs:
       - name: Update feeds and Install feeds
         run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
+      - name: Patch luci-lib-taskd Makefile
+        run: |
+          cd openwrt/feeds/small8/luci-lib-taskd
+          sed -i 's/DEPENDS:=.*$/DEPENDS:=+taskd>=1.0.3-1 +libc +luci-lib-xterm +luci-lua-runtime/' Makefile
+          cat Makefile  # Debug: Show the modified Makefile
+          
       - name: Load custom configuration
         run: |
           [ -e files ] && mv files openwrt/files
@@ -217,7 +223,8 @@ jobs:
           echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
           
           echo -e "$(nproc) thread compile"
-          make -j$(nproc) V=Sc || make -j1 || make -j1 V=s && df -hT || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' $GITHUB_WORKSPACE/openwrt/feeds/packages/lang/python/python3/Makefile
+          make -j$(nproc) || make -j$(nproc) V=Sc || make -j1 V=s 
+          #&& df -hT || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' $GITHUB_WORKSPACE/openwrt/feeds/packages/lang/python/python3/Makefile
           echo "status=success" >> $GITHUB_OUTPUT
           
           KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
