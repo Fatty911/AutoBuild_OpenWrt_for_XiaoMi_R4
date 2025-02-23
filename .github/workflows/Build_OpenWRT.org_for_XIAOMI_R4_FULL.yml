@@ -90,7 +90,11 @@ jobs:
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, adding default" && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
           # Run make defconfig to apply the config
           make defconfig
-          
+      - name: Checking .config After diy-part2.sh
+        run: |
+          cd openwrt
+          echo "After diy-part2.sh, checking .config:"
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit" && exit 1
 
   
       - name: Download package
