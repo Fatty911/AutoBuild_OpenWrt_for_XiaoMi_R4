@@ -78,11 +78,37 @@ jobs:
       - name: Update feeds and Install feeds
         run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-      - name: Patch luci-lib-taskd Makefile
+      # - name: Patch luci-lib-taskd Makefile
+      #   run: |
+      #     cd openwrt/feeds/small8/luci-lib-taskd
+      #     sed -i 's/DEPENDS:=.*$/DEPENDS:=+taskd +libc +luci-lib-xterm +luci-lua-runtime/' Makefile
+      # #     cat Makefile  # Debug: Show the modified Makefile
+      
+      - name: Fix Makefile package version formats 
         run: |
-          cd openwrt/feeds/small8/luci-lib-taskd
-          sed -i 's/DEPENDS:=.*$/DEPENDS:=+taskd +libc +luci-lib-xterm +luci-lua-runtime/' Makefile
-      #     cat Makefile  # Debug: Show the modified Makefile
+          cd openwrt
+          # 处理 PKG_VERSION:=a.b.c-d 的情况
+          echo "Checking for PKG_VERSION with hyphen..."
+          find . -name "Makefile" | while read -r makefile; do
+            if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+              echo "Found target in $makefile"
+              sed -i -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+              echo "Modified $makefile:"
+              grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+            fi
+          done
+          # 处理 DEPENDS:=+package>=x.y.z[-n] 的情况
+          echo "Checking for DEPENDS with version constraints..."
+          find . -name "Makefile" | while read -r makefile; do
+            if grep -q "DEPENDS:=.*\+[^[:space:]]\+>=[0-9]\+\.[0-9]\+\.[0-9]\+\(-[0-9]\+\)\?" "$makefile"; then
+              echo "Found DEPENDS target in $makefile"
+              # 使用 sed 去除 >=x.y.z[-n] 部分，保留包名
+              sed -i -E 's/(\+[^[:space:]]+)(>=[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?)/\1/g' "$makefile"
+              echo "Modified $makefile (DEPENDS):"
+              grep "DEPENDS:=" "$makefile"
+            fi
+          done
+          echo "All Makefiles processed."
           
       - name: Load custom configuration
         run: |
