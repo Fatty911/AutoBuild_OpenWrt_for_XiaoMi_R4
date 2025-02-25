@@ -78,11 +78,11 @@ jobs:
       - name: Update feeds and Install feeds
         run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-      - name: Patch luci-lib-taskd Makefile
-        run: |
-          cd openwrt/feeds/small8/luci-lib-taskd
-          sed -i 's/DEPENDS:=.*$/DEPENDS:=+taskd>=1.0.3-1 +libc +luci-lib-xterm +luci-lua-runtime/' Makefile
-          cat Makefile  # Debug: Show the modified Makefile
+      # - name: Patch luci-lib-taskd Makefile
+      #   run: |
+      #     cd openwrt/feeds/small8/luci-lib-taskd
+      #     sed -i 's/DEPENDS:=.*$/DEPENDS:=+taskd>=1.0.3-1 +libc +luci-lib-xterm +luci-lua-runtime/' Makefile
+      #     cat Makefile  # Debug: Show the modified Makefile
           
       - name: Load custom configuration
         run: |
