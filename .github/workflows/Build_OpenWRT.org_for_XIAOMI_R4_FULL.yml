@@ -97,25 +97,25 @@ jobs:
               grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
             fi
           done
-          # 处理 DEPENDS:=+package>=x.y.z[-n] 的情况
+           # 处理 DEPENDS、EXTRA_DEPENDS、LUCI_DEPENDS、LUCI_EXTRA_DEPENDS 中的版本约束
           echo "Checking for DEPENDS with version constraints..."
           find . -name "Makefile" | while read -r makefile; do
-            if grep -q "DEPENDS:=.*\+[^[:space:]]\+>=[0-9]\+\.[0-9]\+\.[0-9]\+\(-[0-9]\+\)\?" "$makefile"; then
+            if grep -q -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):.*\+[^[:space:]]\+>=[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?" "$makefile"; then
               echo "Found DEPENDS target in $makefile"
-              # 使用 sed 去除 >=x.y.z[-n] 部分，保留包名
-              sed -i -E 's/(\+[^[:space:]]+)(>=[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?)/\1/g' "$makefile"
+              sed -i -E 's/(\+[a-zA-Z0-9_-]+)(>=[0-9]+\.[0-9]+\.[0-9]+(-[0-9]+)?)/\1/g' "$makefile"
               echo "Modified $makefile (DEPENDS):"
-              grep "DEPENDS:=" "$makefile"
+              grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile"
             fi
           done
-          # 强制修复 luci-lib-taskd 的 DEPENDS
-            luci_lib_taskd_makefile="feeds/small8/luci-lib-taskd/Makefile"
-            if [ -f "$luci_lib_taskd_makefile" ]; then
-              echo "Forcing fix on $luci_lib_taskd_makefile"
-              sed -i 's/DEPENDS:=.*$/DEPENDS:=+taskd +libc +luci-lib-xterm +luci-lua-runtime/' "$luci_lib_taskd_makefile"
-              echo "Final $luci_lib_taskd_makefile (DEPENDS):"
-              grep "DEPENDS:=" "$luci_lib_taskd_makefile"
-            fi
+           # 强制修复 luci-lib-taskd 的 DEPENDS 并清理重复
+          luci_lib_taskd_makefile="feeds/small8/luci-lib-taskd/Makefile"
+          if [ -f "$luci_lib_taskd_makefile" ]; then
+            echo "Forcing fix on $luci_lib_taskd_makefile"
+            sed -i 's/LUCI_DEPENDS:=.*$/LUCI_DEPENDS:=+taskd +libc +luci-lib-xterm +luci-lua-runtime/' "$luci_lib_taskd_makefile"
+            sed -i 's/LUCI_EXTRA_DEPENDS:=.*$/LUCI_EXTRA_DEPENDS:=/' "$luci_lib_taskd_makefile"
+            echo "Final $luci_lib_taskd_makefile (DEPENDS):"
+            grep -E "(LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$luci_lib_taskd_makefile"
+          fi
           echo "All Makefiles processed."
           
       - name: Load custom configuration
@@ -139,11 +139,15 @@ jobs:
           #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
           
-      - name: Clean and compile luci-lib-taskd
+      # - name: Clean and compile luci-lib-taskd
+      #   run: |
+      #     cd openwrt
+      #     make package/feeds/small8/luci-lib-taskd/clean
+      #     make package/feeds/small8/luci-lib-taskd/compile V=s || (cat feeds/small8/luci-lib-taskd/Makefile && exit 1)
+      - name: Clean build cache
         run: |
           cd openwrt
-          make package/feeds/small8/luci-lib-taskd/clean
-          make package/feeds/small8/luci-lib-taskd/compile V=s || (cat feeds/small8/luci-lib-taskd/Makefile && exit 1)
+          make dirclean
   
       - name: Download package
         id: package
