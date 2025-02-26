@@ -183,11 +183,10 @@ jobs:
           #cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
           cat << 'EOF' > target/linux/ramips/image/mt7621.mk
           # MT7621 Profiles
-          DEFAULT_SOC := mt7621
-          
+          DEFAULT_SOC := mt7621 
           define Image/Prepare
-              rm -f \$(KDIR)/ubi_mark
-              echo -ne '\xde\xad\xc0\xde' > \$(KDIR)/ubi_mark
+            rm -f \$(KDIR)/ubi_mark
+            echo -ne '\xde\xad\xc0\xde' > \$(KDIR)/ubi_mark
           endef
           
           define Device/nand
