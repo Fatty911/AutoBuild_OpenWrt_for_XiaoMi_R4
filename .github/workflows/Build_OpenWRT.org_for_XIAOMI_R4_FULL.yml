@@ -251,7 +251,22 @@ jobs:
           cd openwrt
           make package/feeds/small8/luci-app-store/clean
           make package/feeds/small8/luci-lib-taskd/clean    
-          make package/feeds/small8/luci-app-istorex/clean    
+          make package/feeds/small8/luci-app-istorex/clean  
+      - name: Fix luci-app-store version and clean cache
+        run: |
+          cd openwrt
+          # 强制修复 luci-app-store Makefile
+          if grep -q "PKG_VERSION:=0.1.27-4" feeds/small8/luci-app-store/Makefile; then
+            sed -i 's/PKG_VERSION:=0.1.27-4/PKG_VERSION:=0.1.27\nPKG_RELEASE:=4/' feeds/small8/luci-app-store/Makefile
+            echo "Fixed luci-app-store Makefile:"
+            grep -E "PKG_VERSION|PKG_RELEASE" feeds/small8/luci-app-store/Makefile
+          fi
+          # 清理缓存
+          make package/feeds/small8/luci-app-store/clean
+          # 修补 apk mkpkg 调用
+          PKG_VERSION=$(grep "PKG_VERSION:=" feeds/small8/luci-app-store/Makefile | cut -d'=' -f2)
+          sed -i "s/--info \"version:0.1.27-4\"/--info \"version:${PKG_VERSION}\"/" feeds/luci/luci.mk
+          echo "Patched luci.mk with version: ${PKG_VERSION}"
       - name: Compile the firmware
         id: compile
         run: |
