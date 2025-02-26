@@ -180,8 +180,38 @@ jobs:
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           
           # Copy mt7621.mk file
-          cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
+          #cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
           
+          echo '# MT7621 Profiles
+          DEFAULT_SOC := mt7621
+          define Image/Prepare
+                  rm -f $(KDIR)/ubi_mark
+                  echo -ne '\''\xde\xad\xc0\xde'\'' > $(KDIR)/ubi_mark
+          endef
+          define Device/nand
+            $(Device/dsa-migration)
+            BLOCKSIZE := 128k
+            KERNEL_SIZE := 4096k
+            PAGESIZE := 2048
+            UBINIZE_OPTS := -E 5
+            IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+          endef
+          define Device/xiaomi_nand_separate
+            $(Device/nand)
+            $(Device/uimage-lzma-loader)
+            DEVICE_VENDOR := Xiaomi
+            IMAGES += kernel1.bin rootfs0.bin
+            IMAGE/kernel1.bin := append-kernel
+            IMAGE/rootfs0.bin := append-ubi | check-size
+          endef
+          define Device/xiaomi_mi-router-4
+            $(Device/xiaomi_nand_separate)
+            DEVICE_MODEL := Mi Router 4
+            IMAGE_SIZE := 112640k
+            DEVICE_PACKAGES += kmod-mt7603 kmod-mt76x2
+          endef
+          TARGET_DEVICES += xiaomi_mi-router-4' > target/linux/ramips/image/mt7621.mk
+    
           # Copy base-files
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
           
