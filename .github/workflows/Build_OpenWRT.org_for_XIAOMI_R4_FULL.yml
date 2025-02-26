@@ -144,10 +144,10 @@ jobs:
       #     cd openwrt
       #     make package/feeds/small8/luci-lib-taskd/clean
       #     make package/feeds/small8/luci-lib-taskd/compile V=s || (cat feeds/small8/luci-lib-taskd/Makefile && exit 1)
-      - name: Clean build cache
-        run: |
-          cd openwrt
-          make dirclean
+      # - name: Clean build cache
+      #   run: |
+      #     cd openwrt
+      #     make dirclean
   
       - name: Download package
         id: package
@@ -246,7 +246,12 @@ jobs:
           cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           echo "Checking CONFIG_TARGET_ROOTFS_PARTSIZE in .config:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found in .config"
-          
+      - name: Clean build cache
+        run: |
+          cd openwrt
+          make package/feeds/small8/luci-app-store/clean
+          make package/feeds/small8/luci-lib-taskd/clean    
+          make package/feeds/small8/luci-app-istorex/clean    
       - name: Compile the firmware
         id: compile
         run: |
