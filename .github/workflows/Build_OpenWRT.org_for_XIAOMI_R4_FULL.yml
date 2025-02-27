@@ -216,8 +216,7 @@ jobs:
           endef
           TARGET_DEVICES += xiaomi_mi-router-4
           EOF
-​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
-          # 验证文件内容
+​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​          # 验证文件内容
           cat target/linux/ramips/image/mt7621.mk
           
           # Copy base-files
