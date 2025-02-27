@@ -181,7 +181,7 @@ jobs:
           
           # Copy mt7621.mk file
           #cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
-          cat > target/linux/ramips/image/mt7621.mk << 'EOF'
+          cat > target/linux/ramips/image/mt7621.mk<<EOF
           # MT7621 Profiles
           DEFAULT_SOC := mt7621
           
