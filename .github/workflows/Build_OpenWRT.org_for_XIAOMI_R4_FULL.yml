@@ -327,12 +327,16 @@ jobs:
       - name: Fix luci-app-store version and clean cache
         run: |
           cd openwrt
-          # 强制修复 luci-app-store Makefile
-          if grep -q "PKG_VERSION:=0.1.27-4" feeds/small8/luci-app-store/Makefile; then
-            sed -i 's/PKG_VERSION:=0.1.27-4/PKG_VERSION:=0.1.27\nPKG_RELEASE:=4/' feeds/small8/luci-app-store/Makefile
-            echo "Fixed luci-app-store Makefile:"
-            grep -E "PKG_VERSION|PKG_RELEASE" feeds/small8/luci-app-store/Makefile
-          fi
+          # # 强制修复 luci-app-store Makefile
+          # if grep -q "PKG_VERSION:=0.1.27-4" feeds/small8/luci-app-store/Makefile; then
+          #   sed -i 's/PKG_VERSION:=0.1.27-4/PKG_VERSION:=0.1.27\nPKG_RELEASE:=4/' feeds/small8/luci-app-store/Makefile
+          #   echo "Fixed luci-app-store Makefile:"
+          #   grep -E "PKG_VERSION|PKG_RELEASE" feeds/small8/luci-app-store/Makefile
+          # fi
+          
+          find feeds/small8/luci-app-store/ -name "Makefile" -print0 | while IFS= read -r -d $'\0' file; do
+            sed -i 's|^  \+\([^[:space:]]\)|	\1|g' "$file"
+          done
           # 清理缓存
           make V=sc package/feeds/small8/luci-app-store/clean
           # 修补 apk mkpkg 调用
