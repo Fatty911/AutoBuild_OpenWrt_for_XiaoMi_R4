@@ -270,6 +270,8 @@ jobs:
           grep -r "image-prereq" target/linux/ || echo "Not found in target/linux"
           echo "Searching for 'image-prereq' in include:"
           grep -r "image-prereq" include/ || echo "Not found in include"
+          cat -A target/linux/ramips/image/Makefile
+
       - name: Debug Makefile Includes
         run: |
           cd openwrt  # 进入OpenWRT源码目录
@@ -279,7 +281,7 @@ jobs:
           function find_includes {
               local file="$1"
               echo "Processing $file"
-              cat "$file"
+              cat -A "$file"
               echo "----------------------------------------"
               
               # Extract include lines
