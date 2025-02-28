@@ -324,12 +324,6 @@ jobs:
           echo "Line 22 vicinity:"
           sed -n '18,26p' include/kernel-build.mk
     
-      - name: Clean build cache
-        run: |
-          cd openwrt
-          make package/feeds/small8/luci-app-store/clean
-          make package/feeds/small8/luci-lib-taskd/clean
-          make package/feeds/small8/luci-app-istorex/clean  
       - name: Fix luci-app-store version and clean cache
         run: |
           cd openwrt
@@ -340,7 +334,7 @@ jobs:
             grep -E "PKG_VERSION|PKG_RELEASE" feeds/small8/luci-app-store/Makefile
           fi
           # 清理缓存
-          make package/feeds/small8/luci-app-store/clean
+          make V=sc package/feeds/small8/luci-app-store/clean
           # 修补 apk mkpkg 调用
           PKG_VERSION=$(grep "PKG_VERSION:=" feeds/small8/luci-app-store/Makefile | cut -d'=' -f2)
           sed -i "s/--info \"version:0.1.27-4\"/--info \"version:${PKG_VERSION}\"/" feeds/luci/luci.mk
@@ -364,7 +358,7 @@ jobs:
           echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
           
           echo -e "$(nproc) thread compile"
-          make -j$(nproc) || make -j$(nproc) V=Sc || make -j1 V=s 
+          make -j$(nproc) V=Sc || make -j1 V=Sc 
           #&& df -hT || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' $GITHUB_WORKSPACE/openwrt/feeds/packages/lang/python/python3/Makefile
           echo "status=success" >> $GITHUB_OUTPUT
           
