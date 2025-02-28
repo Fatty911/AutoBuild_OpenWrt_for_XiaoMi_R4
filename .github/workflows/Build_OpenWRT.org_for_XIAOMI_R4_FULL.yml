@@ -138,17 +138,6 @@ jobs:
           echo "After diy-part2.sh, checking .config:"
           #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
-          
-      # - name: Clean and compile luci-lib-taskd
-      #   run: |
-      #     cd openwrt
-      #     make package/feeds/small8/luci-lib-taskd/clean
-      #     make package/feeds/small8/luci-lib-taskd/compile V=s || (cat feeds/small8/luci-lib-taskd/Makefile && exit 1)
-      # - name: Clean build cache
-      #   run: |
-      #     cd openwrt
-      #     make dirclean
-  
       - name: Download package
         id: package
         run: |
@@ -275,6 +264,14 @@ jobs:
           grep -r "image-prereq" target/linux/ || echo "Not found in target/linux"
           echo "Searching for 'image-prereq' in include:"
           grep -r "image-prereq" include/ || echo "Not found in include"
+      - name: Debug Kernel Build Makefile
+        run: |
+          cd openwrt
+          echo "Contents of include/kernel-build.mk:"
+          cat include/kernel-build.mk
+          echo "Line 22 vicinity:"
+          sed -n '18,26p' include/kernel-build.mk
+    
       - name: Clean build cache
         run: |
           cd openwrt
