@@ -168,7 +168,6 @@ jobs:
         env:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          
       - name: Setup and Build OpenWrt for Xiaomi Mi Router 4
         run: |
           cd openwrt
@@ -179,44 +178,47 @@ jobs:
           # Copy DTS file for Xiaomi Mi Router 4
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           
-          # Define corrected mt7621.mk with strict syntax
-          cat > target/linux/ramips/image/mt7621.mk <<'EOF'
+          # Define corrected mt7621.mk
+          tee target/linux/ramips/image/mt7621.mk <<'EOF'
           # MT7621 Profiles
           DEFAULT_SOC := mt7621
           define Image/Prepare
-              rm -f $$(KDIR)/ubi_mark
-              echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
-          endef
+            rm -f $$(KDIR)/ubi_mark
+            echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
+          endef 
           define Device/nand
-              $$(Device/dsa-migration)
-              BLOCKSIZE := 128k
-              KERNEL_SIZE := 4096k
-              PAGESIZE := 2048
-              UBINIZE_OPTS := -E 5
-              IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+            $$(Device/dsa-migration)
+            BLOCKSIZE := 128k
+            KERNEL_SIZE := 4096k
+            PAGESIZE := 2048
+            UBINIZE_OPTS := -E 5
+            IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
           endef
           define Device/xiaomi_nand_separate
-              $$(Device/nand)
-              $$(Device/uimage-lzma)
-              DEVICE_VENDOR := Xiaomi
-              IMAGES += kernel1.bin rootfs0.bin
-              IMAGE/kernel1.bin := append-kernel
-              IMAGE/rootfs0.bin := append-ubi | check-size
+            $$(Device/nand)
+            $$(Device/uimage-lzma)
+            DEVICE_VENDOR := Xiaomi
+            IMAGES += kernel1.bin rootfs0.bin
+            image_kernel1.bin := append-kernel
+            image_rootfs0.bin := append-ubi | check-size
           endef
           define Device/xiaomi_mi-router-4
-              $$(Device/xiaomi_nand_separate)
-              DEVICE_NAME := Mi Router 4
-              IMAGE_SIZE := 111279k
-              DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3
+            $$(Device/xiaomi_nand_separate)
+            DEVICE_NAME := Mi Router 4
+            IMAGE_SIZE := 111279k
+            DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3
           endef
           TARGET_DEVICES += xiaomi_mi-router-4
           EOF
-          
           # Copy base-files
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
           
           # Remove cloned repository to save space
           rm -rf lede-source
+          
+          # Modify IMAGE_SIZE to 111279k in mt7621.mk
+          sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
+          sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
           
           # Adjust DTS partition size to 114MB (0x6e00000) for firmware
           sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
@@ -253,7 +255,7 @@ jobs:
           fi
           
           # Fix ROOTFS_PARTSIZE in include/image.mk to 110MB
-          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
+          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
           
           # Verify modifications
           echo "Checking device definition in mt7621.mk:"
@@ -262,17 +264,6 @@ jobs:
           cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           echo "Checking CONFIG_TARGET_ROOTFS_PARTSIZE in .config:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found in .config"
-
-      - name: Debug Makefile Before Clean
-        run: |
-          cd openwrt
-          echo "Contents of target/linux/ramips/image/mt7621.mk:"
-          cat target/linux/ramips/image/mt7621.mk
-          echo "Contents of target/linux/ramips/image/Makefile:"
-          cat target/linux/ramips/image/Makefile || echo "File not found"
-          echo "Searching for 'image-prereq' in target/linux/ramips:"
-          grep -r "image-prereq" target/linux/ramips/ || echo "Not found"
-
       - name: Clean build cache
         run: |
           cd openwrt
