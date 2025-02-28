@@ -168,7 +168,6 @@ jobs:
         env:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-   
       - name: Setup and Build OpenWrt for Xiaomi Mi Router 4
         run: |
           cd openwrt
@@ -179,8 +178,7 @@ jobs:
           # Copy DTS file for Xiaomi Mi Router 4
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           
-          # Copy mt7621.mk file
-          #cp lede-source/target/linux/ramips/image/mt7621.mk target/linux/ramips/image/
+          # Define corrected mt7621.mk
           tee target/linux/ramips/image/mt7621.mk <<'EOF'
           # MT7621 Profiles
           DEFAULT_SOC := mt7621
@@ -198,7 +196,7 @@ jobs:
           endef
           define Device/xiaomi_nand_separate
             $$(Device/nand)
-            $$(Device/uimage-lzma-loader)
+            $$(Device/uimage-lzma)  # Corrected from uimage-lzma-loader
             DEVICE_VENDOR := Xiaomi
             IMAGES += kernel1.bin rootfs0.bin
             IMAGE/kernel1.bin := append-kernel
@@ -206,31 +204,20 @@ jobs:
           endef
           define Device/xiaomi_mi-router-4
             $$(Device/xiaomi_nand_separate)
-            DEVICE_MODEL := Mi Router 4
-            IMAGE_SIZE := 112640k
-            DEVICE_PACKAGES += kmod-mt7603 kmod-mt76x2
+            DEVICE_NAME := Mi Router 4  # Changed from DEVICE_MODEL to DEVICE_NAME
+            IMAGE_SIZE := 111279k       # Adjusted to fit 114MB partition (see note below)
+            DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3  # Consolidated here
           endef
           TARGET_DEVICES += xiaomi_mi-router-4
           EOF
+          
           # Copy base-files
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
           
           # Remove cloned repository to save space
           rm -rf lede-source
           
-          # Modify IMAGE_SIZE to 61440k (60MB) in mt7621.mk
-          sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 112640k/g' target/linux/ramips/image/mt7621.mk
-          sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 112640k/g' target/linux/ramips/image/mt7621.mk
-          
-          # Remove unnecessary Xiaomi NAND separate device definition
-          #sed -i 's/$(Device\/xiaomi_nand_separate)//g' target/linux/ramips/image/mt7621.mk
-          
-          # Add DEVICE_VENDOR and DEVICE_PACKAGES for Xiaomi Mi Router 4
-          #sed -i '/define Device\/xiaomi_mi-router-4/a\  DEVICE_VENDOR := Xiaomi\n  DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3' target/linux/ramips/image/mt7621.mk
-          sed -i 's/$(Device\/xiaomi_nand_separate)//g' target/linux/ramips/image/mt7621.mk
-          sed -i '/DEVICE_PACKAGES += kmod-mt7603 kmod-mt76x2/d' target/linux/ramips/image/mt7621.mk
-          sed -i '/define Device\/xiaomi_mi-router-4/a\	DEVICE_VENDOR := Xiaomi\n	DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3' target/linux/ramips/image/mt7621.mk
-          # Adjust DTS partition size to 60MB (0x3c00000) for firmware
+          # Adjust DTS partition size to 114MB (0x6e00000) for firmware
           sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           
@@ -266,10 +253,6 @@ jobs:
           
           # Fix ROOTFS_PARTSIZE in include/image.mk to 110MB
           sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
-          # echo "Fixing ROOTFS_PARTSIZE=110MB in include/image.mk先备份再修改再对比差异"
-          # cp include/image.mk include/image.mk.bak
-          # sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
-          # diff include/image.mk.bak include/image.mk || echo "No changes made to include/image.mk"
           
           # Verify modifications
           echo "Checking device definition in mt7621.mk:"
