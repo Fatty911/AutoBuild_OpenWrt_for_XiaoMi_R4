@@ -264,6 +264,17 @@ jobs:
           cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           echo "Checking CONFIG_TARGET_ROOTFS_PARTSIZE in .config:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found in .config"
+      - name: Debug Makefile Contents
+        run: |
+          cd openwrt
+          echo "Contents of target/linux/ramips/image/Makefile:"
+          cat target/linux/ramips/image/Makefile || echo "File not found"
+          echo "Contents of target/linux/ramips/image/mt7621.mk:"
+          cat target/linux/ramips/image/mt7621.mk
+          echo "Searching for 'image-prereq' in target/linux:"
+          grep -r "image-prereq" target/linux/ || echo "Not found in target/linux"
+          echo "Searching for 'image-prereq' in include:"
+          grep -r "image-prereq" include/ || echo "Not found in include"
       - name: Clean build cache
         run: |
           cd openwrt
