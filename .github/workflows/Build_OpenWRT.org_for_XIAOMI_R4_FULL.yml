@@ -276,15 +276,27 @@ jobs:
           # 将脚本保存到文件
           cat > debug_includes.sh << 'EOF'
           #!/bin/bash
-          # (在此粘贴上面的脚本内容)
           function find_includes {
               local file="$1"
               echo "Processing $file"
               cat "$file"
               echo "----------------------------------------"
+              
+              # Extract include lines
               includes=$(grep -E '^include ' "$file" | sed 's/include //')
+              
               for inc in $includes; do
-                  inc_path=$(dirname "$file")/$inc
+                  # Handle includes with variables
+                  if [[ "$inc" == "\$(TOPDIR)/"* ]]; then
+                      inc_path="${inc#\$(TOPDIR)/}"  # e.g., rules.mk
+                  elif [[ "$inc" == "\$(INCLUDE_DIR)/"* ]]; then
+                      inc_path="include/${inc#\$(INCLUDE_DIR)/}"  # e.g., include/image.mk
+                  elif [[ "$inc" == "\$(SUBTARGET).mk" ]]; then
+                      inc_path="target/linux/ramips/image/mt7621.mk"  # Assuming SUBTARGET=mt7621
+                  else
+                      inc_path=$(dirname "$file")/$inc
+                  fi
+                  
                   if [ -f "$inc_path" ]; then
                       find_includes "$inc_path"
                   else
@@ -292,6 +304,7 @@ jobs:
                   fi
               done
           }
+          
           main_makefile="target/linux/ramips/image/Makefile"
           if [ -f "$main_makefile" ]; then
               find_includes "$main_makefile"
