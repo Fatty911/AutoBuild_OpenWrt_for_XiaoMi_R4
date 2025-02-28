@@ -263,14 +263,14 @@ jobs:
         run: |
           cd openwrt
           echo "Contents of target/linux/ramips/image/Makefile:"
-          cat target/linux/ramips/image/Makefile || echo "File not found"
+          cat -A target/linux/ramips/image/Makefile || echo "File not found"
           echo "Contents of target/linux/ramips/image/mt7621.mk:"
-          cat target/linux/ramips/image/mt7621.mk
+          cat -A target/linux/ramips/image/mt7621.mk
           echo "Searching for 'image-prereq' in target/linux:"
           grep -r "image-prereq" target/linux/ || echo "Not found in target/linux"
           echo "Searching for 'image-prereq' in include:"
           grep -r "image-prereq" include/ || echo "Not found in include"
-          cat -A target/linux/ramips/image/Makefile
+
 
       - name: Debug Makefile Includes
         run: |
@@ -320,7 +320,7 @@ jobs:
         run: |
           cd openwrt
           echo "Contents of include/kernel-build.mk:"
-          cat include/kernel-build.mk
+          cat -A include/kernel-build.mk
           echo "Line 22 vicinity:"
           sed -n '18,26p' include/kernel-build.mk
     
@@ -328,18 +328,19 @@ jobs:
         run: |
           cd openwrt
           # 强制修复 luci-app-store Makefile
-          if grep -q "PKG_VERSION:=0.1.27-4" feeds/small8/luci-app-store/Makefile; then
-            sed -i 's/PKG_VERSION:=0.1.27-4/PKG_VERSION:=0.1.27\nPKG_RELEASE:=4/' feeds/small8/luci-app-store/Makefile
-            echo "Fixed luci-app-store Makefile:"
-            grep -E "PKG_VERSION|PKG_RELEASE" feeds/small8/luci-app-store/Makefile
-          fi
+          # if grep -q "PKG_VERSION:=0.1.27-4" feeds/small8/luci-app-store/Makefile; then
+          #   sed -i 's/PKG_VERSION:=0.1.27-4/PKG_VERSION:=0.1.27\nPKG_RELEASE:=4/' feeds/small8/luci-app-store/Makefile
+          #   echo "Fixed luci-app-store Makefile:"
+          #   grep -E "PKG_VERSION|PKG_RELEASE" feeds/small8/luci-app-store/Makefile
+          # fi
           
 
           # 递归查找 openwrt 目录下所有名为 Makefile 的文件
-          find . -type f -name "Makefile" | while read -r file; do
+          find . -type f \( -name "Makefile" -o -name "*.mk" \)  | while read -r file; do
               # 备份原始文件（可选）
               cp "$file" "$file.bak"
-              
+              # 修改 PKG_VERSION: 去掉 -d 部分
+              sed -i 's/^PKG_VERSION:=\([0-9.]\+\)-\([0-9]\+\)/PKG_VERSION:=\1/' "$file"
               # 使用 sed 替换每行开头的空格为制表符
               sed -i 's|^  \+\([^[:space:]]\)|	\1|g' "$file"
               
