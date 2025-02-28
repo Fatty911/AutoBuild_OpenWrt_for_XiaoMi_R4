@@ -350,11 +350,18 @@ jobs:
           done
           # 清理缓存
           #make V=sc package/feeds/small8/luci-app-store/clean
-          make target/linux/clean V=sc
+
           # 修补 apk mkpkg 调用
           PKG_VERSION=$(grep "PKG_VERSION:=" feeds/small8/luci-app-store/Makefile | cut -d'=' -f2)
           sed -i "s/--info \"version:0.1.27-4\"/--info \"version:${PKG_VERSION}\"/" feeds/luci/luci.mk
           echo "Patched luci.mk with version: ${PKG_VERSION}"
+
+          sed -i 's|^  \+\([^[:space:]]\)|	\1|g' feeds/small8/luci-app-store/Makefile
+          cat -A feeds/small8/luci-app-store/Makefile | sed -n '230p'
+
+          make target/linux/clean V=sc
+
+          
       - name: Compile the firmware
         id: compile
         run: |
