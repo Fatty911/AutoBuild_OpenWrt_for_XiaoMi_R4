@@ -168,45 +168,46 @@ jobs:
         env:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          
       - name: Setup and Build OpenWrt for Xiaomi Mi Router 4
         run: |
           cd openwrt
           
           # Clone the lede-source repository
-          git clone https://github.com/coolsnowwolf/lede.git lede-source
+          git clone https://github.com/coolsnowwolf/lede git lede-source
           
           # Copy DTS file for Xiaomi Mi Router 4
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           
           # Define corrected mt7621.mk
-          tee target/linux/ramips/image/mt7621.mk <<'EOF'
+          cat > target/linux/ramips/image/mt7621.mk <<'EOF'
           # MT7621 Profiles
           DEFAULT_SOC := mt7621
           define Image/Prepare
             rm -f $$(KDIR)/ubi_mark
             echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
-          endef 
+          endef
           define Device/nand
             $$(Device/dsa-migration)
             BLOCKSIZE := 128k
             KERNEL_SIZE := 4096k
             PAGESIZE := 2048
             UBINIZE_OPTS := -E 5
-            IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+            image_sysupgrade.bin := sysupgrade-tar | append-metadata
           endef
           define Device/xiaomi_nand_separate
             $$(Device/nand)
-            $$(Device/uimage-lzma)  # Corrected from uimage-lzma-loader
+            $$(Device/uimage-lzma)
             DEVICE_VENDOR := Xiaomi
             IMAGES += kernel1.bin rootfs0.bin
-            IMAGE/kernel1.bin := append-kernel
-            IMAGE/rootfs0.bin := append-ubi | check-size
+            image_kernel1.bin := append-kernel
+            image_rootfs0.bin := append-ubi | check-size
           endef
           define Device/xiaomi_mi-router-4
             $$(Device/xiaomi_nand_separate)
-            DEVICE_NAME := Mi Router 4  # Changed from DEVICE_MODEL to DEVICE_NAME
-            IMAGE_SIZE := 111279k       # Adjusted to fit 114MB partition (see note below)
-            DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3  # Consolidated here
+            DEVICE_NAME := Mi Router 4
+           IMAGE_SIZE := 111279k
+            DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3
           endef
           TARGET_DEVICES += xiaomi_mi-router-4
           EOF
@@ -229,12 +230,12 @@ jobs:
               #address-cells = <1>;\
               #size-cells = <1>;\
             partition@0 {\
-              label = "u-boot";\
+              label = "u-boott";\
               reg = <0x0 0x30000>;\
               read-only;\
             };\
             partition@30000 {\
-              label = "u-boot-env";\
+              label = "u-boott-en";\
               reg = <0x30000 0x10000>;\
               read-only;\
             };\
