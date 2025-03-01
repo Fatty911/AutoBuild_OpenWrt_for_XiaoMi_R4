@@ -267,57 +267,57 @@ jobs:
           grep -r "image-prereq" include/ || echo "Not found in include"
 
 
-      - name: Debug Makefile Includes
-        run: |
-          cd openwrt  # 进入OpenWRT源码目录
-          # 将脚本保存到文件
-          cat > debug_includes.sh << 'EOF'
-          #!/bin/bash
-          function find_includes {
-              local file="$1"
-              echo "Processing $file"
-              cat -A "$file"
-              echo "----------------------------------------"
+      # - name: Debug Makefile Includes
+      #   run: |
+      #     cd openwrt  # 进入OpenWRT源码目录
+      #     # 将脚本保存到文件
+      #     cat > debug_includes.sh << 'EOF'
+      #     #!/bin/bash
+      #     function find_includes {
+      #         local file="$1"
+      #         echo "Processing $file"
+      #         cat -A "$file"
+      #         echo "----------------------------------------"
               
-              # Extract include lines
-              includes=$(grep -E '^include ' "$file" | sed 's/include //')
+      #         # Extract include lines
+      #         includes=$(grep -E '^include ' "$file" | sed 's/include //')
               
-              for inc in $includes; do
-                  # Handle includes with variables
-                  if [[ "$inc" == "\$(TOPDIR)/"* ]]; then
-                      inc_path="${inc#\$(TOPDIR)/}"  # e.g., rules.mk
-                  elif [[ "$inc" == "\$(INCLUDE_DIR)/"* ]]; then
-                      inc_path="include/${inc#\$(INCLUDE_DIR)/}"  # e.g., include/image.mk
-                  elif [[ "$inc" == "\$(SUBTARGET).mk" ]]; then
-                      inc_path="target/linux/ramips/image/mt7621.mk"  # Assuming SUBTARGET=mt7621
-                  else
-                      inc_path=$(dirname "$file")/$inc
-                  fi
+      #         for inc in $includes; do
+      #             # Handle includes with variables
+      #             if [[ "$inc" == "\$(TOPDIR)/"* ]]; then
+      #                 inc_path="${inc#\$(TOPDIR)/}"  # e.g., rules.mk
+      #             elif [[ "$inc" == "\$(INCLUDE_DIR)/"* ]]; then
+      #                 inc_path="include/${inc#\$(INCLUDE_DIR)/}"  # e.g., include/image.mk
+      #             elif [[ "$inc" == "\$(SUBTARGET).mk" ]]; then
+      #                 inc_path="target/linux/ramips/image/mt7621.mk"  # Assuming SUBTARGET=mt7621
+      #             else
+      #                 inc_path=$(dirname "$file")/$inc
+      #             fi
                   
-                  if [ -f "$inc_path" ]; then
-                      find_includes "$inc_path"
-                  else
-                      echo "Warning: $inc_path not found"
-                  fi
-              done
-          }
+      #             if [ -f "$inc_path" ]; then
+      #                 find_includes "$inc_path"
+      #             else
+      #                 echo "Warning: $inc_path not found"
+      #             fi
+      #         done
+      #     }
           
-          main_makefile="target/linux/ramips/image/Makefile"
-          if [ -f "$main_makefile" ]; then
-              find_includes "$main_makefile"
-          else
-              echo "Main Makefile not found: $main_makefile"
-          fi
-          EOF
-          chmod +x debug_includes.sh  # 赋予执行权限
-          ./debug_includes.sh  # 运行脚本
-      - name: Debug Kernel Build Makefile
-        run: |
-          cd openwrt
-          echo "Contents of include/kernel-build.mk:"
-          cat -A include/kernel-build.mk
-          echo "Line 22 vicinity:"
-          sed -n '18,26p' include/kernel-build.mk
+      #     main_makefile="target/linux/ramips/image/Makefile"
+      #     if [ -f "$main_makefile" ]; then
+      #         find_includes "$main_makefile"
+      #     else
+      #         echo "Main Makefile not found: $main_makefile"
+      #     fi
+      #     EOF
+      #     chmod +x debug_includes.sh  # 赋予执行权限
+      #     ./debug_includes.sh  # 运行脚本
+      # - name: Debug Kernel Build Makefile
+      #   run: |
+      #     cd openwrt
+      #     echo "Contents of include/kernel-build.mk:"
+      #     cat -A include/kernel-build.mk
+      #     echo "Line 22 vicinity:"
+      #     sed -n '18,26p' include/kernel-build.mk
     
       - name: Fix luci-app-store version and clean cache
         run: |
