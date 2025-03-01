@@ -338,7 +338,8 @@ jobs:
               sed -i 's/^PKG_VERSION:=\([0-9.]\+\)-\([0-9]\+\)/PKG_VERSION:=\1/' "$file"
               # 使用 sed 替换每行开头的空格为制表符
               sed -i '/^define/,/^endef/! s|^  \+\([^[:space:]]\)|	\1|g' "$file"
-              
+              #删除 endef 前的所有空格和制表符，确保 endef 位于行首
+              sed -i '/^[[:space:]]*endef/s/^[[:space:]]\+//' "$file"
               # 打印已处理的文件路径
               echo "已修复并cat -A查看: $file "
               cat -A $file
