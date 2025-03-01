@@ -337,7 +337,7 @@ jobs:
               # 修改 PKG_VERSION: 去掉 -d 部分
               sed -i 's/^PKG_VERSION:=\([0-9.]\+\)-\([0-9]\+\)/PKG_VERSION:=\1/' "$file"
               # 使用 sed 替换每行开头的空格为制表符
-              sed -i 's|^  \+\([^[:space:]]\)|	\1|g' "$file"
+              sed -i '/^define/,/^endef/! s|^  \+\([^[:space:]]\)|	\1|g' "$file"
               
               # 打印已处理的文件路径
               echo "已修复并cat -A查看: $file "
