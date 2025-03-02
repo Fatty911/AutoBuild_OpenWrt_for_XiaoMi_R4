@@ -255,6 +255,7 @@ jobs:
           diff Makefile Makefile.bak
           echo "查看 Makefile 第 225 到 235 行："
           sed -n '225,235p' Makefile
+          cat -A Makefile
 
 
 
