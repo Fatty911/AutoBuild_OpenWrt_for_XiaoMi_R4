@@ -293,6 +293,19 @@ jobs:
           else
             echo "第231行已有 Tab 缩进"
           fi
+          #由于错误与 target/linux 和 image-prereq 相关，检查以下文件：target/linux/ramips/image/Makefile（您的配置是 ramips/mt7621）。
+          file="target/linux/ramips/image/Makefile"
+          if [ -f "$file" ]; then
+            lines=$(wc -l < "$file")
+            if [ $lines -ge 230 ]; then
+              echo "$file has $lines lines."
+              echo "Lines 225-235:"
+              sed -n '225,235p' "$file" | cat -A
+            else
+              echo "$file has only $lines lines."
+            fi
+          fi
+          find build_dir -name Makefile -exec bash -c 'file="{}"; lines=$(wc -l < "$file"); if [ $lines -ge 230 ]; then echo "$file has $lines lines."; echo "Line 230:"; sed -n "230p" "$file" | cat -A; fi' \;
 
 
 
@@ -406,7 +419,12 @@ jobs:
           echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
           
           echo -e "$(nproc) thread compile"
-          make -j$(nproc) V=Sc || make -j5 V=Sc || make -j3 V=Sc|| make -j1 V=Sc 
+          #make -j$(nproc) V=Sc || make -j5 V=Sc || make -j3 V=Sc|| make -j1 V=Sc 
+          
+          make -j$(nproc) V=s MAKEFLAGS=-d || true > debug.log 2>&1
+          
+          cat -A debug.log
+          
           #&& df -hT || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' $GITHUB_WORKSPACE/openwrt/feeds/packages/lang/python/python3/Makefile
           echo "status=success" >> $GITHUB_OUTPUT
           
