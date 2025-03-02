@@ -306,7 +306,8 @@ jobs:
             fi
           fi
           find build_dir -name Makefile -exec bash -c 'file="{}"; lines=$(wc -l < "$file"); if [ $lines -ge 230 ]; then echo "$file has $lines lines."; echo "Line 230:"; sed -n "230p" "$file" | cat -A; fi' \;
-
+          sed -i '/^define Image\/Prepare/,/^endef/ s/^  /\t/' target/linux/ramips/image/mt7621.mk
+          cat -A target/linux/ramips/image/mt7621.mk
 
 
       # - name: Debug Makefile Includes
