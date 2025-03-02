@@ -283,6 +283,16 @@ jobs:
           else
             echo "第230行不是预期内容，请检查完整上下文"
           fi
+          echo "检查 include/toplevel.mk 第231行缩进："
+          sed -n '231p' include/toplevel.mk | cat -A
+          if ! sed -n '231p' include/toplevel.mk | grep -q '^\t'; then
+            echo "第231行缺少 Tab 缩进，开始修复..."
+            cp include/toplevel.mk include/toplevel.mk.bak
+            sed -i '231s/^[\t ]*/\t/' include/toplevel.mk
+            diff include/toplevel.mk include/toplevel.mk.bak || echo "无变化"
+          else
+            echo "第231行已有 Tab 缩进"
+          fi
 
 
 
