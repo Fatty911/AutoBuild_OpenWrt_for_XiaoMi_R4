@@ -273,6 +273,17 @@ jobs:
             fi
           done  
 
+          echo "检查 rules.mk 第230行缩进："
+          sed -n '230p' rules.mk | cat -A  # 显示 Tab (^I) 和换行符 ($)
+          if sed -n '230p' rules.mk | grep -q '^-include'; then
+            echo "第230行是 -include，开始修复..."
+            cp rules.mk rules.mk.bak
+            sed -i '230s/^\t*//' rules.mk  # 移除开头的 Tab
+            diff rules.mk rules.mk.bak || echo "无变化"
+          else
+            echo "第230行不是预期内容，请检查完整上下文"
+          fi
+
 
 
       # - name: Debug Makefile Includes
