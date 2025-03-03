@@ -119,29 +119,39 @@ jobs:
           # Combined Task 2 & 3: Handle DEPENDS, EXTRA_DEPENDS, LUCI_DEPENDS, LUCI_EXTRA_DEPENDS
           # - Keep versioned dependencies (e.g., +aaa>=x.y.z) over unversioned duplicates (e.g., +aaa)
           echo "Checking for DEPENDS duplicates, keeping versioned forms..."
-          find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec awk '
-            BEGIN { FS = "[[:space:]]+" }
-            /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
-              line = $0
-              split($0, deps, " ")
-              seen = ""
-              result = $1  # Preserve DEPENDS:=, EXTRA_DEPENDS:=, etc.
-              for (i = 2; i <= length(deps); i++) {
-                dep = deps[i]
-                bare = gensub(/\+([^>=]+).*/, "\\1", "1", dep)  # Extract base name (e.g., "taskd" from "+taskd>=1.0.3-1")
-                if (match(dep, />=/)) {  # Versioned dependency
-                  if (seen !~ bare) result = result " " dep
-                  sub("\\+" bare "[[:space:]]+", "", seen)  # Remove unversioned form if present
-                } else if (seen !~ bare) {  # Unversioned dependency, only add if not seen
-                  result = result " " dep
-                  seen = seen " " bare
+          find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+            makefile="$1"
+            awk '\''BEGIN { FS = "[[:space:]]+" }
+              /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                modified=1  # Flag to indicate changes
+                split($0, deps, " ")
+                seen = ""
+                result = $1  # Preserve DEPENDS:=, etc.
+                for (i = 2; i <= length(deps); i++) {
+                  dep = deps[i]
+                  bare = gensub(/\+([^>=]+).*/, "\\1", "1", dep)
+                  if (match(dep, />=/)) {
+                    if (seen !~ bare) result = result " " dep
+                    sub("\\+" bare "[[:space:]]+", "", seen)
+                  } else if (seen !~ bare) {
+                    result = result " " dep
+                    seen = seen " " bare
+                  }
                 }
+                print result
+                next
               }
-              print result
-              next
-            }
-            { print }
-          ' {} > {}.tmp \; -exec sh -c 'mv "$1.tmp" "$1"' _ {} \;
+              { print }
+            '\'' "$makefile" > "$makefile.tmp"
+            # Only move if the file was modified and the tmp file exists
+            if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+              echo "Modified $makefile (dependencies updated):"
+              grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+              mv "$makefile.tmp" "$makefile"
+            else
+              rm -f "$makefile.tmp"  # Remove tmp file if no changes
+            fi
+          ' _ {} \;
 
           echo "All Makefiles processed."
       - name: Download package
