@@ -119,24 +119,24 @@ jobs:
           echo "Checking for DEPENDS duplicates, keeping versioned forms..."
           find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
             makefile="$1"
-            awk '
+            awk '\'' # Use single quotes for awk script, escaped within sh -c
             BEGIN { FS = "[[:space:]]+" }
-            {
+            /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
                 modified=1
                 split($0, deps, " ")
                 seen_versioned = ""
                 seen_bare = ""
-                result = $1
+                result = $1 # Preserve the field like "DEPENDS:="
                 for (i = 2; i <= length(deps); i++) {
                     dep = deps[i]
-                    bare = gensub(/([+>=].*)/, "", "1", dep)
-                    if (match(dep, />=/)) { # 版本化依赖
+                    bare = gensub(/([+>=].*)/, "", "1", dep) # Strip version info
+                    if (match(dep, />=/)) { # Versioned dependency (e.g., pkg>=1.2)
                         if (seen_versioned !~ bare) {
                             result = result " " dep
                             seen_versioned = seen_versioned " " bare
-                            sub("[[:space:]]+" bare "[[:space:]]+", "", seen_bare) # 从 seen_bare 中移除，表示版本化优先
+                            sub("[[:space:]]+" bare "[[:space:]]+", "", seen_bare) # Remove bare version if versioned exists
                         }
-                    } else { # 非版本化依赖
+                    } else { # Non-versioned dependency
                         if (seen_versioned !~ bare && seen_bare !~ bare) {
                             result = result " " dep
                             seen_bare = seen_bare " " bare
@@ -144,10 +144,10 @@ jobs:
                     }
                 }
                 print result
-                next
+                next # Skip to next line after processing dependency
             }
-            { print }
-            ' "$makefile" > "$makefile.tmp"
+            { print } # Print all other lines unchanged
+            '\'' "$makefile" > "$makefile.tmp"
             if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
               echo "Modified $makefile (dependencies updated):"
               grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
@@ -156,8 +156,6 @@ jobs:
               rm -f "$makefile.tmp"
             fi
           ' _ {} \;
-
-
           echo "All Makefiles processed."
       - name: Download package
         id: package
