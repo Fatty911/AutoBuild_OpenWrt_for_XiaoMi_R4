@@ -239,13 +239,7 @@ jobs:
           # Fix ROOTFS_PARTSIZE in include/image.mk to 110MB
           sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
           
-          # Verify modifications
-          # echo "Checking device definition in mt7621.mk:"
-          # grep -A10 "define Device/xiaomi_mi-router-4" target/linux/ramips/image/mt7621.mk
-          # echo "Checking DTS file:"
-          # cat target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          # echo "Checking CONFIG_TARGET_ROOTFS_PARTSIZE in .config:"
-          # grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found in .config"
+
       - name: Debug Makefile Contents
         run: |
           cd openwrt
@@ -308,99 +302,7 @@ jobs:
           find build_dir -name Makefile -exec bash -c 'file="{}"; lines=$(wc -l < "$file"); if [ $lines -ge 230 ]; then echo "$file has $lines lines."; echo "Line 230:"; sed -n "230p" "$file" | cat -A; fi' \;
           sed -i '/^define Image\/Prepare/,/^endef/ s/^  /\t/' target/linux/ramips/image/mt7621.mk
           cat -A target/linux/ramips/image/mt7621.mk
-
-
-      # - name: Debug Makefile Includes
-      #   run: |
-      #     cd openwrt  # 进入OpenWRT源码目录
-      #     # 将脚本保存到文件
-      #     cat > debug_includes.sh << 'EOF'
-      #     #!/bin/bash
-      #     function find_includes {
-      #         local file="$1"
-      #         echo "Processing $file"
-      #         cat -A "$file"
-      #         echo "----------------------------------------"
-              
-      #         # Extract include lines
-      #         includes=$(grep -E '^include ' "$file" | sed 's/include //')
-              
-      #         for inc in $includes; do
-      #             # Handle includes with variables
-      #             if [[ "$inc" == "\$(TOPDIR)/"* ]]; then
-      #                 inc_path="${inc#\$(TOPDIR)/}"  # e.g., rules.mk
-      #             elif [[ "$inc" == "\$(INCLUDE_DIR)/"* ]]; then
-      #                 inc_path="include/${inc#\$(INCLUDE_DIR)/}"  # e.g., include/image.mk
-      #             elif [[ "$inc" == "\$(SUBTARGET).mk" ]]; then
-      #                 inc_path="target/linux/ramips/image/mt7621.mk"  # Assuming SUBTARGET=mt7621
-      #             else
-      #                 inc_path=$(dirname "$file")/$inc
-      #             fi
-                  
-      #             if [ -f "$inc_path" ]; then
-      #                 find_includes "$inc_path"
-      #             else
-      #                 echo "Warning: $inc_path not found"
-      #             fi
-      #         done
-      #     }
-          
-      #     main_makefile="target/linux/ramips/image/Makefile"
-      #     if [ -f "$main_makefile" ]; then
-      #         find_includes "$main_makefile"
-      #     else
-      #         echo "Main Makefile not found: $main_makefile"
-      #     fi
-      #     EOF
-      #     chmod +x debug_includes.sh  # 赋予执行权限
-      #     ./debug_includes.sh  # 运行脚本
-      # - name: Debug Kernel Build Makefile
-      #   run: |
-      #     cd openwrt
-      #     echo "Contents of include/kernel-build.mk:"
-      #     cat -A include/kernel-build.mk
-      #     echo "Line 22 vicinity:"
-      #     sed -n '18,26p' include/kernel-build.mk
-    
-      # - name: Fix luci-app-store version and clean cache
-      #   run: |
-      #     cd openwrt
-      #     # 强制修复 luci-app-store Makefile
-      #     # if grep -q "PKG_VERSION:=0.1.27-4" feeds/small8/luci-app-store/Makefile; then
-      #     #   sed -i 's/PKG_VERSION:=0.1.27-4/PKG_VERSION:=0.1.27\nPKG_RELEASE:=4/' feeds/small8/luci-app-store/Makefile
-      #     #   echo "Fixed luci-app-store Makefile:"
-      #     #   grep -E "PKG_VERSION|PKG_RELEASE" feeds/small8/luci-app-store/Makefile
-      #     # fi
-          
-
-      #     # 递归查找 openwrt 目录下所有Makefile 文件
-      #     find . -type f \( -name "Makefile" -o -name "*.mk" \) -not -path "*tmp*" | while read -r file; do
-      #         # 备份原始文件（可选）
-      #         cp "$file" "$file.bak"
-      #         # 修改 PKG_VERSION: 去掉 -d 部分
-      #         sed -i 's/^PKG_VERSION:=\([0-9.]\+\)-\([0-9]\+\)/PKG_VERSION:=\1/' "$file"
-      #         # 使用 sed 替换每行开头的空格为制表符
-      #         sed -i '/^define/,/^endef/! s|^  \+\([^[:space:]]\)|	\1|g' "$file"
-      #         #删除 endef 前的所有空格和制表符，确保 endef 位于行首
-      #         sed -i '/^[[:space:]]*endef/s/^[[:space:]]\+//' "$file"
-      #         # 打印已处理的文件路径
-      #         echo "已修复并cat -A查看: $file "
-      #         cat -A $file
-      #     done
-      #     # 清理缓存
-      #     #make V=sc package/feeds/small8/luci-app-store/clean
-
-      #     # 修补 apk mkpkg 调用
-      #     # PKG_VERSION=$(grep "PKG_VERSION:=" feeds/small8/luci-app-store/Makefile | cut -d'=' -f2)
-      #     # sed -i "s/--info \"version:0.1.27-4\"/--info \"version:${PKG_VERSION}\"/" feeds/luci/luci.mk
-      #     # echo "Patched luci.mk with version: ${PKG_VERSION}"
-
-      #     # sed -i 's|^  \+\([^[:space:]]\)|	\1|g' feeds/small8/luci-app-store/Makefile
-      #     # cat -A feeds/small8/luci-app-store/Makefile | sed -n '230p'
-
-      #     # make target/linux/clean V=sc
-
-          
+         
       - name: Compile the firmware
         id: compile
         run: |
