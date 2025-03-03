@@ -128,7 +128,6 @@ jobs:
                 result = $1 # Preserve the field like "DEPENDS:="
                 for (i = 2; i <= length(deps); i++) {
                     dep = deps[i]
-                    print "DEBUG: dep=" dep
                     bare = gensub(/([+>=].*)/, "", "1", dep) # Strip version info
                     if (match(dep, />=/)) { # Versioned dependency (e.g., pkg>=1.2)
                         if (seen_versioned !~ bare) {
