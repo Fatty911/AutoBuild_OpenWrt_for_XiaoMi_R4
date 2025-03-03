@@ -130,14 +130,14 @@ jobs:
                 result = $1 # Retain field name, e.g., "DEPENDS:="
                 for (i = 2; i <= length(deps); i++) {
                     dep = deps[i]
-                    # Safely extract bare package name
-                    bare = gensub(/^\+(.+?)(>=.*)?$/, "\\1", "1", dep)
+                    # Safely extract bare package name using substring
+                    bare = substr(dep, 2, match(dep, /[+>=]|$/)-2)
+                    if (bare == "") bare = dep # Fallback if no match
                     if (match(dep, />=/)) { # Versioned dependency, e.g., pkg>=1.2
                         if (seen_versioned !~ bare) {
                             result = result " " dep
                             seen_versioned = seen_versioned " " bare
-                            # Remove bare dependency if versioned exists
-                            gsub(" *" bare " *", " ", seen_bare)
+                            gsub(" *" bare " *", " ", seen_bare) # Remove bare version if versioned exists
                         }
                     } else { # Bare dependency
                         if (seen_versioned !~ bare && seen_bare !~ bare) {
