@@ -100,11 +100,11 @@ jobs:
           #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
       
-      - name: Fix Makefile package version formats 
+      - name: Fix Makefile package version formats PKG_VERSION
         run: |
           cd openwrt
           # 处理 PKG_VERSION:=a.b.c-d 的情况
-          # Task 1: Handle PKG_VERSION with hyphen (e.g., a.b.c-d)
+          # Task : Handle PKG_VERSION with hyphen (e.g., a.b.c-d)
           echo "Checking for PKG_VERSION with hyphen..."
           find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
             if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
@@ -114,8 +114,10 @@ jobs:
               grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
             fi
           done
-
-          # Combined Task 2 & 3: Handle DEPENDS, keeping versioned forms
+          
+      - name: Fix Makefile package version formats Handle DEPENDS, keeping versioned forms
+        run: |
+          cd openwrt
           echo "Checking for DEPENDS duplicates, keeping versioned forms..."
           find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
             makefile="$1"
@@ -125,17 +127,19 @@ jobs:
                 split($0, deps, " ")
                 seen_versioned = ""
                 seen_bare = ""
-                result = $1 # Preserve the field like "DEPENDS:="
+                result = $1 # 保留字段名称，如 "DEPENDS:="
                 for (i = 2; i <= length(deps); i++) {
                     dep = deps[i]
-                    bare = gensub(/([+>=].*)/, "", "1", dep) # Strip version info
-                    if (match(dep, />=/)) { # Versioned dependency (e.g., pkg>=1.2)
+                    # 更安全地提取裸包名
+                    bare = gensub(/\+(.+?)(>=.*)?$/, "\\1", "1", dep)
+                    if (match(dep, />=/)) { # 版本化依赖，例如 pkg>=1.2
                         if (seen_versioned !~ bare) {
                             result = result " " dep
                             seen_versioned = seen_versioned " " bare
-                            sub("[[:space:]]*" bare "[[:space:]]*", "", seen_bare) # Remove bare version if versioned exists
+                            # 如果存在版本化依赖，移除裸依赖
+                            gsub(" *" bare " *", " ", seen_bare)
                         }
-                    } else { # Non-versioned dependency
+                    } else { # 无版本依赖
                         if (seen_versioned !~ bare && seen_bare !~ bare) {
                             result = result " " dep
                             seen_bare = seen_bare " " bare
@@ -143,9 +147,9 @@ jobs:
                     }
                 }
                 print result
-                next # Skip to next line after processing dependency
+                next # 处理完依赖后跳到下一行
             }
-            { print } # Print all other lines unchanged
+            { print } # 其他行保持不变
             '\'' "$makefile" > "$makefile.tmp"
             if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
               echo "Modified $makefile (dependencies updated):"
@@ -156,6 +160,7 @@ jobs:
             fi
           ' _ {} \;
           echo "All Makefiles processed."
+          
       - name: Download package
         id: package
         run: |
