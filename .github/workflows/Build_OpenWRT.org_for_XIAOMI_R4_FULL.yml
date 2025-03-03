@@ -119,28 +119,35 @@ jobs:
           echo "Checking for DEPENDS duplicates, keeping versioned forms..."
           find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
             makefile="$1"
-            awk '\''BEGIN { FS = "[[:space:]]+" }
-              /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+            awk '
+            BEGIN { FS = "[[:space:]]+" }
+            {
                 modified=1
                 split($0, deps, " ")
-                seen = ""
+                seen_versioned = ""
+                seen_bare = ""
                 result = $1
                 for (i = 2; i <= length(deps); i++) {
-                  dep = deps[i]
-                  bare = gensub(/\\+([^>=]+).*/, "\\\\1", "1", dep)
-                  if (match(dep, />=/)) {
-                    if (seen !~ bare) result = result " " dep
-                    sub("\\\\+" bare "[[:space:]]+", "", seen)
-                  } else if (seen !~ bare) {
-                    result = result " " dep
-                    seen = seen " " bare
-                  }
+                    dep = deps[i]
+                    bare = gensub(/([+>=].*)/, "", "1", dep)
+                    if (match(dep, />=/)) { # 版本化依赖
+                        if (seen_versioned !~ bare) {
+                            result = result " " dep
+                            seen_versioned = seen_versioned " " bare
+                            sub("[[:space:]]+" bare "[[:space:]]+", "", seen_bare) # 从 seen_bare 中移除，表示版本化优先
+                        }
+                    } else { # 非版本化依赖
+                        if (seen_versioned !~ bare && seen_bare !~ bare) {
+                            result = result " " dep
+                            seen_bare = seen_bare " " bare
+                        }
+                    }
                 }
                 print result
                 next
-              }
-              { print }
-            '\'' "$makefile" > "$makefile.tmp"
+            }
+            { print }
+            ' "$makefile" > "$makefile.tmp"
             if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
               echo "Modified $makefile (dependencies updated):"
               grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
