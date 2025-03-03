@@ -78,6 +78,28 @@ jobs:
         run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
       
+          
+      - name: Load custom configuration
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          chmod +x $DIY_P2_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+          echo "Before defconfig, setting CONFIG_TARGET_ROOTFS_PARTSIZE:"
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
+          make defconfig
+          echo "After defconfig, checking CONFIG_TARGET_ROOTFS_PARTSIZE:"
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Lost after defconfig, reapplying..." && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config)
+          echo "Final check after reapplication:"
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
+      - name: Checking .config After diy-part2.sh
+        run: |
+          cd openwrt
+          echo "After diy-part2.sh, checking .config:"
+          #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
+          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
+      
       - name: Fix Makefile package version formats 
         run: |
           cd openwrt
@@ -102,29 +124,32 @@ jobs:
               grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile"
             fi
           done
+          #!/bin/bash
+          find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec awk '
+            BEGIN { FS = "[[:space:]]+" }
+            /^[[:space:]]*DEPENDS:=/ {
+              line = $0
+              split($0, deps, " ")
+              seen = ""
+              result = "DEPENDS:="
+              for (i = 2; i <= length(deps); i++) {
+                dep = deps[i]
+                bare = gensub(/\+([^>=]+).*/, "\\1", "1", dep)
+                if (match(dep, />=/)) {
+                  if (seen !~ bare) result = result " " dep
+                  sub("\\+" bare "[[:space:]]+", "", seen)
+                } else if (seen !~ bare) {
+                  result = result " " dep
+                  seen = seen " " bare
+                }
+              }
+              print result
+              next
+            }
+            { print }
+          ' {} > {}.tmp && mv {}.tmp {} \;
 
           echo "All Makefiles processed."
-          
-      - name: Load custom configuration
-        run: |
-          [ -e files ] && mv files openwrt/files
-          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-          chmod +x $DIY_P2_SH
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
-          echo "Before defconfig, setting CONFIG_TARGET_ROOTFS_PARTSIZE:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
-          make defconfig
-          echo "After defconfig, checking CONFIG_TARGET_ROOTFS_PARTSIZE:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Lost after defconfig, reapplying..." && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config)
-          echo "Final check after reapplication:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
-      - name: Checking .config After diy-part2.sh
-        run: |
-          cd openwrt
-          echo "After diy-part2.sh, checking .config:"
-          #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
       - name: Download package
         id: package
         run: |
