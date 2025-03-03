@@ -109,27 +109,25 @@ jobs:
           find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
             if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
               echo "Found target in $makefile"
-              # Split PKG_VERSION:=a.b.c-d into PKG_VERSION:=a.b.c and PKG_RELEASE:=d
               sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
               echo "Modified $makefile:"
               grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
             fi
           done
-          
-          # Combined Task 2 & 3: Handle DEPENDS, EXTRA_DEPENDS, LUCI_DEPENDS, LUCI_EXTRA_DEPENDS
-          # - Keep versioned dependencies (e.g., +aaa>=x.y.z) over unversioned duplicates (e.g., +aaa)
+
+          # Combined Task 2 & 3: Handle DEPENDS, keeping versioned forms
           echo "Checking for DEPENDS duplicates, keeping versioned forms..."
           find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
             makefile="$1"
             awk '\''BEGIN { FS = "[[:space:]]+" }
               /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
-                modified=1  # Flag to indicate changes
+                modified=1
                 split($0, deps, " ")
                 seen = ""
-                result = $1  # Preserve DEPENDS:=, etc.
+                result = $1
                 for (i = 2; i <= length(deps); i++) {
                   dep = deps[i]
-                  bare = gensub(/\+([^>=]+).*/, "\\1", "1", dep)
+                  bare = gensub(/\\+([^>=]+).*/, "\\1", "1", dep)
                   if (match(dep, />=/)) {
                     if (seen !~ bare) result = result " " dep
                     sub("\\+" bare "[[:space:]]+", "", seen)
@@ -143,13 +141,12 @@ jobs:
               }
               { print }
             '\'' "$makefile" > "$makefile.tmp"
-            # Only move if the file was modified and the tmp file exists
             if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
               echo "Modified $makefile (dependencies updated):"
               grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
               mv "$makefile.tmp" "$makefile"
             else
-              rm -f "$makefile.tmp"  # Remove tmp file if no changes
+              rm -f "$makefile.tmp"
             fi
           ' _ {} \;
 
