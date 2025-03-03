@@ -119,8 +119,7 @@ jobs:
           echo "Checking for DEPENDS duplicates, keeping versioned forms..."
           find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
             makefile="$1"
-            awk '\'' # Use single quotes for awk script, escaped within sh -c
-            BEGIN { FS = "[[:space:]]+" }
+            awk '\''BEGIN { FS = "[[:space:]]+" }
             /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
                 modified=1
                 split($0, deps, " ")
@@ -129,6 +128,7 @@ jobs:
                 result = $1 # Preserve the field like "DEPENDS:="
                 for (i = 2; i <= length(deps); i++) {
                     dep = deps[i]
+                    print "DEBUG: dep=" dep  # Debug print statement
                     bare = gensub(/([+>=].*)/, "", "1", dep) # Strip version info
                     if (match(dep, />=/)) { # Versioned dependency (e.g., pkg>=1.2)
                         if (seen_versioned !~ bare) {
