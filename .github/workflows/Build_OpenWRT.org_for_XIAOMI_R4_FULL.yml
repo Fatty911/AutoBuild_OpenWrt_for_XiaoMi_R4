@@ -127,10 +127,10 @@ jobs:
                 result = $1
                 for (i = 2; i <= length(deps); i++) {
                   dep = deps[i]
-                  bare = gensub(/\\+([^>=]+).*/, "\\1", "1", dep)
+                  bare = gensub(/\\+([^>=]+).*/, "\\\\1", "1", dep)
                   if (match(dep, />=/)) {
                     if (seen !~ bare) result = result " " dep
-                    sub("\\+" bare "[[:space:]]+", "", seen)
+                    sub("\\\\+" bare "[[:space:]]+", "", seen)
                   } else if (seen !~ bare) {
                     result = result " " dep
                     seen = seen " " bare
@@ -149,6 +149,7 @@ jobs:
               rm -f "$makefile.tmp"
             fi
           ' _ {} \;
+
 
           echo "All Makefiles processed."
       - name: Download package
