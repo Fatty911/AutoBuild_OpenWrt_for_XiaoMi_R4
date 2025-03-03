@@ -130,9 +130,13 @@ jobs:
                 result = $1 # Retain field name, e.g., "DEPENDS:="
                 for (i = 2; i <= length(deps); i++) {
                     dep = deps[i]
-                    # Safely extract bare package name using substring
-                    bare = substr(dep, 2, match(dep, /[+>=]|$/)-2)
-                    if (bare == "") bare = dep # Fallback if no match
+                    # Safely extract bare package name
+                    pos = index(dep, ">=")
+                    if (pos > 0) {
+                        bare = substr(dep, 2, pos-2)
+                    } else {
+                        bare = substr(dep, 2)
+                    }
                     if (match(dep, />=/)) { # Versioned dependency, e.g., pkg>=1.2
                         if (seen_versioned !~ bare) {
                             result = result " " dep
