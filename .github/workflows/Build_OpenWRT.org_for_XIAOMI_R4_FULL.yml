@@ -127,19 +127,19 @@ jobs:
                 split($0, deps, " ")
                 seen_versioned = ""
                 seen_bare = ""
-                result = $1 # 保留字段名称，如 "DEPENDS:="
+                result = $1 # Retain field name, e.g., "DEPENDS:="
                 for (i = 2; i <= length(deps); i++) {
                     dep = deps[i]
-                    # 更安全地提取裸包名
-                    bare = gensub(/\+(.+?)(>=.*)?$/, "\\1", "1", dep)
-                    if (match(dep, />=/)) { # 版本化依赖，例如 pkg>=1.2
+                    # Safely extract bare package name
+                    bare = gensub(/^\+(.+?)(>=.*)?$/, "\\1", "1", dep)
+                    if (match(dep, />=/)) { # Versioned dependency, e.g., pkg>=1.2
                         if (seen_versioned !~ bare) {
                             result = result " " dep
                             seen_versioned = seen_versioned " " bare
-                            # 如果存在版本化依赖，移除裸依赖
+                            # Remove bare dependency if versioned exists
                             gsub(" *" bare " *", " ", seen_bare)
                         }
-                    } else { # 无版本依赖
+                    } else { # Bare dependency
                         if (seen_versioned !~ bare && seen_bare !~ bare) {
                             result = result " " dep
                             seen_bare = seen_bare " " bare
@@ -147,9 +147,9 @@ jobs:
                     }
                 }
                 print result
-                next # 处理完依赖后跳到下一行
+                next # Skip to next line after processing dependencies
             }
-            { print } # 其他行保持不变
+            { print } # Print unchanged lines
             '\'' "$makefile" > "$makefile.tmp"
             if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
               echo "Modified $makefile (dependencies updated):"
