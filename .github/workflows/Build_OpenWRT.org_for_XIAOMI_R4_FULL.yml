@@ -99,71 +99,6 @@ jobs:
           echo "After diy-part2.sh, checking .config:"
           #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
-      
-      - name: Fix Makefile package version formats PKG_VERSION
-        run: |
-          cd openwrt
-          # 处理 PKG_VERSION:=a.b.c-d 的情况
-          # Task : Handle PKG_VERSION with hyphen (e.g., a.b.c-d)
-          echo "Checking for PKG_VERSION with hyphen..."
-          find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
-            if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
-              echo "Found target in $makefile"
-              sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
-              echo "Modified $makefile:"
-              grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
-            fi
-          done
-          
-      - name: Fix Makefile package version formats Handle DEPENDS, keeping versioned forms
-        run: |
-          cd openwrt
-          echo "Checking for DEPENDS duplicates, keeping versioned forms..."
-          find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
-            makefile="$1"
-            awk '\''BEGIN { FS = "[[:space:]]+" }
-            /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
-                modified=1
-                split($0, deps, " ")
-                seen_versioned = ""
-                seen_bare = ""
-                result = $1 # Retain field name, e.g., "DEPENDS:="
-                for (i = 2; i <= length(deps); i++) {
-                    dep = deps[i]
-                    # Safely extract bare package name
-                    pos = index(dep, ">=")
-                    if (pos > 0) {
-                        bare = substr(dep, 2, pos-2)
-                    } else {
-                        bare = substr(dep, 2)
-                    }
-                    if (match(dep, />=/)) { # Versioned dependency, e.g., pkg>=1.2
-                        if (seen_versioned !~ bare) {
-                            result = result " " dep
-                            seen_versioned = seen_versioned " " bare
-                            gsub(" *" bare " *", " ", seen_bare) # Remove bare version if versioned exists
-                        }
-                    } else { # Bare dependency
-                        if (seen_versioned !~ bare && seen_bare !~ bare) {
-                            result = result " " dep
-                            seen_bare = seen_bare " " bare
-                        }
-                    }
-                }
-                print result
-                next # Skip to next line after processing dependencies
-            }
-            { print } # Print unchanged lines
-            '\'' "$makefile" > "$makefile.tmp"
-            if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
-              echo "Modified $makefile (dependencies updated):"
-              grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
-              mv "$makefile.tmp" "$makefile"
-            else
-              rm -f "$makefile.tmp"
-            fi
-          ' _ {} \;
-          echo "All Makefiles processed."
           
       - name: Download package
         id: package
@@ -177,31 +112,41 @@ jobs:
       - name: Check space usage after download
         if: (!cancelled())
         run: df -hT
-
-      - name: SSH connection to Actions
-        uses: P3TERX/ssh2actions@v1.0.0
-        if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
-        env:
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      - name: Setup and Build OpenWrt for Xiaomi Mi Router 4
+      - name: Try compiling the firmware
+        id: compile_attempt
         run: |
           cd openwrt
-          
-          # Clone the lede-source repository
+          echo "Trying to compile the firmware..."
+          # 先编译工具链和 luci-base，避免常见错误
+          make tools/compile V=s
+          make toolchain/compile V=s
+          make package/feeds/luci/luci-base/compile V=s
+          # 尝试直接编译
+          make -j$(nproc) V=s > compile.log 2>&1 || true
+          if [ -f "bin/targets/*/*/*.bin" ]; then
+            echo "Bin file found, compilation successful."
+            echo "status=success" >> $GITHUB_ENV
+          else
+            echo "No bin file found or compilation failed, checking logs..."
+            echo "status=needs_fix" >> $GITHUB_ENV
+          fi
+
+      - name: Perform manual porting for Xiaomi Mi Router 4
+        if: env.status == 'needs_fix' && !exists('openwrt/bin/targets/*/*/*.bin')
+        run: |
+          cd openwrt
+          echo "Performing manual porting for Xiaomi Mi Router 4..."
+          # Clone lede-source for necessary files
           git clone https://github.com/coolsnowwolf/lede lede-source
-          
-          # Copy DTS file for Xiaomi Mi Router 4
+          # Copy DTS file
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-          
-          # Define corrected mt7621.mk
+          # Define mt7621.mk
           tee target/linux/ramips/image/mt7621.mk <<'EOF'
-          # MT7621 Profiles
           DEFAULT_SOC := mt7621
           define Image/Prepare
             rm -f $$(KDIR)/ubi_mark
             echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
-          endef 
+          endef
           define Device/nand
             $$(Device/dsa-migration)
             BLOCKSIZE := 128k
@@ -234,21 +179,16 @@ jobs:
           EOF
           # Copy base-files
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
-          
-          # Remove cloned repository to save space
           rm -rf lede-source
-          
-          # Modify IMAGE_SIZE to 111279k in mt7621.mk
+          # Adjust IMAGE_SIZE
           sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
           sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
-          
-          # Adjust DTS partition size to 114MB (0x6e00000) for firmware
+          # Adjust DTS partition size to 114MB
           sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          
-          # Check and define partitions in DTS if not present
+          # Define partitions if not present
           if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
-            echo "❌ Partition not defined, fixing..."
+            echo "Partition not defined, fixing..."
             sed -i '/partitions {/a\
               compatible = "fixed-partitions";\
               #address-cells = <1>;\
@@ -272,114 +212,91 @@ jobs:
               label = "firmware";\
               reg = <0x50000 0x6e00000>;\
             };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          else
-            echo "✅ Partition definition exists"
           fi
-          
-          # Fix ROOTFS_PARTSIZE in include/image.mk to 110MB
+          # Fix ROOTFS_PARTSIZE
           sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
-          
 
-      - name: Debug Makefile Contents
+      - name: Compile the firmware with fixes
+        id: compile
+        if: env.status == 'success' || env.status == 'needs_fix'
         run: |
           cd openwrt
-          cp Makefile Makefile.bak
-          sed -i '230s/^[\t ]*/\t/' Makefile
-          sed -i "230s/^[\t ]*/\t/" Makefile
-          diff Makefile Makefile.bak
-          echo "查看 Makefile 第 225 到 235 行："
-          sed -n '225,235p' Makefile
-          cat -A Makefile
-
-          files=("target/Makefile" "package/Makefile" "tools/Makefile" "toolchain/Makefile" "include/depends.mk" "include/toplevel.mk" "rules.mk" "tests/Makefile")
-          for file in "${files[@]}"; do
-            if [ -f "$file" ]; then
-              lines=$(wc -l < "$file")
-              if [ $lines -ge 230 ]; then
-                echo "$file has at least 230 lines."
-                echo "Lines 225 to 235 of $file:"
-                sed -n '225,235p' "$file"
-              else
-                echo "$file has only $lines lines."
+          # 检查 PKG_VERSION 错误
+          if grep -q "PKG_VERSION" compile.log; then
+            echo "Fixing PKG_VERSION formats..."
+            find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+              if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                echo "Found target in $makefile"
+                sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+                echo "Modified $makefile:"
+                grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
               fi
-            else
-              echo "$file does not exist."
-            fi
-          done  
-
-          echo "检查 rules.mk 第230行缩进："
-          sed -n '230p' rules.mk | cat -A  # 显示 Tab (^I) 和换行符 ($)
-          if sed -n '230p' rules.mk | grep -q '^-include'; then
-            echo "第230行是 -include，开始修复..."
-            cp rules.mk rules.mk.bak
-            sed -i '230s/^\t*//' rules.mk  # 移除开头的 Tab
-            diff rules.mk rules.mk.bak || echo "无变化"
-          else
-            echo "第230行不是预期内容，请检查完整上下文"
+            done
           fi
-          echo "检查 include/toplevel.mk 第231行缩进："
-          sed -n '231p' include/toplevel.mk | cat -A
-          if ! sed -n '231p' include/toplevel.mk | grep -q '^\t'; then
-            echo "第231行缺少 Tab 缩进，开始修复..."
-            cp include/toplevel.mk include/toplevel.mk.bak
-            sed -i '231s/^[\t ]*/\t/' include/toplevel.mk
-            diff include/toplevel.mk include/toplevel.mk.bak || echo "无变化"
-          else
-            echo "第231行已有 Tab 缩进"
+          # 检查依赖项重复错误
+          if grep -q "DEPENDS" compile.log; then
+            echo "Fixing dependency duplicates..."
+            find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+              makefile="$1"
+              awk '\''BEGIN { FS = "[[:space:]]+" }
+              /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                  split($0, deps, " ")
+                  seen_versioned = ""
+                  seen_bare = ""
+                  result = $1
+                  for (i = 2; i <= length(deps); i++) {
+                      dep = deps[i]
+                      pos = index(dep, ">=")
+                      if (pos > 0) {
+                          bare = substr(dep, 2, pos-2)
+                      } else {
+                          bare = substr(dep, 2)
+                      }
+                      if (match(dep, />=/)) {
+                          if (seen_versioned !~ bare) {
+                              result = result " " dep
+                              seen_versioned = seen_versioned " " bare
+                              gsub(" *" bare " *", " ", seen_bare)
+                          }
+                      } else {
+                          if (seen_versioned !~ bare && seen_bare !~ bare) {
+                              result = result " " dep
+                              seen_bare = seen_bare " " bare
+                          }
+                      }
+                  }
+                  print result
+                  next
+              }
+              { print }
+              '\'' "$makefile" > "$makefile.tmp"
+              if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+                echo "Modified $makefile:"
+                grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+                mv "$makefile.tmp" "$makefile"
+              else
+                rm -f "$makefile.tmp"
+              fi
+            ' _ {} \;
           fi
-          #由于错误与 target/linux 和 image-prereq 相关，检查以下文件：target/linux/ramips/image/Makefile（您的配置是 ramips/mt7621）。
-          file="target/linux/ramips/image/Makefile"
-          if [ -f "$file" ]; then
-            lines=$(wc -l < "$file")
-            if [ $lines -ge 230 ]; then
-              echo "$file has $lines lines."
-              echo "Lines 225-235:"
-              sed -n '225,235p' "$file" | cat -A
-            else
-              echo "$file has only $lines lines."
-            fi
-          fi
-          find build_dir -name Makefile -exec bash -c 'file="{}"; lines=$(wc -l < "$file"); if [ $lines -ge 230 ]; then echo "$file has $lines lines."; echo "Line 230:"; sed -n "230p" "$file" | cat -A; fi' \;
-          sed -i '/^define Image\/Prepare/,/^endef/ s/^  /\t/' target/linux/ramips/image/mt7621.mk
-          cat -A target/linux/ramips/image/mt7621.mk
-         
-      - name: Compile the firmware
-        id: compile
+          # 编译固件
+          make -j$(nproc) V=s || make -j3 V=s || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          
+      - name: Set environment variables
+        if: env.status == 'success' || (env.status == 'needs_fix' && exists('openwrt/bin/targets/*/*/*.bin'))
         run: |
           cd openwrt
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
-          TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')
-          echo "检测TARGET_BOARD是否在.config中成功找到：$TARGET_BOARD"
-          echo "TARGET_BOARD=$TARGET_BOARD" >> $GITHUB_ENV
-          TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')
-          echo "检测TARGET_SUBTARGET是否在.config中成功找到：$TARGET_SUBTARGET"
-          echo "TARGET_SUBTARGET=$TARGET_SUBTARGET" >> $GITHUB_ENV
-          TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')
-          echo "检测TARGET_PROFILE是否在.config中成功找到：$TARGET_PROFILE"
-          echo "TARGET_PROFILE=$TARGET_PROFILE" >> $GITHUB_ENV
+          echo "TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+          echo "TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+          echo "TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')" >> $GITHUB_ENV
           echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
-          make tools/compile V=s
-          make toolchain/compile V=s
-          
-
-          echo "根据https://www.right.com.cn/forum/forum.php?mod=redirect&goto=findpost&ptid=1086753&pid=11643216，首次编译时，容易报错：bash: po2lmo: command not found 这应该是因为编译XXXXXXX需要把 luci-base 先编译出来，但是目前顺序可能是先编译了 hello world 导致出现问题，此时使用 make package/feeds/luci/luci-base/compile V=99 编译出 luci-base 后再编译就不会报错。 这个问题虽然出现的频率不高，但是也不低 "
-          make package/feeds/luci/luci-base/compile V=s
-          #echo -e "$(nproc) thread compile"
-          make -j$(nproc) V=s || make -j3 V=s|| make -j1 V=s 
-          
-          #make -j$(nproc) V=s MAKEFLAGS=-d || true > debug.log 2>&1
-          
-          cat -A debug.log
-          
-          #&& df -hT || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' $GITHUB_WORKSPACE/openwrt/feeds/packages/lang/python/python3/Makefile
-          echo "status=success" >> $GITHUB_OUTPUT
-          
           KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
-          echo "检查是否获取到内核版本号：$KERNEL_VERSION"
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
-          
+
       - name: Rename
         run: |
           cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
