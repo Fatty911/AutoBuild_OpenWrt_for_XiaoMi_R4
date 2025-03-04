@@ -168,7 +168,7 @@ jobs:
     #     cd package/feeds/ && rm -rf routing && git clone https://github.com/coolsnowwolf/routing.git routing && cd routing && git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
     - name: Try compiling batman-adv
       id: try_batman
-      continue-on-error: true
+      #continue-on-error: true
       run: |
         cd openwrt
         # echo "先编译tools和toolchain"
@@ -176,12 +176,12 @@ jobs:
         # make toolchain/compile V=s
         # echo "根据https://www.right.com.cn/forum/forum.php?mod=redirect&goto=findpost&ptid=1086753&pid=11643216，首次编译时，容易报错：bash: po2lmo: command not found 这应该是因为编译XXXXXXX需要把 luci-base 先编译出来，但是目前顺序可能是先编译了 hello world 导致出现问题，此时使用 make package/feeds/luci/luci-base/compile V=99 编译出 luci-base 后再编译就不会报错。 这个问题虽然出现的频率不高，但是也不低 "
         # make package/feeds/luci/luci-base/compile V=s
-        MAX_RETRY=2
+        MAX_RETRY=3
         ATTEMPT=0
         TEMP_LOG=$(mktemp)
         
         while [ $ATTEMPT -le $MAX_RETRY ]; do
-          make package/feeds/routing/batman-adv/compile V=s 2>&1 | tee $TEMP_LOG || true
+          make package/feeds/routing/batman-adv/compile V=s 2>&1 | tee $TEMP_LOG 
           
           # 检查编译结果
           if [ ${PIPESTATUS[0]} -eq 0 ]; then
@@ -191,13 +191,18 @@ jobs:
             # 分析错误类型
             if grep -qiE 'toolchain|ld-musl' $TEMP_LOG; then
               echo "检测到工具链错误，尝试修复..."
-              make toolchain/compile V=s
+              make toolchain/compile V=s || (make toolchain/clean V=s && make toolchain/compile V=s ||make toolchain/compile -j1 V=s )
             elif grep -qi 'tools/' $TEMP_LOG; then
               echo "检测到工具集错误，尝试修复..."
-              make tools/compile V=s
+              make tools/compile V=s || (make tools/clean V=s && make tools/compile V=s ||make tools/compile -j1 V=s )
             elif grep -qi 'po2lmo' $TEMP_LOG; then
               echo "检测到 lua 转换错误，尝试修复..."
               make package/feeds/luci/luci-base/compile V=s
+            elif grep -qi 'libtool' $TEMP_LOG; then
+              cd build_dir/host/libtool*
+              autoreconf -fi
+              ./configure --prefix=/host
+              cd ../../..
             fi
             
             # 递增重试计数器
