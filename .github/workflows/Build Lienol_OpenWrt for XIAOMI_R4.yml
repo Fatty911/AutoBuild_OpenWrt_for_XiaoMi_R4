@@ -37,7 +37,7 @@ env:
 
 jobs:
   build:    
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
     outputs:
       TARGET_BOARD: ${{ steps.output_vars.outputs.TARGET_BOARD }}
       TARGET_SUBTARGET: ${{ steps.output_vars.outputs.TARGET_SUBTARGET }}
@@ -132,7 +132,56 @@ jobs:
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
   
-       
+    - name: Fix Makefile package version formats Handle DEPENDS, keeping versioned forms
+      run: |
+        cd openwrt
+        echo "Checking for DEPENDS duplicates, keeping versioned forms..."
+        find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+          makefile="$1"
+          awk '\''BEGIN { FS = "[[:space:]]+" }
+          /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+              modified=1
+              split($0, deps, " ")
+              seen_versioned = ""
+              seen_bare = ""
+              result = $1 # Retain field name, e.g., "DEPENDS:="
+              for (i = 2; i <= length(deps); i++) {
+                  dep = deps[i]
+                  # Safely extract bare package name
+                  pos = index(dep, ">=")
+                  if (pos > 0) {
+                      bare = substr(dep, 2, pos-2)
+                  } else {
+                      bare = substr(dep, 2)
+                  }
+                  if (match(dep, />=/)) { # Versioned dependency, e.g., pkg>=1.2
+                      if (seen_versioned !~ bare) {
+                          result = result " " dep
+                          seen_versioned = seen_versioned " " bare
+                          gsub(" *" bare " *", " ", seen_bare) # Remove bare version if versioned exists
+                      }
+                  } else { # Bare dependency
+                      if (seen_versioned !~ bare && seen_bare !~ bare) {
+                          result = result " " dep
+                          seen_bare = seen_bare " " bare
+                      }
+                  }
+              }
+              print result
+              next # Skip to next line after processing dependencies
+          }
+          { print } # Print unchanged lines
+          '\'' "$makefile" > "$makefile.tmp"
+          if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+            echo "Modified $makefile (dependencies updated):"
+            grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+            mv "$makefile.tmp" "$makefile"
+          else
+            rm -f "$makefile.tmp"
+          fi
+        ' _ {} \;
+        echo "All Makefiles processed."
+   
     - name: Compile the firmware
       id: compile
       run: |
