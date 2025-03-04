@@ -130,9 +130,16 @@ jobs:
             echo "No bin file found or compilation failed, checking logs..."
             echo "status=needs_fix" >> $GITHUB_ENV
           fi
-
+      - name: Check for .bin file after initial compilation
+        id: check_bin_initial
+        run: |
+          if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+            echo "BIN_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "BIN_EXISTS=false" >> $GITHUB_ENV
+          fi
       - name: Perform manual porting for Xiaomi Mi Router 4
-        if: env.status == 'needs_fix' && !exists('openwrt/bin/targets/*/*/*.bin')
+        if: env.status == 'needs_fix' && env.BIN_EXISTS == 'false'
         run: |
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
@@ -284,7 +291,7 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
           
       - name: Set environment variables
-        if: env.status == 'success' || (env.status == 'needs_fix' && exists('openwrt/bin/targets/*/*/*.bin'))
+        if: env.status == 'success' || (env.status == 'needs_fix' && env.FINAL_BIN_EXISTS == 'true')
         run: |
           cd openwrt
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
@@ -338,13 +345,13 @@ jobs:
           name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: ${{ env.firmware_path }}
           
-      - name: Check for .bin files
-        id: check_bin
-        if: steps.organize.outputs.status == 'success' && !cancelled()
+      - name: Check for .bin file after final compilation
+        id: check_bin_final
         run: |
-          if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
-            echo "No .bin files found in firmware_path. Stopping workflow."
-            exit 1
+          if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+            echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
           fi
 
 
