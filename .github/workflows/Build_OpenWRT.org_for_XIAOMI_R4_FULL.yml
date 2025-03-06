@@ -112,6 +112,7 @@ jobs:
       - name: Check space usage after download
         if: (!cancelled())
         run: df -hT
+        
       - name: Try compiling the firmware
         id: compile_attempt
         run: |
@@ -125,21 +126,24 @@ jobs:
           make -j3 V=s > compile.log 2>&1 || true
           if [ -f "bin/targets/*/*/*.bin" ]; then
             echo "Bin file found, compilation successful."
-            echo "status=success" >> $GITHUB_ENV
+            echo "status=success" >> $GITHUB_OUTPUT
           else
             echo "No bin file found or compilation failed, checking logs..."
-            echo "status=needs_fix" >> $GITHUB_ENV
+            echo "status=needs_fix" >> $GITHUB_OUTPUT
           fi
+          
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
           if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
-            echo "BIN_EXISTS=true" >> $GITHUB_ENV
+            echo "BIN_EXISTS=true" >> $GITHUB_OUTPUT
           else
-            echo "BIN_EXISTS=false" >> $GITHUB_ENV
+            echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
           fi
+          
       - name: Perform manual porting for Xiaomi Mi Router 4
-        if: env.status == 'needs_fix' && env.BIN_EXISTS == 'false'
+        id: transplant
+        if: steps.compile_attempt.outputs.status == 'needs_fix' && steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
         run: |
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
@@ -222,10 +226,11 @@ jobs:
           fi
           # Fix ROOTFS_PARTSIZE
           sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
-
+          echo "isFixed=true" >> $GITHUB_OUTPUT"
+          
       - name: Compile the firmware with fixes
-        id: compile
-        if: env.status == 'success' || env.status == 'needs_fix'
+        id: compile_with_fixes
+        if: steps.transplant.outputs.isFixed == 'true'
         run: |
           cd openwrt
           # 检查 PKG_VERSION 错误
@@ -291,7 +296,8 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
           
       - name: Set environment variables
-        if: env.status == 'success' || (env.status == 'needs_fix' && env.FINAL_BIN_EXISTS == 'true')
+        id: setEnv
+        if: steps.compile_attempt.outputs.status == 'success' || steps.compile_with_fixes.outputs.status == 'success'
         run: |
           cd openwrt
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
@@ -303,8 +309,11 @@ jobs:
           echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
           KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
 
       - name: Rename
+        id: rename
+        if: steps.setEnv.outputs.status == 'success'
         run: |
           cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
           echo "进入文件夹：$(pwd)"
@@ -322,7 +331,7 @@ jobs:
 
       - name: Upload bin directory
         uses: actions/upload-artifact@master
-        if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+        if: steps.rename.conclusion == 'success'
         with:
           name: OpenWrt.org_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: |
@@ -340,7 +349,7 @@ jobs:
           
       - name: Upload firmware directory
         uses: actions/upload-artifact@master
-        if: steps.organize.status == 'success' && !cancelled()
+        if: steps.organize.outputs.status == 'success' && !cancelled()
         with:
           name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: ${{ env.firmware_path }}
@@ -357,7 +366,8 @@ jobs:
 
       - name: Generate release tag
         id: generate_release_tag
-        if: steps.organize.check_bin.conclusion == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+        #if: steps.check_bin.conclusion == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+        if: env.FINAL_BIN_EXISTS == 'true' && env.UPLOAD_RELEASE == 'true' && !cancelled()
         run: |
           echo "release_tag=OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           touch release.txt
