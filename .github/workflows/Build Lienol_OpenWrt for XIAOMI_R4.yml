@@ -38,13 +38,6 @@ env:
 jobs:
   build:    
     runs-on: ubuntu-22.04
-    outputs:
-      TARGET_BOARD: ${{ steps.output_vars.outputs.TARGET_BOARD }}
-      TARGET_SUBTARGET: ${{ steps.output_vars.outputs.TARGET_SUBTARGET }}
-      TARGET_PROFILE: ${{ steps.output_vars.outputs.TARGET_PROFILE }}
-      FILE_DATE: ${{ steps.output_vars.outputs.FILE_DATE }}
-      KERNEL_VERSION: ${{ steps.output_vars.outputs.kernel_version }}
-      DEVICE_NAME: ${{ steps.output_vars.outputs.DEVICE_NAME }}
     steps:    
     
     - name: Maximize build space
@@ -106,7 +99,7 @@ jobs:
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Download package
-      id: package
+      id: download
       run: |
         cd openwrt
         make defconfig
@@ -225,6 +218,7 @@ jobs:
           echo "BIN_EXISTS=false" >> $GITHUB_ENV
         fi
     - name: Perform manual porting for Xiaomi Mi Router 4
+      id: transplant
       if: env.status == 'needs_fix' && env.BIN_EXISTS == 'false'
       run: |
         cd openwrt
@@ -308,18 +302,21 @@ jobs:
         fi
         # Fix ROOTFS_PARTSIZE
         sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
+        echo "isFixed=true" >> $GITHUB_OUTPUT
+        
     - name: Compile the firmware with fixes
       id: compile
-      if: env.status == 'success' || env.status == 'needs_fix'
+      if: env.status == 'needs_fix' && steps.transplant.output.isFixed == 'true'
       run: |
         cd openwrt
         
         # 编译固件
         make -j$(nproc) V=s || make -j3 V=s || make -j1 V=s || exit 1
-        echo "status=success" >> $GITHUB_OUTPUT
+        echo "status=success" >> $GITHUB_ENV
         
     - name: Set environment variables
-      if: env.status == 'success' || (env.status == 'needs_fix' && env.FINAL_BIN_EXISTS == 'true')
+      id: setEnv
+      if: env.status == 'success' 
       run: |
         cd openwrt
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
@@ -331,12 +328,13 @@ jobs:
         echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
         KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
         echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+        echo "set_env_variables=true" >> $GITHUB_OUTPUT
 
 
 
     - name: Upload bin directory
       uses: actions/upload-artifact@master
-      if: needs.build.steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      if: steps.setEnv.outputs.set_env_variables == 'true' && env.UPLOAD_BIN_DIR == 'true'
       with:
         name: OpenWrt_Lienol_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: |
@@ -354,7 +352,7 @@ jobs:
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@master
-      if: needs.build.steps.organize.outputs.status == 'success' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: OpenWrt_Lienol_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
@@ -365,7 +363,6 @@ jobs:
       if: env.UPLOAD_RELEASE == 'true' && !cancelled()
       run: |
         echo "release_tag=Lienol_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
         echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
 
