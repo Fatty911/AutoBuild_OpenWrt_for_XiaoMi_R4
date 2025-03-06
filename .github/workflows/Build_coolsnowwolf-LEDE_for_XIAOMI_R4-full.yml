@@ -166,6 +166,7 @@ jobs:
     #     git config --global user.email fattyvirgo911@gmail.com
     #     git config --global user.name Fatty911
     #     cd package/feeds/ && rm -rf routing && git clone https://github.com/coolsnowwolf/routing.git routing && cd routing && git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
+    
     - name: Try compiling batman-adv
       id: try_batman
       #continue-on-error: true
@@ -256,7 +257,7 @@ jobs:
         echo "根据https://www.right.com.cn/forum/forum.php?mod=redirect&goto=findpost&ptid=1086753&pid=11643216，首次编译时，容易报错：bash: po2lmo: command not found 这应该是因为编译XXXXXXX需要把 luci-base 先编译出来，但是目前顺序可能是先编译了 hello world 导致出现问题，此时使用 make package/feeds/luci/luci-base/compile V=99 编译出 luci-base 后再编译就不会报错。 这个问题虽然出现的频率不高，但是也不低 "
         make package/feeds/luci/luci-base/compile V=s
         echo "编译其它组件"
-        make -j$(nproc) || make -j1 || make -j1 V=s || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' ${{ github.workspace }}/openwrt/feeds/packages/lang/rust/Makefile && make -j1 V=s
+        make -j$(nproc) V=s || make -j3 V=s || make -j1 V=s || sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' ${{ github.workspace }}/openwrt/feeds/packages/lang/rust/Makefile && make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         # KERNEL_VERSION=$(cat bin/targets/*/version.buildinfo | grep 'kernel_version' | cut -d'=' -f2)
         # # echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV    调用env.kernel_version会报错
@@ -279,6 +280,8 @@ jobs:
         echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
         
     - name: Rename
+      id: rename
+      if: steps.compile.outputs.status == 'success'
       run: |
         cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
         for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
@@ -329,34 +332,13 @@ jobs:
           echo "No .bin files found in firmware_path. Stopping workflow."
           exit 1
         fi
-    - name: Upload firmware to cowtransfer
-      id: cowtransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
-        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        #echo "::set-output name=url::$(cat cowtransfer.log | grep https | cut -f3 -d" ")"
-        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware to WeTransfer
-      id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true'
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        #echo "::set-output name=url::$(cat wetransfer.log | grep https | cut -f3 -d" ")"
-        echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
+    
 
     - name: Generate release tag
       id: generate_release_tag
       if: env.UPLOAD_RELEASE == 'true' && !cancelled() && steps.check_bin.conclusion == 'success'
       run: |
         echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
-        [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
         echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
 
