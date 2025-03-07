@@ -172,6 +172,7 @@ jobs:
       #continue-on-error: true
       run: |
         cd openwrt
+        set -x
         # echo "先编译tools和toolchain"
         # make tools/compile V=s
         # make toolchain/compile V=s
