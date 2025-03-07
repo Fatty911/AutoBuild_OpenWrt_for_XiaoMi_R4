@@ -226,7 +226,7 @@ jobs:
           fi
           # Fix ROOTFS_PARTSIZE
           sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
-          echo "isFixed=true" >> $GITHUB_OUTPUT"
+          echo "isFixed=true" >> $GITHUB_OUTPUT
           
       - name: Compile the firmware with fixes
         id: compile_with_fixes
