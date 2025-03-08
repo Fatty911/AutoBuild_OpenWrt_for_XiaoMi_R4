@@ -119,11 +119,11 @@ jobs:
           cd openwrt
           echo "Trying to compile the firmware..."
           # 先编译工具链和 luci-base，避免常见错误
-          make tools/compile -j3 V=s || make tools/compile -j1 V=s
-          make toolchain/compile -j3 V=s || make toolchain/compile -j1 V=s 
-          make package/feeds/luci/luci-base/compile -j3 V=s || make package/feeds/luci/luci-base/compile -j1 V=s
+          make tools/compile -j$(nproc) V=s || make tools/compile -j1 V=s
+          make toolchain/compile -j$(nproc) V=s || make toolchain/compile -j1 V=s 
+          make package/feeds/luci/luci-base/compile -j$(nproc) V=s || make package/feeds/luci/luci-base/compile -j1 V=s
           # 尝试直接编译
-          make -j3 V=s > compile.log 2>&1 || true
+          make -j$(nproc) V=s > compile.log 2>&1 || true
           if [ -f "bin/targets/*/*/*.bin" ]; then
             echo "Bin file found, compilation successful."
             echo "status=success" >> $GITHUB_OUTPUT
@@ -292,7 +292,7 @@ jobs:
             ' _ {} \;
           fi
           # 编译固件
-          make -j3 V=s || make -j1 V=s || exit 1
+          make -j$(nproc) V=s || make -j1 V=s || exit 1
           echo "status=success" >> $GITHUB_OUTPUT
           
       - name: Set environment variables
