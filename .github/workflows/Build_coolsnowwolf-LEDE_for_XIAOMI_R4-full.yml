@@ -167,13 +167,27 @@ jobs:
         cd openwrt
         set -x
         # 获取 GCC 版本号
-        GCC_VERSION=$(ls $(pwd)/staging_dir/toolchain-mipsel_24kc_gcc-*/ | grep -oP 'gcc-\K\d+\.\d+\.\d+')
+        GCC_VERSION=$(ls $(pwd)/staging_dir/toolchain-mipsel_24kc_gcc-*/ | grep -oP 'gcc-\K\d+\.\d+\.\d+' || echo "unknown")
         echo "GCC_VERSION=$GCC_VERSION"
-        # 使用动态获取的 GCC 版本号构建路径
-        echo "ls -l staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/"
-        ls -l staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/
-        echo "cp -fpR staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/ld-musl-*.so* build_dir/target-mipsel_24kc_musl/toolchain/.pkgdir/libc/lib/" 
-        cp -fpR staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/ld-musl-*.so* build_dir/target-mipsel_24kc_musl/toolchain/.pkgdir/libc/lib/ 
+        
+        # 检查 toolchain 是否已编译并包含必要文件
+        TOOLCHAIN_DIR="staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl"
+        echo "Checking toolchain directory: $TOOLCHAIN_DIR"
+        ls -l $TOOLCHAIN_DIR || echo "Toolchain directory not found!"
+        ls -l $TOOLCHAIN_DIR/lib/ || echo "Toolchain lib directory empty or not found!"
+    
+        # 如果 ld-musl 文件不存在，尝试重新编译 toolchain
+        if ! ls $TOOLCHAIN_DIR/lib/ld-musl-*.so* >/dev/null 2>&1; then
+          echo "ld-musl-*.so* not found, attempting to compile toolchain..."
+          make toolchain/compile V=s || (make toolchain/clean V=s && make toolchain/compile V=s)
+          # 再次检查文件是否存在
+          ls $TOOLCHAIN_DIR/lib/ld-musl-*.so* || (echo "Toolchain compilation failed to produce ld-musl files!" && exit 1)
+        fi
+    
+        # 复制文件
+        echo "Copying ld-musl files..."
+        cp -fpR $TOOLCHAIN_DIR/lib/ld-musl-*.so* build_dir/target-mipsel_24kc_musl/toolchain/.pkgdir/libc/lib/
+ 
         MAX_RETRY=3
         ATTEMPT=0
         TEMP_LOG=$(mktemp)
