@@ -166,6 +166,14 @@ jobs:
       run: |
         cd openwrt
         set -x
+        # 获取 GCC 版本号
+        GCC_VERSION=$(ls $(pwd)/staging_dir/toolchain-mipsel_24kc_gcc-*/ | grep -oP 'gcc-\K\d+\.\d+\.\d+')
+        echo "GCC_VERSION=$GCC_VERSION"
+        # 使用动态获取的 GCC 版本号构建路径
+        echo "ls -l staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/"
+        ls -l staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/
+        echo "cp -fpR staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/ld-musl-*.so* build_dir/target-mipsel_24kc_musl/toolchain/.pkgdir/libc/lib/" 
+        cp -fpR staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl/lib/ld-musl-*.so* build_dir/target-mipsel_24kc_musl/toolchain/.pkgdir/libc/lib/ 
         MAX_RETRY=3
         ATTEMPT=0
         TEMP_LOG=$(mktemp)
