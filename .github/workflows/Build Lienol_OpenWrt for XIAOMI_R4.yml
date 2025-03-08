@@ -129,6 +129,7 @@ jobs:
       id: compile_attempt
       run: |
         cd openwrt
+        set -x
         echo "Trying to compile the firmware..."
         echo "先编译工具链和 luci-base，避免常见错误"
         make -j$(nproc) tools/compile V=s || make -j1 tools/compile V=s
