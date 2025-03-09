@@ -160,7 +160,30 @@ jobs:
     #     git config --global user.email fattyvirgo911@gmail.com
     #     git config --global user.name Fatty911
     #     cd package/feeds/ && rm -rf routing && git clone https://github.com/coolsnowwolf/routing.git routing && cd routing && git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
-    
+
+    - name: Compile batman-adv with latest source
+      id: update_batman_latest
+      run: |
+        cd openwrt
+        set -x
+        # 确保 feeds 已更新并包含最新的 batman-adv
+        ./scripts/feeds update batman || { echo "Failed to update batman feed"; exit 1; }
+        ./scripts/feeds install -p batman batman-adv || { echo "Failed to install batman-adv from batman feed"; exit 1; }
+        
+        # 检查 batman-adv 是否正确安装到 feeds 中
+        if [ ! -d "feeds/batman/batman-adv" ]; then
+          echo "Error: batman-adv not found in feeds/batman!"
+          exit 1
+        fi
+        
+        # 编译 batman-adv
+        make -j1 package/feeds/batman/batman-adv/compile V=s || {
+          echo "batman-adv compilation failed!"
+          cat logs/*  # 输出日志以便调试
+          exit 1
+        }
+        echo "batman_adv_status=success" >> $GITHUB_ENV
+        
     - name: Try compiling batman-adv
       id: try_batman
       run: |
