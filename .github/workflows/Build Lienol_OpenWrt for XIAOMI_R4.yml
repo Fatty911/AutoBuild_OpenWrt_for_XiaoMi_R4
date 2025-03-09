@@ -124,7 +124,59 @@ jobs:
     #     #超频5.10内核至1000Mhz
     #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
     #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
-  
+    - name: Compile tools
+      run: |
+        cd openwrt
+        make tools/install -j1 V=s > tools.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Tools compilation failed"
+          exit 1
+        fi
+    - name: Compile toolchain
+      run: |
+        cd openwrt
+        make toolchain/install -j1 V=s > toolchain.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Toolchain compilation failed"
+          exit 1
+        fi
+    - name: Compile kernel
+      run: |
+        cd openwrt
+        make target/linux/compile -j1 V=s > kernel.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Kernel compilation failed"
+          exit 1
+        fi
+    - name: Compile packages
+      run: |
+        cd openwrt
+        grep "^CONFIG_PACKAGE_.*=y" .config | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' > package_list.txt
+        while read -r pkg; do
+          echo "Compiling package $pkg..."
+          make package/$pkg/compile -j1 V=s > "package_$pkg.log" 2>&1 || {
+            echo "Package $pkg compilation failed. See detailed log below:"
+            cat "package_$pkg.log"
+            exit 1
+          }
+        done < package_list.txt
+    
+    - name: Build image
+      run: |
+        cd openwrt
+        make -j1 V=s > image.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Image build failed"
+          exit 1
+        fi
+        # 检查是否生成固件文件
+        if [ -f "bin/targets/*/*/*.bin" ]; then
+          echo "Compilation successful"
+        else
+          echo "No bin file found"
+          exit 1
+        fi
+
     - name: Try compiling the firmware
       id: compile_attempt
       run: |
