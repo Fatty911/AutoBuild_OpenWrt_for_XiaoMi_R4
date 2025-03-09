@@ -136,17 +136,7 @@ jobs:
       env:
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        
-    # - name: Specify kernel version
-    #   run: |
-    #     cd openwrt
-    #     sed -i 's/^KERNEL_PATCHVER:=.*/KERNEL_PATCHVER:=6.1/' target/linux/ramips/Makefile
-    #     sed -i 's/^KERNEL_TESTING_PATCHVER:=.*/KERNEL_TESTING_PATCHVER:=6.6/' target/linux/ramips/Makefile
-
-
-
-
-        
+      
     # - name: Modify overclocking settings
     #   run: |
     #     cd openwrt
@@ -160,41 +150,126 @@ jobs:
     #     git config --global user.email fattyvirgo911@gmail.com
     #     git config --global user.name Fatty911
     #     cd package/feeds/ && rm -rf routing && git clone https://github.com/coolsnowwolf/routing.git routing && cd routing && git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
-
-    - name: Compile batman-adv with latest source
-      id: update_batman_latest
+    - name: Compile tools
       run: |
-        cd openwrt/
-        set -x
-        LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git| grep -v "\\^{}"| grep -E "refs/tags/v[0-9]+\\.[0-9]+(\\.[0-9]+)?$"| sed "s|.*/||"| sort -V| tail -n 1)
-
-        # Check if a tag was retrieved
-        if [ -z "$LATEST_TAG" ]; then
-          echo "Error: Could not retrieve the latest tag from https://git.open-mesh.org/batman-adv.git"
+        cd openwrt
+        make tools/install -j1 V=s > tools.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Tools compilation failed"
           exit 1
         fi
-        # 构造 tarball 的 URL
+    - name: Compile toolchain
+      id: compile_toolchain
+      run: |
+        cd openwrt
+        set +e
+        make toolchain/install -j1 V=s > toolchain.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "::warning::Toolchain compilation failed, checking logs..."
+          grep -iE 'batman-adv|BATMAN_ADV|batadv' toolchain.log && echo "batman_error=true" >> $GITHUB_ENV
+          exit 1
+        fi
+        echo "batman_error=false" >> $GITHUB_ENV
+
+    - name: Retry with new batman-adv
+      if: failure() && steps.compile_toolchain.conclusion == 'failure' && env.batman_error == 'true'
+      run: |
+        cd openwrt
+        # 更新batman-adv到最新版本
+        LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git | grep -v "\\^{}" | grep -E "refs/tags/v[0-9]+\\.[0-9]+(\\.[0-9]+)?$" | sed "s|.*/||" | sort -V | tail -n 1)
         TARBALL_URL="https://downloads.open-mesh.org/batman/releases/batman-adv-${LATEST_TAG}/batman-adv-${LATEST_TAG}.tar.gz"
         
-        # 下载 tarball
-        curl -o "batman-adv-${LATEST_TAG}.tar.gz" "${TARBALL_URL}" || { echo "错误：下载 tarball 失败"; exit 1; }
-        
-        # 验证 tarball 是否有效
-        if [ ! -s "batman-adv-${LATEST_TAG}.tar.gz" ]; then
-          echo "错误：下载的 tarball 为空或无效"
-          exit 1
-        fi
-        
-        # 计算文件的 SHA256 哈希值
+        curl -OL "${TARBALL_URL}" || exit 1
         HASH=$(sha256sum "batman-adv-${LATEST_TAG}.tar.gz" | awk '{print $1}')
-
-        # 更新 Makefile
+        
         sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=${LATEST_TAG}/" feeds/routing/batman-adv/Makefile
         sed -i "s/PKG_HASH:=.*/PKG_HASH:=${HASH}/" feeds/routing/batman-adv/Makefile
-        echo "已更新 Makefile 到版本 ${LATEST_TAG}，hash 为 ${HASH}"
-        make -j1 feeds/routing/batman-adv/compile V=s || ( make -j1 feeds/routing/compile V=s) || exit 1
+        
+        # 清理并重试编译
+        make package/feeds/routing/batman-adv/clean
+        make toolchain/install -j1 V=s
 
-        echo "batman_adv_status=success" >> $GITHUB_ENV
+    - name: Final toolchain check
+      if: steps.compile_toolchain.conclusion == 'failure' && env.batman_error == 'true'
+      run: |
+        cd openwrt
+        # 最终验证编译结果
+        if [ -d staging_dir/toolchain-* ]; then
+          echo "::notice::Toolchain retry successful!"
+        else
+          echo "::error::Toolchain compilation failed after retry"
+          exit 1
+        fi
+    - name: Compile kernel
+      run: |
+        cd openwrt
+        make target/linux/compile -j1 V=s > kernel.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Kernel compilation failed"
+          exit 1
+        fi
+    - name: Compile packages
+      run: |
+        cd openwrt
+        grep "^CONFIG_PACKAGE_.*=y" .config | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' > package_list.txt
+        while read -r pkg; do
+          echo "Compiling package $pkg..."
+          make package/$pkg/compile -j1 V=s > "package_$pkg.log" 2>&1 || {
+            echo "Package $pkg compilation failed. See detailed log below:"
+            cat "package_$pkg.log"
+            exit 1
+          }
+        done < package_list.txt
+    
+    - name: Build image
+      run: |
+        cd openwrt
+        make -j1 V=s > image.log 2>&1
+        if [ $? -ne 0 ]; then
+          echo "Image build failed"
+          exit 1
+        fi
+        # 检查是否生成固件文件
+        if [ -f "bin/targets/*/*/*.bin" ]; then
+          echo "Compilation successful"
+        else
+          echo "No bin file found"
+          exit 1
+        fi
+    # - name: Compile batman-adv with latest source
+    #   id: update_batman_latest
+    #   run: |
+    #     cd openwrt/
+    #     set -x
+    #     LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git| grep -v "\\^{}"| grep -E "refs/tags/v[0-9]+\\.[0-9]+(\\.[0-9]+)?$"| sed "s|.*/||"| sort -V| tail -n 1)
+
+    #     # Check if a tag was retrieved
+    #     if [ -z "$LATEST_TAG" ]; then
+    #       echo "Error: Could not retrieve the latest tag from https://git.open-mesh.org/batman-adv.git"
+    #       exit 1
+    #     fi
+    #     # 构造 tarball 的 URL
+    #     TARBALL_URL="https://downloads.open-mesh.org/batman/releases/batman-adv-${LATEST_TAG}/batman-adv-${LATEST_TAG}.tar.gz"
+        
+    #     # 下载 tarball
+    #     curl -o "batman-adv-${LATEST_TAG}.tar.gz" "${TARBALL_URL}" || { echo "错误：下载 tarball 失败"; exit 1; }
+        
+    #     # 验证 tarball 是否有效
+    #     if [ ! -s "batman-adv-${LATEST_TAG}.tar.gz" ]; then
+    #       echo "错误：下载的 tarball 为空或无效"
+    #       exit 1
+    #     fi
+        
+    #     # 计算文件的 SHA256 哈希值
+    #     HASH=$(sha256sum "batman-adv-${LATEST_TAG}.tar.gz" | awk '{print $1}')
+
+    #     # 更新 Makefile
+    #     sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=${LATEST_TAG}/" feeds/routing/batman-adv/Makefile
+    #     sed -i "s/PKG_HASH:=.*/PKG_HASH:=${HASH}/" feeds/routing/batman-adv/Makefile
+    #     echo "已更新 Makefile 到版本 ${LATEST_TAG}，hash 为 ${HASH}"
+    #     make -j1 feeds/routing/batman-adv/compile V=s || ( make -j1 feeds/routing/compile V=s) || exit 1
+
+    #     echo "batman_adv_status=success" >> $GITHUB_ENV
         
     - name: Try compiling batman-adv
       id: try_batman
