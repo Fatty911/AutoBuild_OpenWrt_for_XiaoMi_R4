@@ -166,7 +166,13 @@ jobs:
       run: |
         cd openwrt/feeds/routing/batman-adv/
         set -x
-        LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git | grep -o 'refs/tags/v[0-9]\+\.[0-9]+' | sort -V | tail -n 1 | sed 's|refs/tags/v||');
+        LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git| grep -v "\\^{}"| grep -E "refs/tags/v[0-9]+\\.[0-9]+(\\.[0-9]+)?$"| sed "s|.*/||"| sort -V| tail -n 1)
+
+        # Check if a tag was retrieved
+        if [ -z "$LATEST_TAG" ]; then
+          echo "Error: Could not retrieve the latest tag from https://git.open-mesh.org/batman-adv.git"
+          exit 1
+        fi
         # 构造 tarball 的 URL
         TARBALL_URL="https://downloads.open-mesh.org/batman/releases/batman-adv-${LATEST_TAG}/batman-adv-${LATEST_TAG}.tar.gz"
         
