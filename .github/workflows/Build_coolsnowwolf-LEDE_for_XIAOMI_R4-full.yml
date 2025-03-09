@@ -214,7 +214,7 @@ jobs:
         cd openwrt
         # 预生成包索引
         make prepare-tmpinfo
-        make package/index
+        # make package/index
         make -j1 package/compile V=s > packages.log 2>&1 || {
           if grep -q "po2lmo: command not found" packages.log; then
             echo "检测到 po2lmo 缺失，正在优先编译 luci-base..."
