@@ -165,17 +165,16 @@ jobs:
       - name: Compile packages
         run: |
           cd openwrt
-          # 从 .config 中提取启用的包列表
           grep "^CONFIG_PACKAGE_.*=y" .config | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' > package_list.txt
           while read -r pkg; do
             echo "Compiling package $pkg..."
-            make package/$pkg/compile -j1 V=s > "package_$pkg.log" 2>&1
-            if [ $? -ne 0 ]; then
-              echo "Package $pkg compilation failed"
+            make package/$pkg/compile -j1 V=s > "package_$pkg.log" 2>&1 || {
+              echo "Package $pkg compilation failed. See detailed log below:"
+              cat "package_$pkg.log"
               exit 1
-            fi
+            }
           done < package_list.txt
-
+      
       - name: Build image
         run: |
           cd openwrt
