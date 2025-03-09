@@ -113,28 +113,91 @@ jobs:
         if: (!cancelled())
         run: df -hT
         
-      - name: Try compiling the firmware
-        id: compile_attempt
+      # - name: Try compiling the firmware
+      #   id: compile_attempt
+      #   run: |
+      #     cd openwrt
+      #     echo "Trying to compile the firmware..."
+      #     # 先编译工具链和 luci-base，避免常见错误
+      #     # make tools/compile -j$(nproc) V=s || make tools/compile -j1 V=s
+      #     make tools/compile -j1 V=s
+      #     # make toolchain/compile -j$(nproc) V=s || make toolchain/compile -j1 V=s 
+      #     make toolchain/compile -j1 V=s
+      #     # make package/feeds/luci/luci-base/compile -j$(nproc) V=s || make package/feeds/luci/luci-base/compile -j1 V=s
+      #     make package/feeds/luci/luci-base/compile -j1 V=s
+      #     # 尝试直接编译
+      #     # make -j$(nproc) V=s > compile.log 2>&1 || true
+      #     make -j1 V=s > compile.log 2>&1 || true
+      #     if [ -f "bin/targets/*/*/*.bin" ]; then
+      #       echo "Bin file found, compilation successful."
+      #       echo "status=success" >> $GITHUB_OUTPUT
+      #     else
+      #       echo "No bin file found or compilation failed, checking logs..."
+      #       echo "status=needs_fix" >> $GITHUB_OUTPUT
+      #     fi
+      - name: Compile tools
         run: |
           cd openwrt
-          echo "Trying to compile the firmware..."
-          # 先编译工具链和 luci-base，避免常见错误
-          # make tools/compile -j$(nproc) V=s || make tools/compile -j1 V=s
-          make tools/compile -j1 V=s
-          # make toolchain/compile -j$(nproc) V=s || make toolchain/compile -j1 V=s 
-          make toolchain/compile -j1 V=s
-          # make package/feeds/luci/luci-base/compile -j$(nproc) V=s || make package/feeds/luci/luci-base/compile -j1 V=s
-          make package/feeds/luci/luci-base/compile -j1 V=s
-          # 尝试直接编译
-          # make -j$(nproc) V=s > compile.log 2>&1 || true
-          make -j1 V=s > compile.log 2>&1 || true
-          if [ -f "bin/targets/*/*/*.bin" ]; then
-            echo "Bin file found, compilation successful."
-            echo "status=success" >> $GITHUB_OUTPUT
-          else
-            echo "No bin file found or compilation failed, checking logs..."
-            echo "status=needs_fix" >> $GITHUB_OUTPUT
+          make tools/install -j1 V=s > tools.log 2>&1
+          if [ $? -ne 0 ]; then
+            echo "Tools compilation failed"
+            exit 1
           fi
+
+      - name: Compile toolchain
+        run: |
+          cd openwrt
+          make toolchain/install -j1 V=s > toolchain.log 2>&1
+          if [ $? -ne 0 ]; then
+            echo "Toolchain compilation failed"
+            exit 1
+          fi
+
+      - name: Compile kernel
+        run: |
+          cd openwrt
+          make target/linux/compile -j1 V=s > kernel.log 2>&1
+          if [ $? -ne 0 ]; then
+            echo "Kernel compilation failed"
+            exit 1
+          fi
+
+      - name: Compile packages
+        run: |
+          cd openwrt
+          # 从 .config 中提取启用的包列表
+          grep "^CONFIG_PACKAGE_.*=y" .config | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' > package_list.txt
+          while read -r pkg; do
+            echo "Compiling package $pkg..."
+            make package/$pkg/compile -j1 V=s > "package_$pkg.log" 2>&1
+            if [ $? -ne 0 ]; then
+              echo "Package $pkg compilation failed"
+              exit 1
+            fi
+          done < package_list.txt
+
+      - name: Build image
+        run: |
+          cd openwrt
+          make -j1 V=s > image.log 2>&1
+          if [ $? -ne 0 ]; then
+            echo "Image build failed"
+            exit 1
+          fi
+          # 检查是否生成固件文件
+          if [ -f "bin/targets/*/*/*.bin" ]; then
+            echo "Compilation successful"
+          else
+            echo "No bin file found"
+            exit 1
+          fi
+
+      # - name: Upload compilation logs
+      #   if: always()
+      #   uses: actions/upload-artifact@v2
+      #   with:
+      #     name: compilation_logs
+      #     path: openwrt/*.log
           
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
