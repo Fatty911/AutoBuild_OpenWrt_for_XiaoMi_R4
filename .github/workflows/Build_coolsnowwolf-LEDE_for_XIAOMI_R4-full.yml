@@ -168,18 +168,39 @@ jobs:
         set -x
         # 确保 feeds 已更新并包含最新的 batman-adv
         ./scripts/feeds update batman || { echo "Failed to update batman feed"; exit 1; }
+        
+        # Debug: List contents of feeds/batman/ to inspect its structure
+        echo "Listing contents of feeds/batman/:"
+        ls -l feeds/batman/
+        
+        # Install batman-adv from the batman feed
         ./scripts/feeds install -p batman batman-adv || { echo "Failed to install batman-adv from batman feed"; exit 1; }
         
-        # 检查 batman-adv 是否正确安装到 feeds 中
-        if [ ! -d "feeds/batman/batman-adv" ]; then
-          echo "Error: batman-adv not found in feeds/batman!"
+        # Check where batman-adv is installed
+        if [ -d "feeds/batman" ]; then
+          # Check the standard feeds location
+          if [ -d "package/feeds/batman/batman-adv" ]; then
+            BATMAN_PATH="package/feeds/batman/batman-adv"
+            echo "Found batman-adv in package/feeds/batman/batman-adv"
+          # If not found, check if it’s directly in package/
+          elif [ -d "package/batman-adv" ]; then
+            BATMAN_PATH="package/batman-adv"
+            echo "Found batman-adv in package/batman-adv"
+          else
+            echo "Error: batman-adv not found in expected locations!"
+            ls -l package/  # Additional debug output
+            ls -l package/feeds/batman/  # Additional debug output
+            exit 1
+          fi
+        else
+          echo "Error: feeds/batman/ directory not found!"
           exit 1
         fi
         
-        # 编译 batman-adv
-        make -j1 package/feeds/batman/batman-adv/compile V=s || {
+        # Compile batman-adv using the detected path
+        make -j1 $BATMAN_PATH/compile V=s || {
           echo "batman-adv compilation failed!"
-          cat logs/*  # 输出日志以便调试
+          cat logs/*  # Output logs for debugging
           exit 1
         }
         echo "batman_adv_status=success" >> $GITHUB_ENV
