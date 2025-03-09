@@ -166,15 +166,27 @@ jobs:
       run: |
         cd openwrt/feeds/routing/batman-adv/
         set -x
-        LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git | grep -o 'refs/tags/[0-9]\+\.[0-9]\+' | sort -V | tail -n 1 | sed 's|refs/tags/||'); \
-        TARBALL_URL="https://downloads.open-mesh.org/batman/releases/batman-adv-${LATEST_TAG}/batman-adv-${LATEST_TAG}.tar.gz"; \
-        curl -o "batman-adv-${LATEST_TAG}.tar.gz" "${TARBALL_URL}" || { echo "下载 tarball 失败"; exit 1; }; \
-        HASH=$(sha256sum "batman-adv-${LATEST_TAG}.tar.gz" | awk '{print $1}'); \
-        sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=${LATEST_TAG}/" Makefile; \
-        sed -i "s/PKG_HASH:=.*/PKG_HASH:=${HASH}/" Makefile; \
-        rm "batman-adv-${LATEST_TAG}.tar.gz"; \
+        LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git | grep -o 'refs/tags/v[0-9]\+\.[0-9]+' | sort -V | tail -n 1 | sed 's|refs/tags/v||');
+        # 构造 tarball 的 URL
+        TARBALL_URL="https://downloads.open-mesh.org/batman/releases/batman-adv-${LATEST_TAG}/batman-adv-${LATEST_TAG}.tar.gz"
+        
+        # 下载 tarball
+        curl -o "batman-adv-${LATEST_TAG}.tar.gz" "${TARBALL_URL}" || { echo "错误：下载 tarball 失败"; exit 1; }
+        
+        # 验证 tarball 是否有效
+        if [ ! -s "batman-adv-${LATEST_TAG}.tar.gz" ]; then
+          echo "错误：下载的 tarball 为空或无效"
+          exit 1
+        fi
+        
+        # 计算文件的 SHA256 哈希值
+        HASH=$(sha256sum "batman-adv-${LATEST_TAG}.tar.gz" | awk '{print $1}')
+
+        # 更新 Makefile
+        sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=${LATEST_TAG}/" Makefile
+        sed -i "s/PKG_HASH:=.*/PKG_HASH:=${HASH}/" Makefile
         echo "已更新 Makefile 到版本 ${LATEST_TAG}，hash 为 ${HASH}"
-        make -j1 V=s || exit 1
+        make -j1 V=s || (cd .. && make -j1 V=s) || exit 1
 
         echo "batman_adv_status=success" >> $GITHUB_ENV
         
