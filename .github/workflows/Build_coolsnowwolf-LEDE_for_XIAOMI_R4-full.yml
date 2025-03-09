@@ -164,45 +164,18 @@ jobs:
     - name: Compile batman-adv with latest source
       id: update_batman_latest
       run: |
-        cd openwrt
+        cd openwrt/feeds/routing/batman-adv/
         set -x
-        # 确保 feeds 已更新并包含最新的 batman-adv
-        ./scripts/feeds update batman || { echo "Failed to update batman feed"; exit 1; }
-        
-        # Debug: List contents of feeds/batman/ to inspect its structure
-        echo "Listing contents of feeds/batman/:"
-        ls -l feeds/batman/
-        
-        # Install batman-adv from the batman feed
-        ./scripts/feeds install -p batman batman-adv || { echo "Failed to install batman-adv from batman feed"; exit 1; }
-        
-        # Check where batman-adv is installed
-        if [ -d "feeds/batman" ]; then
-          # Check the standard feeds location
-          if [ -d "package/feeds/batman/batman-adv" ]; then
-            BATMAN_PATH="package/feeds/batman/batman-adv"
-            echo "Found batman-adv in package/feeds/batman/batman-adv"
-          # If not found, check if it’s directly in package/
-          elif [ -d "package/batman-adv" ]; then
-            BATMAN_PATH="package/batman-adv"
-            echo "Found batman-adv in package/batman-adv"
-          else
-            echo "Error: batman-adv not found in expected locations!"
-            ls -l package/  # Additional debug output
-            ls -l package/feeds/batman/  # Additional debug output
-            exit 1
-          fi
-        else
-          echo "Error: feeds/batman/ directory not found!"
-          exit 1
-        fi
-        
-        # Compile batman-adv using the detected path
-        make -j1 $BATMAN_PATH/compile V=s || {
-          echo "batman-adv compilation failed!"
-          cat logs/*  # Output logs for debugging
-          exit 1
-        }
+        LATEST_TAG=$(git ls-remote --tags https://git.open-mesh.org/batman-adv.git | grep -o 'refs/tags/[0-9]\+\.[0-9]\+' | sort -V | tail -n 1 | sed 's|refs/tags/||'); \
+        TARBALL_URL="https://downloads.open-mesh.org/batman/releases/batman-adv-${LATEST_TAG}/batman-adv-${LATEST_TAG}.tar.gz"; \
+        curl -o "batman-adv-${LATEST_TAG}.tar.gz" "${TARBALL_URL}" || { echo "下载 tarball 失败"; exit 1; }; \
+        HASH=$(sha256sum "batman-adv-${LATEST_TAG}.tar.gz" | awk '{print $1}'); \
+        sed -i "s/PKG_VERSION:=.*/PKG_VERSION:=${LATEST_TAG}/" Makefile; \
+        sed -i "s/PKG_HASH:=.*/PKG_HASH:=${HASH}/" Makefile; \
+        rm "batman-adv-${LATEST_TAG}.tar.gz"; \
+        echo "已更新 Makefile 到版本 ${LATEST_TAG}，hash 为 ${HASH}"
+        make -j1 V=s || exit 1
+
         echo "batman_adv_status=success" >> $GITHUB_ENV
         
     - name: Try compiling batman-adv
