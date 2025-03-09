@@ -163,17 +163,19 @@ jobs:
           fi
 
       - name: Compile packages
+        id: compile_packages
         run: |
           cd openwrt
-          grep "^CONFIG_PACKAGE_.*=y" .config | sed 's/CONFIG_PACKAGE_\(.*\)=y/\1/' > package_list.txt
-          while read -r pkg; do
-            echo "Compiling package $pkg..."
-            make package/$pkg/compile -j1 V=s > "package_$pkg.log" 2>&1 || {
-              echo "Package $pkg compilation failed. See detailed log below:"
-              cat "package_$pkg.log"
-              exit 1
-            }
-          done < package_list.txt
+          # 预生成包索引
+          make prepare-tmpinfo
+          make package/index
+          make -j1 package/compile V=s
+          # 二次验证关键包
+          for pkg in mbedtls libopenssl; do
+            if [ -d "package/$pkg" ] || [ -d "feeds/packages/$pkg" ]; then
+              make -j1 package/$pkg/compile V=s
+            fi
+          done
       
       - name: Build image
         run: |
