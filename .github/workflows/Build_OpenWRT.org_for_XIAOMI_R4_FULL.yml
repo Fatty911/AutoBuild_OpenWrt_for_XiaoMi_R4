@@ -169,7 +169,16 @@ jobs:
           # 预生成包索引
           make prepare-tmpinfo
           make package/index
-          make -j1 package/compile V=s
+          make -j1 package/compile V=s > packages.log 2>&1 || {
+            if grep -q "po2lmo: command not found" packages.log; then
+              echo "检测到 po2lmo 缺失，正在优先编译 luci-base..."
+              make -j1 package/feeds/luci/luci-base/compile V=s
+              echo "重新尝试编译主组件..."
+              make -j1 package/compile V=s
+            else
+              exit 1  # 非 po2lmo 错误则直接退出
+            fi
+          }
           # 二次验证关键包
           for pkg in mbedtls libopenssl; do
             if [ -d "package/$pkg" ] || [ -d "feeds/packages/$pkg" ]; then
