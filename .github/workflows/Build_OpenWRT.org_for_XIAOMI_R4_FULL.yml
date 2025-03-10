@@ -230,6 +230,60 @@ jobs:
                       rm -f "$makefile.tmp"
                     fi
                   ' _ {} \;
+            elif grep -q "dependency format is invalid" packages.log; then
+              echo "Fixing PKG_VERSION formats..."
+                  find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                    if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                      echo "Found target in $makefile"
+                      sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+                      echo "Modified $makefile:"
+                      grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                    fi
+                  done
+              echo "Fixing dependency duplicates..."
+                  find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                    makefile="$1"
+                    awk '\''BEGIN { FS = "[[:space:]]+" }
+                    /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                        split($0, deps, " ")
+                        seen_versioned = ""
+                        seen_bare = ""
+                        result = $1
+                        for (i = 2; i <= length(deps); i++) {
+                            dep = deps[i]
+                            pos = index(dep, ">=")
+                            if (pos > 0) {
+                                bare = substr(dep, 2, pos-2)
+                            } else {
+                                bare = substr(dep, 2)
+                            }
+                            if (match(dep, />=/)) {
+                                if (seen_versioned !~ bare) {
+                                    result = result " " dep
+                                    seen_versioned = seen_versioned " " bare
+                                    gsub(" *" bare " *", " ", seen_bare)
+                                }
+                            } else {
+                                if (seen_versioned !~ bare && seen_bare !~ bare) {
+                                    result = result " " dep
+                                    seen_bare = seen_bare " " bare
+                                }
+                            }
+                        }
+                        print result
+                        next
+                    }
+                    { print }
+                    '\'' "$makefile" > "$makefile.tmp"
+                    if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+                      echo "Modified $makefile:"
+                      grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+                      mv "$makefile.tmp" "$makefile"
+                    else
+                      rm -f "$makefile.tmp"
+                    fi
+                  ' _ {} \;
+              
             else
               # 截取从倒数第三个"Entering directory"到末尾的日志
               LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
@@ -237,8 +291,7 @@ jobs:
               echo "编译错误日志摘要："
               echo "$LOG_TAIL"
               exit 1
-            fi
-            
+            fi      
           }
       
       # - name: Build image
