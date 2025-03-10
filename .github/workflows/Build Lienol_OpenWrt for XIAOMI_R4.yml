@@ -162,7 +162,12 @@ jobs:
             echo "重新尝试编译主组件..."
             make -j1 package/compile V=s
           else
-            exit 1  # 非 po2lmo 错误则直接退出
+            # 截取从倒数第三个"Entering directory"到末尾的日志
+            LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
+            [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 50 packages.log)  # 保底截取最后50行
+            echo "编译错误日志摘要："
+            echo "$LOG_TAIL"
+            exit 1
           fi
         }
         # 二次验证关键包
