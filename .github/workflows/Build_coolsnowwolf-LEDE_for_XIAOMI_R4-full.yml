@@ -214,31 +214,164 @@ jobs:
         # 预生成包索引
         make prepare-tmpinfo
         make -j1 package/compile V=s > packages.log 2>&1 || {
-          if grep -q "po2lmo: command not found" packages.log; then
-            echo "检测到 po2lmo 缺失，正在优先编译 luci-base..."
-            make -j1 package/feeds/luci/luci-base/compile V=s
-            echo "重新尝试编译主组件..."
-            make -j1 package/compile V=s
-          elif grep -q "batman-adv" packages.log; then
-            echo "检测到 batman-adv 错误，尝试应用补丁..."
-            # 创建补丁目录并写入补丁内容
-            # 使用YAML文本块语法生成补丁
-            BATMAN_PATCH_DIR="feeds/routing/batman-adv/patches"
-            mkdir -p $BATMAN_PATCH_DIR
-            cp ../001-fix-multicast.patch $BATMAN_PATCH_DIR/001-fix-multicast.patch
-            git apply $BATMAN_PATCH_DIR/001-fix-multicast.patch
-            make package/feeds/routing/batman-adv/{clean,compile} V=s -j1
-            echo "重新尝试完整编译..."
-            make -j1 package/compile V=s
-          else
-            # 截取从倒数第三个"Entering directory"到末尾的日志
-            LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
-            [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 50 packages.log)  # 保底截取最后50行
-            echo "编译错误日志摘要："
-            echo "$LOG_TAIL"
-            exit 1
-          fi
-        }
+            MAX_RETRY=3
+            retry_count=0
+            while [ $retry_count -lt $MAX_RETRY ]; do
+              make -j1 package/compile V=s > packages.log 2>&1 && break
+              
+              # 执行现有修复逻辑（包含上述优化）
+              # ...
+              if grep -q "po2lmo: command not found" packages.log; then
+                echo "检测到 po2lmo 缺失，正在优先编译 luci-base..."
+                make -j1 package/feeds/luci/luci-base/compile V=s
+                echo "重新尝试编译主组件..."
+                make -j1 package/compile V=s
+              elif grep -q "PKG_VERSION" packages.log; then
+                    echo "Fixing PKG_VERSION formats..."
+                    find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                      if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                        echo "Found target in $makefile"
+                        sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+                        echo "Modified $makefile:"
+                        grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                      fi
+                    done
+                  # 检查依赖项重复错误
+              elif grep -q "DEPENDS" packages.log; then
+                    echo "Fixing dependency duplicates..."
+                    find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                      makefile="$1"
+                      awk '\''BEGIN { FS = "[[:space:]]+" }
+                      /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                          split($0, deps, " ")
+                          seen_versioned = ""
+                          seen_bare = ""
+                          result = $1
+                          for (i = 2; i <= length(deps); i++) {
+                              dep = deps[i]
+                              pos = index(dep, ">=")
+                              if (pos > 0) {
+                                  bare = substr(dep, 2, pos-2)
+                              } else {
+                                  bare = substr(dep, 2)
+                              }
+                              if (match(dep, />=/)) {
+                                  if (seen_versioned !~ bare) {
+                                      result = result " " dep
+                                      seen_versioned = seen_versioned " " bare
+                                      gsub(" *" bare " *", " ", seen_bare)
+                                  }
+                              } else {
+                                  if (seen_versioned !~ bare && seen_bare !~ bare) {
+                                      result = result " " dep
+                                      seen_bare = seen_bare " " bare
+                                  }
+                              }
+                          }
+                          print result
+                          next
+                      }
+                      { print }
+                      '\'' "$makefile" > "$makefile.tmp"
+                      if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+                        echo "Modified $makefile:"
+                        grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+                        mv "$makefile.tmp" "$makefile"
+                      else
+                        rm -f "$makefile.tmp"
+                      fi
+                    ' _ {} \;
+              elif grep -q "dependency format is invalid" packages.log; then
+                echo "处理依赖格式错误..."
+                find . -type f $ -name "Makefile" -o -name "*.mk" $ -exec sh -c '
+                  makefile="$1"
+                  # 修复版本号中的连字符问题并去重
+                  awk -i inplace '\''
+                    BEGIN { FS="[[:space:]]+"; OFS=" " }
+                    /^(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                      delete seen
+                      split($0, parts, "=")
+                      split(parts[2], deps, " ")
+                      new_deps = ""
+                      for (i in deps) {
+                        dep = deps[i]
+                        #gsub(/(>=|<=|>)(\d+\.\d+\.\d+)-(\d+)/, "\\1\\2_\\3", dep)
+                        gsub(/(>=|<=|>)(\d+\.\d+\.\d+)-\d+/, "\\1\\2", $0)
+                        # 去重
+                        if (!seen[dep]++) {
+                          new_deps = new_deps " " dep
+                        }
+                      }
+                      $0 = parts[1] "=" new_deps
+                    }
+                    { print }
+                  '\'' "$makefile"
+                ' _ {} \;
+                echo "Fixing PKG_VERSION formats..."
+                    find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                      if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                        echo "Found target in $makefile"
+                        sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+                        echo "Modified $makefile:"
+                        grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                      fi
+                    done
+                echo "Fixing dependency duplicates..."
+                    find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                      makefile="$1"
+                      awk '\''BEGIN { FS = "[[:space:]]+" }
+                      /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                          split($0, deps, " ")
+                          seen_versioned = ""
+                          seen_bare = ""
+                          result = $1
+                          for (i = 2; i <= length(deps); i++) {
+                              dep = deps[i]
+                              pos = index(dep, ">=")
+                              if (pos > 0) {
+                                  bare = substr(dep, 2, pos-2)
+                              } else {
+                                  bare = substr(dep, 2)
+                              }
+                              if (match(dep, />=/)) {
+                                  if (seen_versioned !~ bare) {
+                                      result = result " " dep
+                                      seen_versioned = seen_versioned " " bare
+                                      gsub(" *" bare " *", " ", seen_bare)
+                                  }
+                              } else {
+                                  if (seen_versioned !~ bare && seen_bare !~ bare) {
+                                      result = result " " dep
+                                      seen_bare = seen_bare " " bare
+                                  }
+                              }
+                          }
+                          print result
+                          next
+                      }
+                      { print }
+                      '\'' "$makefile" > "$makefile.tmp"
+                      if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+                        echo "Modified $makefile:"
+                        grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+                        mv "$makefile.tmp" "$makefile"
+                      else
+                        rm -f "$makefile.tmp"
+                      fi
+                    ' _ {} \;
+                
+              else
+                # 截取从倒数第三个"Entering directory"到末尾的日志
+                LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
+                [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 packages.log)  # 保底截取最后100行
+                echo "编译错误日志摘要："
+                echo "$LOG_TAIL"
+                exit 1
+              fi     
+                retry_count=$((retry_count + 1))
+                echo "尝试第 $retry_count 次修复..."
+              done 
+          }
 
     # - name: Compile batman-adv with latest source
     #   id: update_batman_latest
