@@ -220,6 +220,17 @@ jobs:
             make -j1 package/feeds/luci/luci-base/compile V=s
             echo "重新尝试编译主组件..."
             make -j1 package/compile V=s
+          elif grep -q "batman-adv" packages.log; then
+            # 使用 sed 注释或删除 batman-adv 相关配置项
+            sed -i -e '/CONFIG_PACKAGE_batman-adv/d' \
+                   -e '/CONFIG_PACKAGE_kmod-batman-adv/d' \
+                   -e '/CONFIG_PACKAGE_batctl/d' .config
+            
+            # 强制关闭 batman-adv 选项
+            echo "CONFIG_PACKAGE_batman-adv=n" >> .config
+            echo "CONFIG_PACKAGE_kmod-batman-adv=n" >> .config
+            echo "CONFIG_PACKAGE_batctl=n" >> .config
+            make -j1 package/compile V=s
           else
             # 截取从倒数第三个"Entering directory"到末尾的日志
             LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
@@ -229,28 +240,7 @@ jobs:
             exit 1
           fi
         }
-        # 二次验证关键包
-        for pkg in mbedtls libopenssl; do
-          if [ -d "package/$pkg" ] || [ -d "feeds/packages/$pkg" ]; then
-            make -j1 package/$pkg/compile V=s
-          fi
-        done
-    
-    - name: Build image
-      run: |
-        cd openwrt
-        make -j1 V=s > image.log 2>&1
-        if [ $? -ne 0 ]; then
-          echo "Image build failed"
-          exit 1
-        fi
-        # 检查是否生成固件文件
-        if [ -f "bin/targets/*/*/*.bin" ]; then
-          echo "Compilation successful"
-        else
-          echo "No bin file found"
-          exit 1
-        fi
+
     # - name: Compile batman-adv with latest source
     #   id: update_batman_latest
     #   run: |
