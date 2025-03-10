@@ -233,7 +233,7 @@ jobs:
                 BATMAN_PATCH_DIR="feeds/routing/batman-adv/patches"
                 mkdir -p $BATMAN_PATCH_DIR
                 cp ../001-fix-multicast.patch $BATMAN_PATCH_DIR/001-fix-multicast.patch
-                git apply $BATMAN_PATCH_DIR/001-fix-multicast.patch
+                # git apply $BATMAN_PATCH_DIR/001-fix-multicast.patch
                 make package/feeds/routing/batman-adv/{clean,compile} V=s -j1
                 echo "重新尝试完整编译..."
                 make -j1 package/compile V=s
