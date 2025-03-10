@@ -225,31 +225,31 @@ jobs:
             BATMAN_PATCH_DIR="feeds/routing/batman-adv/patches"
             mkdir -p $BATMAN_PATCH_DIR
             cat << 'EOF' > $BATMAN_PATCH_DIR/001-fix-multicast.patch
-            diff --git a/net/batman-adv/multicast.c b/net/batman-adv/multicast.c
-            --- a/net/batman-adv/multicast.c
-            +++ b/net/batman-adv/multicast.c
-            @@ -208,7 +208,7 @@
-              */
-             static bool batadv_mcast_mla_rtr_flags_bridge_get(struct net_device *dev)
-             {
-            -	if (!br_multicast_has_router_adjacent(dev, ETH_P_IP))
-            +	if (!br_multicast_has_querier_adjacent(dev, ETH_P_IP))
-             		return false;
-             
-             #if IS_ENABLED(CONFIG_IPV6)
-            @@ -535,9 +535,9 @@
-             	}
-             
-             	if (src->proto == htons(ETH_P_IP)) {
-            -		ip_eth_mc_map(src->dst.ip4, dst);
-            +		ip_eth_mc_map(src->u.ip4, dst);
-             	} else if (src->proto == htons(ETH_P_IPV6)) {
-            -		ipv6_eth_mc_map(&src->dst.ip6, dst);
-            +		ipv6_eth_mc_map(&src->u.ip6, dst);
-             	} else {
-             		return false;
-             	}
-            EOF
+diff --git a/net/batman-adv/multicast.c b/net/batman-adv/multicast.c
+--- a/net/batman-adv/multicast.c
++++ b/net/batman-adv/multicast.c
+@@ -208,7 +208,7 @@
+  */
+ static bool batadv_mcast_mla_rtr_flags_bridge_get(struct net_device *dev)
+ {
+-	if (!br_multicast_has_router_adjacent(dev, ETH_P_IP))
++	if (!br_multicast_has_querier_adjacent(dev, ETH_P_IP))
+    return false;
+ 
+ #if IS_ENABLED(CONFIG_IPV6)
+@@ -535,9 +535,9 @@
+  }
+ 
+  if (src->proto == htons(ETH_P_IP)) {
+-		ip_eth_mc_map(src->dst.ip4, dst);
++		ip_eth_mc_map(src->u.ip4, dst);
+  } else if (src->proto == htons(ETH_P_IPV6)) {
+-		ipv6_eth_mc_map(&src->dst.ip6, dst);
++		ipv6_eth_mc_map(&src->u.ip6, dst);
+  } else {
+    return false;
+  }
+EOF
             # 应用补丁并重新编译
             make package/feeds/routing/batman-adv/{clean,compile} V=s -j1
             echo "重新尝试完整编译..."
