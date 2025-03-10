@@ -213,7 +213,6 @@ jobs:
         cd openwrt
         # 预生成包索引
         make prepare-tmpinfo
-        # make package/index
         make -j1 package/compile V=s > packages.log 2>&1 || {
           if grep -q "po2lmo: command not found" packages.log; then
             echo "检测到 po2lmo 缺失，正在优先编译 luci-base..."
@@ -221,15 +220,39 @@ jobs:
             echo "重新尝试编译主组件..."
             make -j1 package/compile V=s
           elif grep -q "batman-adv" packages.log; then
-            # 使用 sed 注释或删除 batman-adv 相关配置项
-            sed -i -e '/CONFIG_PACKAGE_batman-adv/d' \
-                   -e '/CONFIG_PACKAGE_kmod-batman-adv/d' \
-                   -e '/CONFIG_PACKAGE_batctl/d' .config
-            
-            # 强制关闭 batman-adv 选项
-            echo "CONFIG_PACKAGE_batman-adv=n" >> .config
-            echo "CONFIG_PACKAGE_kmod-batman-adv=n" >> .config
-            echo "CONFIG_PACKAGE_batctl=n" >> .config
+            echo "检测到 batman-adv 错误，尝试应用补丁..."
+            # 创建补丁目录并写入补丁内容
+            BATMAN_PATCH_DIR="feeds/routing/batman-adv/patches"
+            mkdir -p $BATMAN_PATCH_DIR
+            cat << 'EOF' > $BATMAN_PATCH_DIR/001-fix-multicast.patch
+            diff --git a/net/batman-adv/multicast.c b/net/batman-adv/multicast.c
+            --- a/net/batman-adv/multicast.c
+            +++ b/net/batman-adv/multicast.c
+            @@ -208,7 +208,7 @@
+              */
+             static bool batadv_mcast_mla_rtr_flags_bridge_get(struct net_device *dev)
+             {
+            -	if (!br_multicast_has_router_adjacent(dev, ETH_P_IP))
+            +	if (!br_multicast_has_querier_adjacent(dev, ETH_P_IP))
+             		return false;
+             
+             #if IS_ENABLED(CONFIG_IPV6)
+            @@ -535,9 +535,9 @@
+             	}
+             
+             	if (src->proto == htons(ETH_P_IP)) {
+            -		ip_eth_mc_map(src->dst.ip4, dst);
+            +		ip_eth_mc_map(src->u.ip4, dst);
+             	} else if (src->proto == htons(ETH_P_IPV6)) {
+            -		ipv6_eth_mc_map(&src->dst.ip6, dst);
+            +		ipv6_eth_mc_map(&src->u.ip6, dst);
+             	} else {
+             		return false;
+             	}
+            EOF
+            # 应用补丁并重新编译
+            make package/feeds/routing/batman-adv/{clean,compile} V=s -j1
+            echo "重新尝试完整编译..."
             make -j1 package/compile V=s
           else
             # 截取从倒数第三个"Entering directory"到末尾的日志
