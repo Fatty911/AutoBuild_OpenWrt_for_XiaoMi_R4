@@ -278,21 +278,6 @@ jobs:
             fi      
           }
     
-    - name: Build image
-      run: |
-        cd openwrt
-        make -j1 V=s > image.log 2>&1
-        if [ $? -ne 0 ]; then
-          echo "Image build failed"
-          exit 1
-        fi
-        # 检查是否生成固件文件
-        if [ -f "bin/targets/*/*/*.bin" ]; then
-          echo "Compilation successful"
-        else
-          echo "No bin file found"
-          exit 1
-        fi
 
     - name: Try compiling the firmware
       id: compile_attempt
