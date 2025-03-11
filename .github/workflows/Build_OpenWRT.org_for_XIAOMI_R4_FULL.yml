@@ -360,7 +360,7 @@ jobs:
           
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
-        if: steps.compile_attempt.outputs.status == 'needs_fix' && steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
+        if: steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
         run: |
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
