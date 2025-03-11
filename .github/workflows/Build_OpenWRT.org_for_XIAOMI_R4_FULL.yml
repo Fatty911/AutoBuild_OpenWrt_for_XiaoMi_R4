@@ -318,12 +318,12 @@ jobs:
                     ' _ {} \;
                 
               else
-                # 截取从倒数第三个"Entering directory"到末尾的日志
-                LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
-                [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 packages.log)  # 保底截取最后100行
-                echo "编译错误日志摘要："
-                echo "$LOG_TAIL"
-                exit 1
+                  # 截取从倒数第三个"Entering directory"到末尾的日志
+                  LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
+                  [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 packages.log)  # 保底截取最后100行
+                  echo "编译错误日志摘要："
+                  echo "$LOG_TAIL"
+                  exit 1
               fi     
                 retry_count=$((retry_count + 1))
                 echo "尝试第 $retry_count 次修复..."
@@ -333,20 +333,35 @@ jobs:
       - name: Build image
         run: |
           cd openwrt
-          make -j1 V=s > image.log 2>&1
-          if [ $? -ne 0 ]; then
-            echo "Image build failed"
-            exit 1
-          fi
-          # 检查是否生成固件文件
-          if [ -f "bin/targets/*/*/*.bin" ]; then
-            tree bin/targets/
-            echo "Compilation successful"
-          else
-            echo "No bin file found"
-            tree bin/targets/
-            exit 1
-          fi
+          LOG_FILE="image.log"
+          make -j1 V=s > image.log 2>&1 || {
+                tee "$LOG_FILE" || {
+                          # 错误处理：动态截取倒数第二个 Entering directory 到错误行
+                          echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
+                          
+                          # 步骤1：倒序日志并定位关键行
+                          tac "$LOG_FILE" | awk '
+                              BEGIN { entry_count=0; error_found=0 }
+                              /Entering directory/ && !error_found { 
+                                  entry_count++
+                                  if (entry_count == 2) {  # 倒数第二个Entering directory
+                                      print "----- 错误触发目录入口 -----"
+                                      print $0
+                                      print "============================="
+                                      error_found=1
+                                      next
+                                  }
+                              }
+                              error_found { 
+                                  # 反转回正序前缓存内容
+                                  buffer = $0 "\n" buffer
+                                  if ($0 ~ /error|failed/) { exit }
+                              }
+                              END { print buffer }
+                          ' | tac  # 恢复正序输出
+                          exit 1
+                      }
+              }
 
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
