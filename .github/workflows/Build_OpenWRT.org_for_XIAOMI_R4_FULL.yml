@@ -167,13 +167,14 @@ jobs:
         run: |
           cd openwrt
           # 预生成包索引
-          make prepare-tmpinfo
-          make package/index
-          make -j1 package/compile V=s > packages.log 2>&1 || {
-            MAX_RETRY=3
+          # make prepare-tmpinfo
+          # make package/index
+          # make -j1 package/compile V=s > packages.log 2>&1 || {
+          echo "开始尝试编译packages " && {
+            MAX_RETRY=5
             retry_count=0
             while [ $retry_count -lt $MAX_RETRY ]; do
-              make -j1 package/compile V=s > packages.log 2>&1 && break
+              make -j2 package/compile V=s > packages.log 2>&1 && break
               
               # 执行现有修复逻辑（包含上述优化）
               # ...
