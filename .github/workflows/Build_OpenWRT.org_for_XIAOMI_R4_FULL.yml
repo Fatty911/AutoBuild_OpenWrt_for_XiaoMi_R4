@@ -330,29 +330,24 @@ jobs:
               done 
           }
       
-      # - name: Build image
-      #   run: |
-      #     cd openwrt
-      #     make -j1 V=s > image.log 2>&1
-      #     if [ $? -ne 0 ]; then
-      #       echo "Image build failed"
-      #       exit 1
-      #     fi
-      #     # 检查是否生成固件文件
-      #     if [ -f "bin/targets/*/*/*.bin" ]; then
-      #       echo "Compilation successful"
-      #     else
-      #       echo "No bin file found"
-      #       exit 1
-      #     fi
+      - name: Build image
+        run: |
+          cd openwrt
+          make -j1 V=s > image.log 2>&1
+          if [ $? -ne 0 ]; then
+            echo "Image build failed"
+            exit 1
+          fi
+          # 检查是否生成固件文件
+          if [ -f "bin/targets/*/*/*.bin" ]; then
+            tree bin/targets/
+            echo "Compilation successful"
+          else
+            echo "No bin file found"
+            tree bin/targets/
+            exit 1
+          fi
 
-      # - name: Upload compilation logs
-      #   if: always()
-      #   uses: actions/upload-artifact@v2
-      #   with:
-      #     name: compilation_logs
-      #     path: openwrt/*.log
-          
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
@@ -360,6 +355,7 @@ jobs:
             echo "BIN_EXISTS=true" >> $GITHUB_OUTPUT
           else
             echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
+            tree bin/targets/
           fi
           
       - name: Perform manual porting for Xiaomi Mi Router 4
