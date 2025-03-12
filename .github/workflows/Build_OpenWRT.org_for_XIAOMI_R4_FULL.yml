@@ -489,64 +489,98 @@ jobs:
         if: steps.transplant.outputs.isFixed == 'true'
         run: |
           cd openwrt
-          # 检查 PKG_VERSION 错误
-          if grep -q "PKG_VERSION" compile.log; then
-            echo "Fixing PKG_VERSION formats..."
-            find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
-              if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
-                echo "Found target in $makefile"
-                sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
-                echo "Modified $makefile:"
-                grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
-              fi
-            done
-          fi
-          # 检查依赖项重复错误
-          if grep -q "DEPENDS" compile.log; then
-            echo "Fixing dependency duplicates..."
-            find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
-              makefile="$1"
-              awk '\''BEGIN { FS = "[[:space:]]+" }
-              /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
-                  split($0, deps, " ")
-                  seen_versioned = ""
-                  seen_bare = ""
-                  result = $1
-                  for (i = 2; i <= length(deps); i++) {
-                      dep = deps[i]
-                      pos = index(dep, ">=")
-                      if (pos > 0) {
-                          bare = substr(dep, 2, pos-2)
-                      } else {
-                          bare = substr(dep, 2)
+          make -j1 V=s > compile.log 2>&1 || {
+            MAX_RETRY=6
+            retry_count=0
+            while [ $retry_count -lt $MAX_RETRY ]; do
+                    make -j2 V=s > compile.log 2>&1 && break
+                    # 检查 PKG_VERSION 错误
+                    if grep -q "PKG_VERSION" compile.log; then
+                          echo "Fixing PKG_VERSION formats..."
+                          find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                            if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                              echo "Found target in $makefile"
+                              sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+                              echo "Modified $makefile:"
+                              grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                            fi
+                          done
+                    # 检查依赖项重复错误
+                    elif grep -q "DEPENDS" compile.log; then
+                          echo "Fixing dependency duplicates..."
+                          find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                            makefile="$1"
+                            awk '\''BEGIN { FS = "[[:space:]]+" }
+                            /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                                split($0, deps, " ")
+                                seen_versioned = ""
+                                seen_bare = ""
+                                result = $1
+                                for (i = 2; i <= length(deps); i++) {
+                                    dep = deps[i]
+                                    pos = index(dep, ">=")
+                                    if (pos > 0) {
+                                        bare = substr(dep, 2, pos-2)
+                                    } else {
+                                        bare = substr(dep, 2)
+                                    }
+                                    if (match(dep, />=/)) {
+                                        if (seen_versioned !~ bare) {
+                                            result = result " " dep
+                                            seen_versioned = seen_versioned " " bare
+                                            gsub(" *" bare " *", " ", seen_bare)
+                                        }
+                                    } else {
+                                        if (seen_versioned !~ bare && seen_bare !~ bare) {
+                                            result = result " " dep
+                                            seen_bare = seen_bare " " bare
+                                        }
+                                    }
+                                }
+                                print result
+                                next
+                            }
+                            { print }
+                            '\'' "$makefile" > "$makefile.tmp"
+                            if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+                              echo "Modified $makefile:"
+                              grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+                              mv "$makefile.tmp" "$makefile"
+                            else
+                              rm -f "$makefile.tmp"
+                            fi
+                          ' _ {} \;
+                    elif grep -q "missing seperator" compile.log; then
+                          echo ＂遇到分隔符或制表符错误＂
+                    else 
+                          tee "$LOG_FILE" || {
+                          # 错误处理：动态截取倒数第二个 Entering directory 到错误行
+                          echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
+                          
+                          # 步骤1：倒序日志并定位关键行
+                          tac "$LOG_FILE" | awk '
+                              BEGIN { entry_count=0; error_found=0 }
+                              /Entering directory/ && !error_found { 
+                                  entry_count++
+                                  if (entry_count == 2) {  # 倒数第二个Entering directory
+                                      print "----- 错误触发目录入口 -----"
+                                      print $0
+                                      print "============================="
+                                      error_found=1
+                                      next
+                                  }
+                              }
+                              error_found { 
+                                  # 反转回正序前缓存内容
+                                  buffer = $0 "\n" buffer
+                                  if ($0 ~ /error|failed/) { exit }
+                              }
+                              END { print buffer }
+                          ' | tac  # 恢复正序输出
+                          exit 1
                       }
-                      if (match(dep, />=/)) {
-                          if (seen_versioned !~ bare) {
-                              result = result " " dep
-                              seen_versioned = seen_versioned " " bare
-                              gsub(" *" bare " *", " ", seen_bare)
-                          }
-                      } else {
-                          if (seen_versioned !~ bare && seen_bare !~ bare) {
-                              result = result " " dep
-                              seen_bare = seen_bare " " bare
-                          }
-                      }
-                  }
-                  print result
-                  next
-              }
-              { print }
-              '\'' "$makefile" > "$makefile.tmp"
-              if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
-                echo "Modified $makefile:"
-                grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
-                mv "$makefile.tmp" "$makefile"
-              else
-                rm -f "$makefile.tmp"
-              fi
-            ' _ {} \;
-          fi
+                    
+                    }
           # 编译固件
           # make -j$(nproc) V=s || make -j1 V=s || exit 1
           make -j1 V=s || exit 1
