@@ -217,29 +217,10 @@ jobs:
                                     echo "编译batman-adv失败，查看日志报错ERROR之前的Entering Directory到Error处"
                                     echo "LOG_FILE的路径是：$LOG_FILE"
                                     tee "$LOG_FILE" || {
-                                                    # 错误处理：动态截取倒数第二个 Entering directory 到错误行
-                                                    echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
-                                                    
-                                                    # 步骤1：倒序日志并定位关键行
-                                                    tac "$LOG_FILE" | awk '
-                                                        BEGIN { entry_count=0; error_found=0 }
-                                                        /Entering directory/ && !error_found { 
-                                                            entry_count++
-                                                            if (entry_count == 2) {  # 倒数第二个Entering directory
-                                                                print "----- 错误触发目录入口 -----"
-                                                                print $0
-                                                                print "============================="
-                                                                error_found=1
-                                                                next
-                                                                                  }
-                                                                                              }
-                                                        error_found { 
-                                                            # 反转回正序前缓存内容
-                                                            buffer = $0 "\n" buffer
-                                                            if ($0 ~ /error|failed/) { exit }
-                                                                    }
-                                                        END { print buffer }
-                                                    ' | tac  # 恢复正序输出
+                                                    # echo "=== 错误块截取（最后100行） ==="
+                                                    # tail -n 100 "$LOG_FILE"                                            
+                                                    echo "检查 'ERROR'、'Error' 或 'fail' 关键字，没找到就查看末尾200行日志："
+                                                    grep -i -A50 -B20 'error\|fail' "$LOG_FILE" || tail -n 200 "$LOG_FILE"
                                                         }
                                     echo "batman_first_fail=true" >> $GITHUB_OUTPUT
                                     exit 1
