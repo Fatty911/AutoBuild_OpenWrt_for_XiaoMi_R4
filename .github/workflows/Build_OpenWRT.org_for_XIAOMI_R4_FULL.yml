@@ -390,7 +390,11 @@ jobs:
             echo "BIN_EXISTS=true" >> $GITHUB_OUTPUT
           else
             echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
-            tree bin/targets/
+            if [ -d "openwrt/bin/targets" ]; then
+              tree openwrt/bin/targets/
+            else
+              echo "Directory openwrt/bin/targets/ does not exist."
+            fi
           fi
           
       - name: Perform manual porting for Xiaomi Mi Router 4
