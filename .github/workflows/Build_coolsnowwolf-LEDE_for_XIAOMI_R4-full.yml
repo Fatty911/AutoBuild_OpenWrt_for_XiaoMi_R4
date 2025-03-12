@@ -210,39 +210,40 @@ jobs:
       id: compile_batman_1
       run: |
         cd openwrt
-        LOG_FILE="batman.log"
+        LOG_FILE="batman-adv.log"
         echo "根据https://www.right.com.cn/forum/forum.php?mod=redirect&goto=findpost&ptid=1086753&pid=11643216，首次编译时，容易报错：bash: po2lmo: command not found 这应该是因为编译XXXXXXX需要把 luci-base 先编译出来，但是目前顺序可能是先编译了 hello world 导致出现问题，此时使用 make package/feeds/luci/luci-base/compile V=99 编译出 luci-base 后再编译就不会报错。 这个问题虽然出现的频率不高，但是也不低 "
         make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
-        make -j1 V=s package/feeds/routing/batman-adv/compile > batman.log 2>&1 || {
-          echo "编译batman-adv失败，查看日志报错ERROR之前的Entering Directory到Error处"
-          tee "$LOG_FILE" || {
-                          # 错误处理：动态截取倒数第二个 Entering directory 到错误行
-                          echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
-                          
-                          # 步骤1：倒序日志并定位关键行
-                          tac "$LOG_FILE" | awk '
-                              BEGIN { entry_count=0; error_found=0 }
-                              /Entering directory/ && !error_found { 
-                                  entry_count++
-                                  if (entry_count == 2) {  # 倒数第二个Entering directory
-                                      print "----- 错误触发目录入口 -----"
-                                      print $0
-                                      print "============================="
-                                      error_found=1
-                                      next
-                                  }
-                              }
-                              error_found { 
-                                  # 反转回正序前缓存内容
-                                  buffer = $0 "\n" buffer
-                                  if ($0 ~ /error|failed/) { exit }
-                              }
-                              END { print buffer }
-                          ' | tac  # 恢复正序输出
-                          exit 1
-                      }
-          echo "batman_first_fail=true" >> $GITHUB_OUTPUT
-        }
+        make -j1 V=s package/feeds/routing/batman-adv/compile > batman-adv.log 2>&1 || {
+                                    echo "编译batman-adv失败，查看日志报错ERROR之前的Entering Directory到Error处"
+                                    echo "LOG_FILE的路径是：$LOG_FILE"
+                                    tee "$LOG_FILE" || {
+                                                    # 错误处理：动态截取倒数第二个 Entering directory 到错误行
+                                                    echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
+                                                    
+                                                    # 步骤1：倒序日志并定位关键行
+                                                    tac "$LOG_FILE" | awk '
+                                                        BEGIN { entry_count=0; error_found=0 }
+                                                        /Entering directory/ && !error_found { 
+                                                            entry_count++
+                                                            if (entry_count == 2) {  # 倒数第二个Entering directory
+                                                                print "----- 错误触发目录入口 -----"
+                                                                print $0
+                                                                print "============================="
+                                                                error_found=1
+                                                                next
+                                                                                  }
+                                                                                              }
+                                                        error_found { 
+                                                            # 反转回正序前缓存内容
+                                                            buffer = $0 "\n" buffer
+                                                            if ($0 ~ /error|failed/) { exit }
+                                                                    }
+                                                        END { print buffer }
+                                                    ' | tac  # 恢复正序输出
+                                                        }
+                                    echo "batman_first_fail=true" >> $GITHUB_OUTPUT
+                                    exit 1
+                                                                                        }
         
     - name: Try compiling batman-adv
       id: compile_batman_2
@@ -252,8 +253,9 @@ jobs:
         set -x
         MAX_RETRY=4
         ATTEMPT=0
-        TEMP_LOG=$(mktemp)
         TOOLCHAIN_DIR="staging_dir/toolchain-mipsel_24kc_gcc-${GCC_VERSION}_musl"
+        # make -j1 V=s package/feeds/routing/batman-adv/compile > batman-adv.log 2>&1 || {
+        echo "发现batman-adv的报错，开始尝试查找错误..." && {
         # 循环尝试编译，最多重试 4 次
         while [ $ATTEMPT -le $MAX_RETRY ]; do
             echo "查找此次报错原因，查看报错处日志前50行到后20行"
@@ -277,10 +279,10 @@ jobs:
                   echo "Copying ld-musl files..."
                   cp -fpR $TOOLCHAIN_DIR/lib/ld-musl-*.so* build_dir/target-mipsel_24kc_musl/toolchain/.pkgdir/libc/lib/
                   make toolchain/compile V=s || (make toolchain/clean V=s && make toolchain/compile V=s)
-            elif grep -qi 'tools/' batman-adv; then
+            elif grep -qi 'tools/' batman-adv.log; then
                 echo "检测到tools工具集错误，尝试修复..."
                 make tools/compile V=s || (make tools/clean V=s && make tools/compile V=s || make tools/compile -j1 V=s)
-            elif grep -qi 'libtool' batman-adv; then
+            elif grep -qi 'libtool' batman-adv.log; then
                   echo "检测到 libtool 错误，尝试修复..."
                   cd build_dir/host/libtool*
                   autoreconf -fi
@@ -308,8 +310,8 @@ jobs:
                   ./scripts/feeds install -p routing
                   echo "替换batman-adv源码完毕，回到openwrt根目录再次尝试编译"
             else
-                  LOG_TAIL=$(tac batman.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
-                  [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 batman.log)  # 保底截取最后100行
+                  LOG_TAIL=$(tac batman-adv.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
+                  [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 batman-adv.log)  # 保底截取最后100行
                   echo "编译错误日志摘要（最后100行）："
                   echo "$LOG_TAIL"
                   exit 1
@@ -326,7 +328,7 @@ jobs:
      
           echo "进行第 $ATTEMPT 次重试..."
         done
-    
+        }
 
         
     - name: Compile packages
