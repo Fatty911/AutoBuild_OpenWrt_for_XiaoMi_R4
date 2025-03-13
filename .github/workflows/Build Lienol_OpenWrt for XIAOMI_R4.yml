@@ -353,7 +353,62 @@ jobs:
       run: |
         cd openwrt
         echo "执行修复后重试编译..."
-        
+        set -o pipefail
+                                            rm -f "$makefile.tmp"
+                                          fi
+                                        ' _ {} \;                    
+                          elif grep -q "mkdir: cannot create directory.*File exists" packages.log; then
+                                      echo "检测到构建目录冲突错误，尝试修复..."
+                                      # 提取最后一次出现的失败目录路径
+                                      FAILED_DIR=$(grep -oP "mkdir: cannot create directory '\K[^']+" packages.log | tail -n1)
+                                      if [ -n "$FAILED_DIR" ]; then
+                                          echo "正在清理冲突目录: $FAILED_DIR"
+                                          rm -rf "$FAILED_DIR"   
+                                          # 通过路径推断包名（示例路径：.../coremark-d5fad6bd094899101a4e5fd53af7298160ced6ab/mipsel）
+                                          PKG_PATH=$(echo "$FAILED_DIR" | grep -oE 'package/feeds/[^/]+/[^/]+')
+                                          if [ -n "$PKG_PATH" ]; then
+                                              PKG_NAME=$(basename "$PKG_PATH")
+                                              echo "重新编译包: $PKG_NAME"
+                                              make -j1 "$PKG_PATH/compile" V=s
+                                          else
+                                              echo "无法推断包名，尝试重新编译所有包"
+                                              make -j1 package/compile V=s
+                                          fi
+                                      else
+                                          echo "无法提取失败路径，尝试重新编译所有包"
+                                          make -j1 package/compile V=s
+                                      fi  
+                          else
+                                  tee "$LOG_FILE" || {
+                                  # 错误处理：动态截取倒数第二个 Entering directory 到错误行
+                                  echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
+                                  
+                                  # 步骤1：倒序日志并定位关键行
+                                  tac "$LOG_FILE" | awk '
+                                      BEGIN { entry_count=0; error_found=0 }
+                                      /Entering directory/ && !error_found { 
+                                          entry_count++
+                                          if (entry_count == 2) {  # 倒数第二个Entering directory
+                                              print "----- 错误触发目录入口 -----"
+                                              print $0
+                                              print "============================="
+                                              error_found=1
+                                              next
+                                          }
+                                      }
+                                      error_found { 
+                                          # 反转回正序前缓存内容
+                                          buffer = $0 "\n" buffer
+                                          if ($0 ~ /error|failed/) { exit }
+                                      }
+                                      END { print buffer }
+                                  ' | tac  # 恢复正序输出
+                                  exit 1
+                              }
+                          fi     
+            retry_count=$((retry_count + 1))
+            echo "尝试第 $retry_count 次修复..."
+          done
         
     - name: Check for .bin file after initial compilation
       id: check_bin_initial
