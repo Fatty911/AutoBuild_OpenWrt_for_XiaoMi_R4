@@ -241,7 +241,8 @@ jobs:
                                               END { print buffer }
                                           ' | tac  # 恢复正序输出
                                           exit 1
-                                      }
+                                                                        }
+                                                                                }
         
     - name: Try compiling batman-adv
       id: compile_batman_2
