@@ -352,15 +352,152 @@ jobs:
       id: compile_attempt
       run: |
         cd openwrt
-        echo "执行修复后重试编译..."
+        echo "开始执行修复后重试编译..."
         set -o pipefail
+        LOG_FILE="compile.log"
+        ERROR_PATTERN="error:|failed|undefined reference"
+        # 编译并记录日志
+        MAX_RETRY=6
+        retry_count=0                    
+        while [ $retry_count -lt $MAX_RETRY ]; do
+                          make -j1  V=s > compile.log 2>&1 && break
+                          if grep -q "PKG_VERSION" compile.log; then
+                                      echo "Fixing PKG_VERSION formats..."
+                                      find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                                        if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                                          echo "Found target in $makefile"
+                                          sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+                                          echo "Modified $makefile:"
+                                          grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                                        fi
+                                        done
+                          # 检查依赖项重复错误
+                          elif grep -q "DEPENDS" compile.log; then
+                                        echo "Fixing dependency duplicates..."
+                                        find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                                          makefile="$1"
+                                          awk '\''BEGIN { FS = "[[:space:]]+" }
+                                          /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                                              split($0, deps, " ")
+                                              seen_versioned = ""
+                                              seen_bare = ""
+                                              result = $1
+                                              for (i = 2; i <= length(deps); i++) {
+                                                  dep = deps[i]
+                                                  pos = index(dep, ">=")
+                                                  if (pos > 0) {
+                                                      bare = substr(dep, 2, pos-2)
+                                                  } else {
+                                                      bare = substr(dep, 2)
+                                                  }
+                                                  if (match(dep, />=/)) {
+                                                      if (seen_versioned !~ bare) {
+                                                          result = result " " dep
+                                                          seen_versioned = seen_versioned " " bare
+                                                          gsub(" *" bare " *", " ", seen_bare)
+                                                      }
+                                                  } else {
+                                                      if (seen_versioned !~ bare && seen_bare !~ bare) {
+                                                          result = result " " dep
+                                                          seen_bare = seen_bare " " bare
+                                                      }
+                                                  }
+                                              }
+                                              print result
+                                              next
+                                          }
+                                          { print }
+                                          '\'' "$makefile" > "$makefile.tmp"
+                                          if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+                                            echo "Modified $makefile:"
+                                            grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+                                            mv "$makefile.tmp" "$makefile"
+                                          else
+                                            rm -f "$makefile.tmp"
+                                          fi
+                                        ' _ {} \;
+                          elif grep -q "dependency format is invalid" compile.log; then
+                                    echo "处理依赖格式错误..."
+                                    find . -type f $ -name "Makefile" -o -name "*.mk" $ -exec sh -c '
+                                      makefile="$1"
+                                      # 修复版本号中的连字符问题并去重
+                                      awk -i inplace '\''
+                                        BEGIN { FS="[[:space:]]+"; OFS=" " }
+                                        /^(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                                          delete seen
+                                          split($0, parts, "=")
+                                          split(parts[2], deps, " ")
+                                          new_deps = ""
+                                          for (i in deps) {
+                                            dep = deps[i]
+                                            #gsub(/(>=|<=|>)(\d+\.\d+\.\d+)-(\d+)/, "\\1\\2_\\3", dep)
+                                            gsub(/(>=|<=|>)(\d+\.\d+\.\d+)-\d+/, "\\1\\2", $0)
+                                            # 去重
+                                            if (!seen[dep]++) {
+                                              new_deps = new_deps " " dep
+                                            }
+                                          }
+                                          $0 = parts[1] "=" new_deps
+                                        }
+                                        { print }
+                                      '\'' "$makefile"
+                                    ' _ {} \;
+                                    echo "Fixing PKG_VERSION formats..."
+                                        find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                                          if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                                            echo "Found target in $makefile"
+                                            sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
+                                            echo "Modified $makefile:"
+                                            grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                                          fi
+                                        done
+                                    echo "Fixing dependency duplicates..."
+                                        find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                                          makefile="$1"
+                                          awk '\''BEGIN { FS = "[[:space:]]+" }
+                                          /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                                              split($0, deps, " ")
+                                              seen_versioned = ""
+                                              seen_bare = ""
+                                              result = $1
+                                              for (i = 2; i <= length(deps); i++) {
+                                                  dep = deps[i]
+                                                  pos = index(dep, ">=")
+                                                  if (pos > 0) {
+                                                      bare = substr(dep, 2, pos-2)
+                                                  } else {
+                                                      bare = substr(dep, 2)
+                                                  }
+                                                  if (match(dep, />=/)) {
+                                                      if (seen_versioned !~ bare) {
+                                                          result = result " " dep
+                                                          seen_versioned = seen_versioned " " bare
+                                                          gsub(" *" bare " *", " ", seen_bare)
+                                                      }
+                                                  } else {
+                                                      if (seen_versioned !~ bare && seen_bare !~ bare) {
+                                                          result = result " " dep
+                                                          seen_bare = seen_bare " " bare
+                                                      }
+                                                  }
+                                              }
+                                              print result
+                                              next
+                                          }
+                                          { print }
+                                          '\'' "$makefile" > "$makefile.tmp"
+                                          if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+                                            echo "Modified $makefile:"
+                                            grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
+                                            mv "$makefile.tmp" "$makefile"
+                                          else
                                             rm -f "$makefile.tmp"
                                           fi
                                         ' _ {} \;                    
-                          elif grep -q "mkdir: cannot create directory.*File exists" packages.log; then
+                          elif grep -q "mkdir: cannot create directory.*File exists" compile.log; then
                                       echo "检测到构建目录冲突错误，尝试修复..."
                                       # 提取最后一次出现的失败目录路径
-                                      FAILED_DIR=$(grep -oP "mkdir: cannot create directory '\K[^']+" packages.log | tail -n1)
+                                      FAILED_DIR=$(grep -oP "mkdir: cannot create directory '\K[^']+" compile.log | tail -n1)
                                       if [ -n "$FAILED_DIR" ]; then
                                           echo "正在清理冲突目录: $FAILED_DIR"
                                           rm -rf "$FAILED_DIR"   
@@ -372,11 +509,11 @@ jobs:
                                               make -j1 "$PKG_PATH/compile" V=s
                                           else
                                               echo "无法推断包名，尝试重新编译所有包"
-                                              make -j1 package/compile V=s
+                                              make -j1  V=s
                                           fi
                                       else
                                           echo "无法提取失败路径，尝试重新编译所有包"
-                                          make -j1 package/compile V=s
+                                          make -j1  V=s
                                       fi  
                           else
                                   tee "$LOG_FILE" || {
@@ -408,7 +545,8 @@ jobs:
                           fi     
             retry_count=$((retry_count + 1))
             echo "尝试第 $retry_count 次修复..."
-          done
+          done 
+        
         
     - name: Check for .bin file after initial compilation
       id: check_bin_initial
