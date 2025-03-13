@@ -10,7 +10,7 @@ on:
   workflow_run:
     workflows: ["Build coolsnowwolf-LEDE Toolchain and Kernel for XIAOMI_R4"]  # 工作流 1 的名称
     types:
-      - completed  # 当
+      - completed  # 当工作流 1 完成时触发
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
@@ -32,6 +32,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
