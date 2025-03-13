@@ -1,0 +1,154 @@
+name: Build coolsnowwolf-LEDE Toolchain and Kernel for XIAOMI_R4
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'false'
+
+env:
+  REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_BRANCH: master
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: config_for_coolsnowwolf
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  ACTIONS_STEP_DEBUG: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 10240
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -y purge azure-cli* docker* ghc* zulu* hhvm* llvm* firefox* google* dotnet* aspnetcore* powershell* openjdk* adoptopenjdk* mysql* php* mongodb* moby* snap* || true
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install libpam0g-dev liblzma-dev libsnmp-dev gcc g++ build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc-s1 libc6-dev-i386 uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool
+          sudo -E apt-get -qq install libcrypto++-dev qtbase5-dev qtbase5-dev-tools qtchooser qt5-qmake qtbase5-private-dev libqt5sql5 libqt5sql5-mysql libqt5sql5-odbc libqt5sql5-psql libqt5sql5-sqlite libqt5sql5-tds qttools5-dev-tools
+          UBUNTU_VERSION=$(lsb_release -rs)
+          if [[ $UBUNTU_VERSION == 20.04 ]]; then
+              sudo apt-get -y install lib32gcc1
+          elif [[ $UBUNTU_VERSION == 22.04 ]]; then
+              sudo apt-get -y install lib32gcc-s1
+          else
+              sudo apt-get -y install lib32gcc-s1
+              echo "非Ubuntu20.04或22.04系统，安装lib32gcc可能失败，如果失败请检查对应系统安装libgcc32的命令"
+          fi
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /workdir/openwrt
+          sudo chown -R $USER:$GROUPS /workdir
+          sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
+
+      - name: Clone source code
+        working-directory: ${{ github.workspace }}
+        run: |
+          df -hT $PWD
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
+          ln -sf /workdir $GITHUB_WORKSPACE
+
+      - name: Load custom feeds
+        run: |
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          chmod +x $DIY_P1_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+
+      - name: Update feeds and Install feeds
+        run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+
+      - name: Load custom configuration
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+          chmod +x $DIY_P2_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P2_SH
+
+      - name: Download package
+        id: package
+        run: |
+          cd openwrt
+          make defconfig
+          make download
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: Check space usage after download
+        if: (!cancelled())
+        run: df -hT
+
+
+      - name: Compile tools
+        run: |
+          cd openwrt
+          make tools/install -j1 V=s > tools.log 2>&1 || {
+            LOG_TAIL=$(tac tools.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
+            [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 tools.log)
+            echo "编译错误日志摘要："
+            echo "$LOG_TAIL"
+            exit 1
+          }
+
+      - name: Compile toolchain
+        id: compile_toolchain
+        run: |
+          cd openwrt
+          set +e
+          make toolchain/install -j1 V=s > toolchain.log 2>&1 || {
+            LOG_TAIL=$(tac toolchain.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
+            [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 toolchain.log)
+            echo "编译错误日志摘要："
+            echo "$LOG_TAIL"
+            exit 1
+          }
+
+      - name: Compile kernel
+        run: |
+          cd openwrt
+          make target/linux/compile -j1 V=s > kernel.log 2>&1 || {
+            LOG_TAIL=$(tac kernel.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
+            [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 kernel.log)
+            echo "编译错误日志摘要："
+            echo "$LOG_TAIL"
+            exit 1
+          }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: kernel-build
+          path: |
+            openwrt/build_dir
+            openwrt/staging_dir
+            openwrt/.config
