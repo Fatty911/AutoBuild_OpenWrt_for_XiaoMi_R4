@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+  repository_dispatch:
+    types: coolsnowwolf Source Code Update
   workflow_dispatch:
     # inputs:
     #   ssh:
