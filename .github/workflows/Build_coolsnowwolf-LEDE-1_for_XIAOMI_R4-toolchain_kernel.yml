@@ -1,4 +1,4 @@
-name: Build coolsnowwolf-LEDE Toolchain and Kernel for XIAOMI_R4
+name: Build coolsnowwolf-LEDE 1 Toolchain and Kernel for XIAOMI_R4
 
 on:
   push:
