@@ -361,7 +361,7 @@ jobs:
         retry_count=0                    
         while [ $retry_count -lt $MAX_RETRY ]; do
                           make -j1  V=s > compile.log 2>&1 && break
-                          if grep -q "PKG_VERSION" compile.log; then
+                          if grep -q "PKG_VERSION.*error" compile.log; then
                                       echo "Fixing PKG_VERSION formats..."
                                       find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
                                         if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
@@ -369,10 +369,12 @@ jobs:
                                           sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
                                           echo "Modified $makefile:"
                                           grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                                        else
+                                          echo "No modification needed for $makefile"
                                         fi
                                         done
                           # 检查依赖项重复错误
-                          elif grep -q "DEPENDS" compile.log; then
+                          elif grep -q "DEPENDS.*error" compile.log; then
                                         echo "Fixing dependency duplicates..."
                                         find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
                                           makefile="$1"
@@ -551,30 +553,15 @@ jobs:
     - name: Check for .bin file after initial compilation
       id: check_bin_initial
       run: |
-        if [ -f "bin/targets/*/*/*.bin" ]; then
-          echo "Bin file found, compilation successful."
-          echo "status=success" >> $GITHUB_ENV
-        else
-          echo "No bin file found or compilation failed, checking logs..."
-          if grep -q "PKG_VERSION" compile.log; then
-            echo "Fixing PKG_VERSION formats..."
-            find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
-              if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
-                echo "Found target in $makefile"
-                sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
-                echo "Modified $makefile:"
-                grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
-              fi
-            done
-          fi
         if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
           echo "BIN_EXISTS=true" >> $GITHUB_ENV
+          echo "bin_status=success" >> $GITHUB_ENV
         else
           echo "BIN_EXISTS=false" >> $GITHUB_ENV
         fi
     - name: Perform manual porting for Xiaomi Mi Router 4
       id: transplant
-      if: env.status == 'needs_fix' && env.BIN_EXISTS == 'false'
+      if: env.BIN_EXISTS == 'false'
       run: |
         cd openwrt
         echo "Performing manual porting for Xiaomi Mi Router 4..."
@@ -661,18 +648,17 @@ jobs:
         
     - name: Compile the firmware with fixes
       id: compile
-      if: env.status == 'needs_fix' && steps.transplant.output.isFixed == 'true'
+      if: env.BIN_EXISTS == 'false' && steps.transplant.output.isFixed == 'true'
       run: |
         cd openwrt
-        
         # 编译固件
         # make -j$(nproc) V=s || make -j1 V=s || exit 1
         make -j1 V=s || exit 1
-        echo "status=success" >> $GITHUB_ENV
+        echo "bin_status=success" >> $GITHUB_ENV
         
     - name: Set environment variables
       id: setEnv
-      if: env.status == 'success' 
+      if: env.bin_status == 'success' 
       run: |
         cd openwrt
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
