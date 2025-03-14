@@ -489,7 +489,7 @@ jobs:
         if: steps.transplant.outputs.isFixed == 'true'
         run: |
             cd openwrt
-            make -j1 V=s > compile.log 2>&1 || {
+            make -j1 V=s -d > compile.log 2>&1 || {
                 MAX_RETRY=6
                 retry_count=0
                 while [ $retry_count -lt $MAX_RETRY ]; do
@@ -550,8 +550,32 @@ jobs:
                                 rm -f "$makefile.tmp"
                             fi
                         ' _ {} \;
-                    elif grep -q "missing separator" compile.log; then
+                    elif grep -i "missing separator" compile.log; then
                         echo "遇到分隔符或制表符错误"  # Corrected spelling
+                        # 查找所有 Makefile 和 .mk 文件
+                        find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                            # 检查每一行是否以空格开头但应为制表符
+                            awk '
+                            {
+                                # 如果是规则的命令行（上一行以冒号结尾或当前行以空格开头但不是变量定义）
+                                if ((prev ~ /:$/ || ($0 ~ /^[ ]+/ && $0 !~ /^[ ]*[A-Za-z0-9_]+:=/)) && $0 !~ /^\t/) {
+                                    print "Found potential issue in " FILENAME " at line " NR ": " $0
+                                    # 将开头的空格替换为制表符
+                                    sub(/^[ ]+/, "\t")
+                                    print "Fixed line: " $0
+                                }
+                                print $0 > FILENAME ".tmp"
+                                prev = $0
+                            }
+                            ' "$makefile"
+                
+                            # 如果生成了临时文件，替换原文件
+                            if [ -f "$makefile.tmp" ]; then
+                                mv "$makefile" "$makefile.bak"  # 备份原文件
+                                mv "$makefile.tmp" "$makefile"  # 替换为修复后的文件
+                                echo "Updated $makefile (backup saved as $makefile.bak)"
+                            fi
+                        done
                     else
                         tee "$LOG_FILE"
                         echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
