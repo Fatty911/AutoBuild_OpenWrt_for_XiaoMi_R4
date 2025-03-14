@@ -8,17 +8,16 @@
 # Description: Build OpenWrt using GitHub Actions
 #
 
-name: Build Lienol for XIAOMI_R4
+name: Build Lienol 2 packages and fixes for XIAOMI_R4
 
 on:
   repository_dispatch:
     types: Lienol Source Code Update
+  workflow_run:
+    workflows: ["Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4"]  # 工作流 1 的名称
+    types:
+      - completed  # 当工作流 1 完成时触发
   workflow_dispatch:
-    inputs:
-      ssh:
-        description: 'SSH connection to Actions'
-        required: false
-        default: 'false'
   push:
     branches: 
       - master
@@ -38,6 +37,7 @@ env:
 jobs:
   build:    
     runs-on: ubuntu-22.04
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     steps:    
     
     - name: Maximize build space
@@ -73,81 +73,12 @@ jobs:
         sudo chown -R $USER:$GROUPS /workdir
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
 
-    - name: Clone source code
-      working-directory: ${{ github.workspace }}
-      run: |
-        df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir $GITHUB_WORKSPACE
-
-    - name: Load custom feeds
-      run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
-
-    - name: Update and Install feeds
-      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
-
-    - name: Load custom configuration
-      run: |
-        [ -e files ] && mv files openwrt/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-
-    - name: Download package
-      id: download
-      run: |
-        cd openwrt
-        make defconfig
-        make download -j$(nproc) V=s
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
-        
-    - name: Check space usage after download
-      if: (!cancelled())
-      run: df -hT
-      
-    - name: SSH connection to Actions
-      uses: P3TERX/ssh2actions@v1.0.0
-      if: (github.event.inputs.ssh == 'true' && github.event.inputs.ssh  != 'false') || contains(github.event.action, 'ssh')
-      env:
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        
-    # - name: Modify overclocking settings
-    #   run: |
-    #     cd openwrt
-    #     #超频5.10内核至1000Mhz
-    #     mv target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch ./322-mt7621-fix-cpu-clk-add-clkdev.patch.bak
-    #     wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://raw.githubusercontent.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch
-    - name: Compile tools
-      run: |
-        cd openwrt
-        make tools/install -j1 V=s > tools.log 2>&1
-        if [ $? -ne 0 ]; then
-          echo "Tools compilation failed"
-          exit 1
-        fi
-    - name: Compile toolchain
-      run: |
-        cd openwrt
-        make toolchain/install -j1 V=s > toolchain.log 2>&1
-        if [ $? -ne 0 ]; then
-          echo "Toolchain compilation failed"
-          exit 1
-        fi
-    - name: Compile kernel
-      run: |
-        cd openwrt
-        make target/linux/compile -j1 V=s > kernel.log 2>&1
-        if [ $? -ne 0 ]; then
-          echo "Kernel compilation failed"
-          exit 1
-        fi
+    - name: Download Lienol first step artifacts
+        # uses: actions/download-artifact@master
+        uses: actions/download-artifact@v4
+        with:
+          name: Lienol-first-build
+          path: openwrt
     - name: Compile packages
       id: compile_packages
       run: |
