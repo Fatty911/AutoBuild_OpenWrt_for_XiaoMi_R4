@@ -74,11 +74,11 @@ jobs:
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
 
     - name: Download Lienol first step artifacts
-        # uses: actions/download-artifact@master
-        uses: actions/download-artifact@v4
-        with:
-          name: Lienol-first-build
-          path: openwrt
+      # uses: actions/download-artifact@master
+      uses: actions/download-artifact@v4
+      with:
+        name: Lienol-first-build
+        path: openwrt
     - name: Compile packages
       id: compile_packages
       run: |
