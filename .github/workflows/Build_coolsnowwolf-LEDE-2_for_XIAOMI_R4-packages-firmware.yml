@@ -76,7 +76,7 @@ jobs:
         # uses: actions/download-artifact@master
         uses: actions/download-artifact@v4
         with:
-          name: kernel-build
+          name: coolsnowwolf-first-build
           path: openwrt
 
       - name: Compile Luci-base and Batman-adv
