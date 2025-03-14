@@ -1,4 +1,4 @@
-name: Build coolsnowwolf-LEDE Packages and Firmware for XIAOMI_R4
+name: Build coolsnowwolf-LEDE 2 Packages and Firmware for XIAOMI_R4
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
     #     required: false
     #     default: 'false'
   workflow_run:
-    workflows: ["Build coolsnowwolf-LEDE Toolchain and Kernel for XIAOMI_R4"]  # 工作流 1 的名称
+    workflows: ["Build coolsnowwolf-LEDE 1 Toolchain and Kernel for XIAOMI_R4"]  # 工作流 1 的名称
     types:
       - completed  # 当工作流 1 完成时触发
 
