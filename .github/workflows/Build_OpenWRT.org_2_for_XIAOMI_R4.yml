@@ -63,12 +63,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: org-1st-build
-          path: openwrt
+          
           
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
         if: steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
         run: |
+          tar -x openwrt.tar
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
           # Clone lede-source for necessary files
