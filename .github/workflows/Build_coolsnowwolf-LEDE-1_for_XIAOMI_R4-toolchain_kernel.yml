@@ -158,3 +158,5 @@ jobs:
           name: coolsnowwolf-first-build
           path: |
             openwrt
+          if-no-files-found: error
+          include-hidden-files: true
