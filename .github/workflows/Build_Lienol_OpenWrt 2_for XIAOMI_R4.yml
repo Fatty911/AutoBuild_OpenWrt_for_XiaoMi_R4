@@ -78,10 +78,11 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: Lienol-first-build
-        path: openwrt
+        
     - name: Compile packages
       id: compile_packages
       run: |
+        tar -x openwrt.tar
         cd openwrt
         set -o pipefail
         LOG_FILE="packages.log"
