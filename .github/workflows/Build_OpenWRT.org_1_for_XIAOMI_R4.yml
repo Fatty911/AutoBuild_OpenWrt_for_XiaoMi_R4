@@ -374,13 +374,12 @@ jobs:
       - name: List directory contents before upload
         run: |
           ls -lR openwrt
+          tar -c openwrt
           
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: org-1st-build
           path: |
-            openwrt/build_dir
-            openwrt/staging_dir
-            openwrt/.config
+            openwrt.tar
 
