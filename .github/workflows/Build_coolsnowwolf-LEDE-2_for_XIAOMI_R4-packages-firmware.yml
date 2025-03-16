@@ -79,7 +79,7 @@ jobs:
           name: coolsnowwolf-first-build
           path: $GITHUB_WORKSPACE
           run-id: ${{ github.event.workflow_run.id }}
-          # github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+          github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
 
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
