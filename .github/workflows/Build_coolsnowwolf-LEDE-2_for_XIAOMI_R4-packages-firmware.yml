@@ -77,7 +77,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: coolsnowwolf-first-build
-          path: openwrt
+          path: $GITHUB_WORKSPACE
           run-id: ${{ github.event.workflow_run.id }}
           # github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
 
@@ -145,6 +145,7 @@ jobs:
         run: df -hT
 
       - name: Upload bin directory
+        id: upload
         uses: actions/upload-artifact@master
         if: steps.compile.conclusion == 'success' && env.UPLOAD_BIN_DIR == 'true'
         with:
@@ -155,7 +156,7 @@ jobs:
 
       - name: Organize files
         id: organize
-        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        if: env.UPLOAD_FIRMWARE == 'true' && steps.upload.conclusion == 'success'
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
