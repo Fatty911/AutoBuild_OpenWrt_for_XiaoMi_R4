@@ -74,7 +74,8 @@ jobs:
 
       - name: Download kernel artifacts
         # uses: actions/download-artifact@master
-        uses: actions/download-artifact@v4
+        # uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           name: coolsnowwolf-first-build
           path: $GITHUB_WORKSPACE
