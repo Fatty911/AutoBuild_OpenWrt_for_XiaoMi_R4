@@ -343,16 +343,13 @@ jobs:
 
     - name: Debug directory contents
       run: |
-        ls -lR openwrt/build_dir
-        ls -lR openwrt/staging_dir
-        ls -l openwrt/.config || echo ".config not found"
+        ls -lR openwrt
+        tar -c openwrt.tar
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
         name: Lienol-first-build
         path: |
-          openwrt/build_dir
-          openwrt/staging_dir
-          openwrt/.config
+          openwrt.tar
 
