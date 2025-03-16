@@ -153,7 +153,8 @@ jobs:
           ls -l openwrt/.config || echo ".config not found"
           
       - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
+        # uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: coolsnowwolf-first-build
           path: |
