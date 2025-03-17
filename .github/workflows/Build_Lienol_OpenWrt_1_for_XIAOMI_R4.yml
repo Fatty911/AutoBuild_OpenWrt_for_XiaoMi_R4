@@ -67,6 +67,10 @@ jobs:
         # sudo chown -R $USER:$GROUPS ${{ github.repository }}    解析为Fatty911/AutoBuild~
         sudo chown -R $USER:$GROUPS /workdir
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
+        sudo apt -y install cpulimit 
+        cpulimit -e tar -l 80
+        cpulimit -e make -l 90
+        cpulimit -e ls -l 80
 
     - name: Clone source code
       working-directory: ${{ github.workspace }}
