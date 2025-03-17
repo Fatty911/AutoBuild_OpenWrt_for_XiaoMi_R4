@@ -148,7 +148,7 @@ jobs:
 
       - name: Debug directory contents
         run: |
-        			cpulimit -l 80 tree -a openwrt
+          cpulimit -l 80 tree -a openwrt
           cpulimit -l 80 tar -cv openwrt
           
       - name: Upload build artifacts
