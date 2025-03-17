@@ -140,18 +140,11 @@ jobs:
         id: compile_packages
         run: |
           cd openwrt
-          # 预生成包索引
-          # make prepare-tmpinfo
-          # make package/index
-          # make -j1 package/compile V=s > packages.log 2>&1 || {
           echo "开始尝试编译packages " && {
             MAX_RETRY=6
             retry_count=0
             while [ $retry_count -lt $MAX_RETRY ]; do
               make -j2 package/compile V=s > packages.log 2>&1 && break
-              
-              # 执行现有修复逻辑（包含上述优化）
-              # ...
               if grep -q "po2lmo: command not found" packages.log; then
                           echo "检测到 po2lmo 缺失，正在优先编译 luci-base..."
                           make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
@@ -312,11 +305,11 @@ jobs:
                               echo "无法推断包名，尝试重新编译所有包"
                               make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
                           fi
-                        else
+                      else
                           echo "无法提取有效的失败路径或路径不是目录: $FAILED_DIR"
                           echo "尝试重新编译所有包"
                           make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
-                        fi
+                      fi
 ​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
               else
                               # 截取从倒数第三个"Entering directory"到末尾的日志
@@ -326,10 +319,11 @@ jobs:
                               echo "$LOG_TAIL"
                               exit 1
               fi     
-                retry_count=$((retry_count + 1))
-                echo "尝试第 $retry_count 次修复..."
+              retry_count=$((retry_count + 1))
+              echo "尝试第 $retry_count 次修复..."
               done 
           }
+
       
       - name: Build image
         run: |
