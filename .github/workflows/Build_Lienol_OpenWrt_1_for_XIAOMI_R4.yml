@@ -68,9 +68,9 @@ jobs:
         sudo chown -R $USER:$GROUPS /workdir
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
         sudo apt -y install cpulimit 
-        cpulimit -e tar -l 80 -d
-        cpulimit -e make -l 90 -d
-        cpulimit -e ls -l 80 -d
+        cpulimit -e tar -l 80 -b
+        cpulimit -e make -l 90 -b
+        cpulimit -e ls -l 80 -b
 
     - name: Clone source code
       working-directory: ${{ github.workspace }}
