@@ -339,10 +339,10 @@ jobs:
             echo "尝试第 $retry_count 次修复..."
           done 
 
-    - name: Debug directory contents
-      run: |
-        ls -lR openwrt
-        tar -c openwrt
+    #- name: Debug directory contents
+      #run: |
+        #ls -lR openwrt
+        #tar -c openwrt
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
