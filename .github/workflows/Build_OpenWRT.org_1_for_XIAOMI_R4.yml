@@ -374,15 +374,15 @@ jobs:
             fi
           fi
           
-      - name: List directory contents before upload
-        run: |
-          ls -lR openwrt
-          tar -c openwrt
+      #- name: List directory contents before upload
+        #run: |
+          #ls -lR openwrt
+          #tar -c openwrt
           
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: org-1st-build
           path: |
-            openwrt.tar
+            openwrt
 
