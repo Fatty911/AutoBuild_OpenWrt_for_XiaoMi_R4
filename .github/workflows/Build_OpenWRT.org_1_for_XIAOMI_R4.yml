@@ -55,9 +55,9 @@ jobs:
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
           sudo apt install -y cpulimit 
-          cpulimit -e tar -l 80
-          cpulimit -e make -l 80
-          cpulimit -e ls -l 80
+          cpulimit -e tar -l 80 -b
+          cpulimit -e make -l 90 -b
+          cpulimit -e ls -l 80 -b
       - name: Clone source code
         working-directory: ${{ github.workspace }}
         run: |
