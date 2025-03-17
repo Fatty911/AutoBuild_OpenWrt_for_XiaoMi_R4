@@ -81,10 +81,13 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
 
+      - name: Debug directory structure
+        run: |
+          tree $GITHUB_WORKSPACE || ls -R $GITHUB_WORKSPACE
+
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
-        run: |
-          #tar -x openwrt.tar
+        run: |         
           cd openwrt
           make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
           make -j1 V=s package/feeds/routing/batman-adv/compile > batman-adv.log 2>&1 || {
