@@ -291,26 +291,33 @@ jobs:
                                       fi
                                     ' _ {} \;
               elif grep -q "mkdir: cannot create directory.*File exists" packages.log; then
-                                  echo "检测到构建目录冲突错误，尝试修复..."
-                                  # 提取最后一次出现的失败目录路径
-                                  FAILED_DIR=$(grep "mkdir: cannot create directory.*File exists" packages.log | tail -n1 | awk -F ': ' '{print $3}')
-                                  if [ -n "$FAILED_DIR" ]; then
-                                      echo "正在清理冲突目录: $FAILED_DIR"
-                                      rm -rf "$FAILED_DIR"   
-                                      # 通过路径推断包名（示例路径：.../coremark-d5fad6bd094899101a4e5fd53af7298160ced6ab/mipsel）
-                                      PKG_PATH=$(echo "$FAILED_DIR" | grep -oE 'package/feeds/[^/]+/[^/]+')
-                                      if [ -n "$PKG_PATH" ]; then
-                                          PKG_NAME=$(basename "$PKG_PATH")
-                                          echo "重新编译包: $PKG_NAME"
-                                          make -j$(nproc) "$PKG_PATH/compile" V=s || make -j1 "$PKG_PATH/compile" V=s
-                                      else
-                                          echo "无法推断包名，尝试重新编译所有包"
-                                          make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
-                                      fi
-                                  else
-                                      echo "无法提取失败路径，尝试重新编译所有包"
-                                      make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
-                                  fi  
+                      echo "检测到构建目录冲突错误，尝试修复..."
+                      # Use sed to extract the directory path between "directory" and ": File exists"
+                      FAILED_DIR=$(grep "mkdir: cannot create directory.*File exists" packages.log | tail -n1 | sed -n 's/.*cannot create directory[[:space:]]*\([^:]*\):.*/\1/p' | tr -d "'")
+                      if [ -n "$FAILED_DIR" ] && [ -d "$FAILED_DIR" ]; then
+                          echo "正在清理冲突目录: $FAILED_DIR"
+                          rm -rf "$FAILED_DIR"
+                          # Verify cleanup
+                          if [ -d "$FAILED_DIR" ]; then
+                              echo "清理 $FAILED_DIR 失败，请检查权限或路径"
+                              exit 1
+                          fi
+                          # Try to infer package name and recompile
+                          PKG_PATH=$(echo "$FAILED_DIR" | grep -oE 'package/feeds/[^/]+/[^/]+')
+                          if [ -n "$PKG_PATH" ]; then
+                              PKG_NAME=$(basename "$PKG_PATH")
+                              echo "重新编译包: $PKG_NAME"
+                              make -j$(nproc) "$PKG_PATH/compile" V=s || make -j1 "$PKG_PATH/compile" V=s
+                          else
+                              echo "无法推断包名，尝试重新编译所有包"
+                              make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
+                          fi
+                        else
+                          echo "无法提取有效的失败路径或路径不是目录: $FAILED_DIR"
+                          echo "尝试重新编译所有包"
+                          make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
+                        fi
+​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
               else
                               # 截取从倒数第三个"Entering directory"到末尾的日志
                               LOG_TAIL=$(tac packages.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
