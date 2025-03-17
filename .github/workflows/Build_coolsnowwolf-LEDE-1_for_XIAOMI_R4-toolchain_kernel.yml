@@ -146,16 +146,16 @@ jobs:
             exit 1
           }
 
-      - name: Debug directory contents
-        run: |
+      #- name: Debug directory contents
+        #run: |
           #cpulimit -e tree -l 80 -- tree -a openwrt
-          cpulimit -e tar -l 80 -- tar -cv openwrt
+          #cpulimit -e tar -l 80 -- tar -cv openwrt
           
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: coolsnowwolf-first-build
           path: |
-            openwrt.tar
+            openwrt
           if-no-files-found: error
           include-hidden-files: true
