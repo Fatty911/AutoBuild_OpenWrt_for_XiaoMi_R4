@@ -1,15 +1,16 @@
 #!/bin/bash
-# 文件名: restore_filenames.sh
+# 文件名: restore_filenames_optimized.sh
 
 MAPPING_FILE="filename_mapping.json"
 
-# 读取映射文件并恢复文件名
-jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$MAPPING_FILE" | while IFS=$'\t' read -r NEW_PATH ORIGINAL_PATH; do
-    if [[ -f "$NEW_PATH" ]]; then
-        mkdir -p "$(dirname "$ORIGINAL_PATH")"
-        mv -v "$NEW_PATH" "$ORIGINAL_PATH"
-    fi
-done
+# 提取所有路径对到临时文件
+jq -r 'to_entries[] | "\(.key)\t\(.value)"' "$MAPPING_FILE" > path_pairs.txt
 
-# 删除临时映射文件
-rm "$MAPPING_FILE"
+# 提取所有原始路径的目录并去重，然后批量创建目录
+cut -f2 path_pairs.txt | xargs -n1 dirname | sort -u | xargs -I {} mkdir -p "{}"
+
+# 生成 mv 命令并并行执行
+cat path_pairs.txt | parallel -j$(nproc) --colsep '\t' 'mv -v "{1}" "{2}"'
+
+# 删除临时文件和映射文件
+rm path_pairs.txt "$MAPPING_FILE"
