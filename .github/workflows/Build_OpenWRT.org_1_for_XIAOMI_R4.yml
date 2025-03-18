@@ -54,7 +54,7 @@ jobs:
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
-          sudo apt install -y cpulimit 
+          sudo apt install -y cpulimit jq
           cpulimit -e tar -l 80 -b
           cpulimit -e make -l 90 -b
           cpulimit -e ls -l 80 -b
@@ -374,10 +374,10 @@ jobs:
             fi
           fi
           
-      #- name: List directory contents before upload
-        #run: |
-          #ls -lR openwrt
-          #tar -c openwrt
+      - name: replace special chars before upload artifacts
+        run: |
+          chmod +x replace_special_chars.sh
+          ./replace_special_chars.sh
           
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -385,4 +385,6 @@ jobs:
           name: org-1st-build
           path: |
             openwrt
+            filename_mapping.json
+
 
