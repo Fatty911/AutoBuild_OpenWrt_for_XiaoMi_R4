@@ -88,8 +88,8 @@ jobs:
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
         run: |         
-         		sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE 
-											cd openwrt
+         	sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE 
+  				cd openwrt
           make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
           make -j1 V=s package/feeds/routing/batman-adv/compile > batman-adv.log 2>&1 || {
             echo "编译batman-adv失败，查看日志报错ERROR之前的Entering Directory到Error处"
