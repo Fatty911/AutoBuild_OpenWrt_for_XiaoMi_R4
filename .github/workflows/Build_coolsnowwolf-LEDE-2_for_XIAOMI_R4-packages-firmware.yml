@@ -72,18 +72,32 @@ jobs:
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
 
-      - name: Download kernel artifacts
-        # uses: actions/download-artifact@master
-        uses: actions/download-artifact@v4
-        with:
-          name: coolsnowwolf-first-build
-          path: openwrt
-          run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+      #- name: Download kernel artifacts
+        #uses: actions/download-artifact@master
+        #with:
+          #name: coolsnowwolf-first-build
+          #path: openwrt
+          #run-id: ${{ github.event.workflow_run.id }}
+          #github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
 
-      # - name: Debug directory structure
-      #   run: |
-      #     tree $GITHUB_WORKSPACE || ls -R $GITHUB_WORKSPACE
+      # 当由前一个工作流触发时，下载触发运行的 artifact
+      - name: 从触发工作流下载共享文件
+        if: github.event_name == 'workflow_run'
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          run_id: ${{ github.event.workflow_run.id }}
+          name: coolsnowwolf-first-build   # 替换为实际的 artifact 名称
+          path: openwrt  # 下载到的路径
+
+      # 当手动触发时，下载前一个工作流最新成功运行的 artifact
+      - name: 从最新成功运行下载共享文件
+        if: github.event_name == 'workflow_dispatch'
+        uses: dawidd6/action-download-artifact@v2
+        with:
+          workflow:  Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml  # 替换为前一个工作流的实际文件名
+          name: coolsnowwolf-first-build  # 替换为实际的 artifact 名称
+          path: openwrt  # 下载到的路径
+          workflow_conclusion: success  # 确保只从成功运行中下载
 
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
