@@ -143,11 +143,13 @@ jobs:
         id: compile_packages
         run: |
           cd openwrt
-          echo "开始尝试编译packages " && {
-            MAX_RETRY=6
-            retry_count=0
-            while [ $retry_count -lt $MAX_RETRY ]; do
-                make -j2 package/compile V=s > packages.log 2>&1 && break
+          echo "开始尝试编译packages" 
+          MAX_RETRY=6
+          retry_count=0
+          while [ $retry_count -lt $MAX_RETRY ]; do
+                make -j2 package/compile V=s > packages.log 2>&1 || make -j1 package/compile V=s > packages.log 2>&1 ||{
+                retry_count=$((retry_count + 1))
+                echo "尝试第 $retry_count 次修复..."
                 if grep -q "po2lmo: command not found" packages.log; then
                             echo "检测到 po2lmo 缺失，正在优先编译 luci-base..."
                             make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
@@ -296,6 +298,7 @@ jobs:
                             # Verify cleanup
                             if [ -d "$FAILED_DIR" ]; then
                                 echo "清理 $FAILED_DIR 失败，请检查权限或路径"
+                                ls -ld $FAILED_DIR
                                 exit 1
                             fi
                             # Try to infer package name and recompile
@@ -310,6 +313,7 @@ jobs:
                             fi
                         else
                             echo "无法提取有效的失败路径或路径不是目录: $FAILED_DIR"
+                            ls -ld $FAILED_DIR
                             echo "尝试重新编译所有包"
                             make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
                         fi
@@ -321,10 +325,8 @@ jobs:
                                 echo "$LOG_TAIL"
                                 exit 1
                 fi     
-                retry_count=$((retry_count + 1))
-                echo "尝试第 $retry_count 次修复..."
+             }
             done 
-          }
 
       
       - name: Build image
