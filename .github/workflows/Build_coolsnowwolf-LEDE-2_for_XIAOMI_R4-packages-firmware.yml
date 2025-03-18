@@ -77,13 +77,13 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: coolsnowwolf-first-build
-          path: $GITHUB_WORKSPACE
+          path: openwrt
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
 
-      - name: Debug directory structure
-        run: |
-          tree $GITHUB_WORKSPACE || ls -R $GITHUB_WORKSPACE
+      # - name: Debug directory structure
+      #   run: |
+      #     tree $GITHUB_WORKSPACE || ls -R $GITHUB_WORKSPACE
 
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
