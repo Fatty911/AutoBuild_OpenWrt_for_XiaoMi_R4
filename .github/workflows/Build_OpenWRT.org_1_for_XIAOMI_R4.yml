@@ -58,6 +58,17 @@ jobs:
           cpulimit -e tar -l 80 -b
           cpulimit -e make -l 90 -b
           cpulimit -e ls -l 80 -b
+          
+
+      - name: Install Latest gdrive CLI
+        run: |
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | test("linux-amd64\\.tar\\.gz$")) | .browser_download_url' | head -n 1)
+          echo "Latest gdrive release URL: $LATEST_RELEASE"
+          wget $LATEST_RELEASE -O gdrive.tar.gz
+          tar -xzf gdrive.tar.gz
+          sudo mv gdrive /usr/local/bin/
+          gdrive version || exit 1
+          
       - name: Clone source code
         working-directory: ${{ github.workspace }}
         run: |
@@ -381,19 +392,7 @@ jobs:
           chmod +x replace_special_chars.sh
           ./replace_special_chars.sh
           
-      - name: Get Latest gdrive CLI Release
-        id: get_gdrive
-        run: |
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url')
-          echo "Latest gdrive release URL: $LATEST_RELEASE"
-          echo "GDRIVE_URL=$LATEST_RELEASE" >> $GITHUB_ENV
 
-      - name: Install gdrive CLI
-        run: |
-          wget ${{ env.GDRIVE_URL }} -O gdrive.tar.gz
-          tar -xzf gdrive.tar.gz
-          sudo mv gdrive /usr/local/bin/
-          gdrive version
 
       - name: Compress build artifacts
         run: |
