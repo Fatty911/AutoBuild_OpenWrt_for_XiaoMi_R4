@@ -58,11 +58,36 @@ jobs:
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
 
-      - name: Download first-step artifacts
-        # uses: actions/download-artifact@master
-        uses: actions/download-artifact@v4
-        with:
-          name: org-1st-build
+      - name: Get Latest gdrive CLI Release
+        id: get_gdrive
+        run: |
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url')
+          echo "Latest gdrive release URL: $LATEST_RELEASE"
+          echo "GDRIVE_URL=$LATEST_RELEASE" >> $GITHUB_ENV
+
+      - name: Install gdrive CLI
+        run: |
+          wget ${{ env.GDRIVE_URL }} -O gdrive.tar.gz
+          tar -xzf gdrive.tar.gz
+          sudo mv gdrive /usr/local/bin/
+          gdrive version
+
+      - name: Download from Google Drive
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          echo "$GDRIVE_CREDENTIALS" > credentials.json
+          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
+          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
+          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" download $FILE_ID
+          ls -lh openwrt-build.tar
+
+      - name: Extract build artifacts
+        run: |
+          tar -xvf openwrt-build.tar 
+          ls -lh .
+          cd openwrt && ls -lh
       
       - name: 恢复原始文件名
         run: |
@@ -357,6 +382,7 @@ jobs:
           echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
 
       - name: Upload firmware to release
+        id: up-release
         uses: softprops/action-gh-release@master
         if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true'
         env:
@@ -368,7 +394,19 @@ jobs:
               openwrt/.config
             name: ${{ steps.generate_release_tag.outputs.release_tag }}
             tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
-
+            
+      - name: Delete Google Drive Temporary File
+        if: steps.up-release.conclusion == 'success'
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          echo "$GDRIVE_CREDENTIALS" > credentials.json
+          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
+          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
+          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" delete $FILE_ID
+          echo "Deleted Google Drive file with ID: $FILE_ID"
+          
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
