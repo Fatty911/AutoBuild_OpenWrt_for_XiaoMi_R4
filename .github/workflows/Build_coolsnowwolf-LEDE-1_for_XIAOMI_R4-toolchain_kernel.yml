@@ -146,16 +146,54 @@ jobs:
             exit 1
           }
 
-      #- name: Debug directory contents
-        #run: |
-          #cpulimit -e tree -l 80 -- tree -a openwrt
-          #cpulimit -e tar -l 80 -- tar -cv openwrt
+      - name: replace special chars before upload artifacts
+        run: |
+          chmod +x replace_special_chars.sh
+          ./replace_special_chars.sh
           
-      - name: Upload build artifacts
+      - name: Get Latest gdrive CLI Release
+        id: get_gdrive
+        run: |
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url')
+          echo "Latest gdrive release URL: $LATEST_RELEASE"
+          echo "GDRIVE_URL=$LATEST_RELEASE" >> $GITHUB_ENV
+
+      - name: Install gdrive CLI
+        run: |
+          wget ${{ env.GDRIVE_URL }} -O gdrive.tar.gz
+          tar -xzf gdrive.tar.gz
+          sudo mv gdrive /usr/local/bin/
+          gdrive version
+
+      - name: Compress build artifacts
+        run: |
+          tar -cvf openwrt-build.tar openwrt filename_mapping.json || tar -cvf openwrt-build.tar openwrt
+          echo "查看归档后文件大小" && ls -lh openwrt-build.tar
+
+      - name: Upload to Google Drive
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          echo "$GDRIVE_CREDENTIALS" > credentials.json
+          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
+          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" upload openwrt-build.tar > upload.log
+          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
+          echo "Google Drive File ID: $FILE_ID"
+          echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
+
+      - name: Save File ID as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: coolsnowwolf-first-build
+          name: gdrive-file-id
           path: |
-            openwrt
-          if-no-files-found: error
-          include-hidden-files: true
+            upload.log
+          compression-level: 0
+          
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+          repository: ${{ github.repository }}
+          retain_days: 10
+          keep_minimum_runs: 2
