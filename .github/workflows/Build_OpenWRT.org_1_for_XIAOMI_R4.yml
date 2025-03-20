@@ -408,8 +408,8 @@ jobs:
 
       - name: Compress build artifacts
         run: |
-          tar -cvf openwrt-build.tar openwrt filename_mapping.json
-          echo "查看归档后文件大小" && ls -lh openwrt-build.tar
+          tar -cvf openwrt.org-official-build.tar openwrt filename_mapping.json
+          echo "查看归档后文件大小" && ls -lh openwrt.org-official-build.tar
 
       - name: Upload to Google Drive
         env:
@@ -418,7 +418,7 @@ jobs:
         run: |
           echo "$GDRIVE_CREDENTIALS" > credentials.json
           echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
-          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" upload openwrt-build.tar > upload.log
+          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" upload openwrt.org-official-build.tar > upload.log
           FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
           echo "Google Drive File ID: $FILE_ID"
           echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
