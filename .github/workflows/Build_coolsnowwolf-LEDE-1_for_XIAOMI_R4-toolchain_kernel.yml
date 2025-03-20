@@ -173,15 +173,16 @@ jobs:
           
 
 
-      - name: Compress build artifacts
-        run: |
-          tar -cvf coolsnowwolf-build.tar openwrt filename_mapping.json || tar -cvf coolsnowwolf-build.tar openwrt
-          echo "查看归档后文件大小" && ls -lh openwrt-build.tar
+      #- name: Compress build artifacts
+        #run: |
+          #tar -cvf coolsnowwolf-build.tar openwrt filename_mapping.json || tar -cvf coolsnowwolf-build.tar openwrt
+          #echo "查看归档后文件大小" && ls -lh openwrt-build.tar
 
       - name: Upload to Google Drive
         run: |
-          rclone copy coolsnowwolf-build.tar gdrive: -P --log-file upload.log
-          FILE_ID=$(rclone lsjson gdrive: | jq -r '.[] | select(.Name == "coolsnowwolf-build.tar") | .ID')
+          rclone copy openwrt gdrive:/coolsnowwolf/ -P --log-file upload.log
+          rclone copy filename_mapping.json gdrive:/coolsnowwolf/
+          FILE_ID=$(rclone lsjson gdrive:/coolsnowwolf/ | jq -r '.[] | select(.Name == "openwrt") | .ID')
           echo "Google Drive File ID: $FILE_ID"
           echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
 
