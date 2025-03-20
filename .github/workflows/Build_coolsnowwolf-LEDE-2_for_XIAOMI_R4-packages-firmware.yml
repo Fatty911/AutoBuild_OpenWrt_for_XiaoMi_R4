@@ -72,32 +72,41 @@ jobs:
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
 
-      #- name: Download kernel artifacts
-        #uses: actions/download-artifact@master
-        #with:
-          #name: coolsnowwolf-first-build
-          #path: openwrt
-          #run-id: ${{ github.event.workflow_run.id }}
-          #github-token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+      - name: Get Latest gdrive CLI Release
+        id: get_gdrive
+        run: |
+          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url')
+          echo "Latest gdrive release URL: $LATEST_RELEASE"
+          echo "GDRIVE_URL=$LATEST_RELEASE" >> $GITHUB_ENV
 
-      # 当由前一个工作流触发时，下载触发运行的 artifact
-      - name: 从触发工作流下载共享文件
-        if: github.event_name == 'workflow_run'
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          run_id: ${{ github.event.workflow_run.id }}
-          name: coolsnowwolf-first-build   # 替换为实际的 artifact 名称
-          path: openwrt  # 下载到的路径
+      - name: Install gdrive CLI
+        run: |
+          wget ${{ env.GDRIVE_URL }} -O gdrive.tar.gz
+          tar -xzf gdrive.tar.gz
+          sudo mv gdrive /usr/local/bin/
+          gdrive version
 
-      # 当手动触发时，下载前一个工作流最新成功运行的 artifact
-      - name: 从最新成功运行下载共享文件
-        if: github.event_name == 'workflow_dispatch'
-        uses: dawidd6/action-download-artifact@v2
-        with:
-          workflow:  Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml  # 替换为前一个工作流的实际文件名
-          name: coolsnowwolf-first-build  # 替换为实际的 artifact 名称
-          path: openwrt  # 下载到的路径
-          workflow_conclusion: success  # 确保只从成功运行中下载
+      - name: Download from Google Drive
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          echo "$GDRIVE_CREDENTIALS" > credentials.json
+          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
+          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
+          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" download $FILE_ID
+          ls -lh openwrt-build.tar
+
+      - name: Extract build artifacts
+        run: |
+          tar -xvf openwrt-build.tar 
+          ls -lh .
+          cd openwrt && ls -lh
+      
+      - name: 恢复原始文件名
+        run: |
+          chmod +x restore_filenames.sh
+          ./restore_filenames.sh
 
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
@@ -213,6 +222,7 @@ jobs:
           echo "release_tag_status=success" >> $GITHUB_OUTPUT
 
       - name: Upload firmware to release
+        id: up-release
         uses: softprops/action-gh-release@master
         if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true'
         env:
@@ -223,3 +233,31 @@ jobs:
             ${{ env.firmware_path }}/*
           name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
+          
+      - name: Delete Google Drive Temporary File
+        if: steps.up-release.conclusion == 'success'
+        env:
+          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          echo "$GDRIVE_CREDENTIALS" > credentials.json
+          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
+          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
+          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" delete $FILE_ID
+          echo "Deleted Google Drive file with ID: $FILE_ID"
+          
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+          repository: ${{ github.repository }}
+          retain_days: 10
+          keep_minimum_runs: 2
+
+      - name: Delete Older Releases
+        uses: dev-drprasad/delete-older-releases@master
+        with:
+          keep_latest: 5
+          delete_tag_pattern: .*coolsnowwolf.*
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
