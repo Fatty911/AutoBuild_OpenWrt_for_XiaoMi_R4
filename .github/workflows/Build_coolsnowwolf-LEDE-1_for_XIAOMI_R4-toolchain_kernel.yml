@@ -71,7 +71,27 @@ jobs:
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
-
+      - name: Install rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
+          rclone --version || exit 1
+      
+      - name: Configure rclone
+        run: |
+          CLIENT_ID=${{ secrets.GDRIVE_CREDENTIALS }}
+          CLIENT_SECRET=${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          REFRESH_TOKEN=${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          
+          # 创建 rclone 配置文件
+          mkdir -p ~/.config/rclone
+          cat <<EOF > ~/.config/rclone/rclone.conf
+          [gdrive]
+          type = drive
+          client_id = $CLIENT_ID
+          client_secret = $CLIENT_SECRET
+          token = {"refresh_token":"$REFRESH_TOKEN"}
+          EOF
+          
       - name: Clone source code
         working-directory: ${{ github.workspace }}
         run: |
@@ -151,34 +171,17 @@ jobs:
           chmod +x replace_special_chars.sh
           ./replace_special_chars.sh
           
-      - name: Get Latest gdrive CLI Release
-        id: get_gdrive
-        run: |
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url')
-          echo "Latest gdrive release URL: $LATEST_RELEASE"
-          echo "GDRIVE_URL=$LATEST_RELEASE" >> $GITHUB_ENV
 
-      - name: Install gdrive CLI
-        run: |
-          wget ${{ env.GDRIVE_URL }} -O gdrive.tar.gz
-          tar -xzf gdrive.tar.gz
-          sudo mv gdrive /usr/local/bin/
-          gdrive version
 
       - name: Compress build artifacts
         run: |
-          tar -cvf openwrt-build.tar openwrt filename_mapping.json || tar -cvf openwrt-build.tar openwrt
+          tar -cvf coolsnowwolf-build.tar openwrt filename_mapping.json || tar -cvf coolsnowwolf-build.tar openwrt
           echo "查看归档后文件大小" && ls -lh openwrt-build.tar
 
       - name: Upload to Google Drive
-        env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
         run: |
-          echo "$GDRIVE_CREDENTIALS" > credentials.json
-          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
-          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" upload openwrt-build.tar > upload.log
-          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
+          rclone copy coolsnowwolf-build.tar gdrive: -P --log-file upload.log
+          FILE_ID=$(rclone lsjson gdrive: | jq -r '.[] | select(.Name == "coolsnowwolf-build.tar") | .ID')
           echo "Google Drive File ID: $FILE_ID"
           echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
 
