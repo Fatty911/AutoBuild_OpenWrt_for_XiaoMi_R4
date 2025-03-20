@@ -71,7 +71,27 @@ jobs:
         cpulimit -e tar -l 80 -b
         cpulimit -e make -l 90 -b
         cpulimit -e ls -l 80 -b
-
+    - name: Install rclone
+      run: |
+        curl https://rclone.org/install.sh | sudo bash
+        rclone --version || exit 1
+    
+    - name: Configure rclone
+      run: |
+        CLIENT_ID=${{ secrets.GDRIVE_CREDENTIALS }}
+        CLIENT_SECRET=${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        REFRESH_TOKEN=${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        
+        # 创建 rclone 配置文件
+        mkdir -p ~/.config/rclone
+        cat <<EOF > ~/.config/rclone/rclone.conf
+        [gdrive]
+        type = drive
+        client_id = $CLIENT_ID
+        client_secret = $CLIENT_SECRET
+        token = {"refresh_token":"$REFRESH_TOKEN"}
+        EOF
+        
     - name: Clone source code
       working-directory: ${{ github.workspace }}
       run: |
@@ -350,36 +370,17 @@ jobs:
             }
           done 
 
-    - name: Install rclone
-      run: |
-        curl https://rclone.org/install.sh | sudo bash
-        rclone --version || exit 1
     
-    - name: Configure rclone
-      run: |
-        CLIENT_ID=${{ secrets.GDRIVE_CREDENTIALS }}
-        CLIENT_SECRET=${{ secrets.GDRIVE_REFRESH_TOKEN }}
-        REFRESH_TOKEN=${{ secrets.GDRIVE_REFRESH_TOKEN }}
-        
-        # 创建 rclone 配置文件
-        mkdir -p ~/.config/rclone
-        cat <<EOF > ~/.config/rclone/rclone.conf
-        [gdrive]
-        type = drive
-        client_id = $CLIENT_ID
-        client_secret = $CLIENT_SECRET
-        token = {"refresh_token":"$REFRESH_TOKEN"}
-        EOF
     
     - name: Compress build artifacts
       run: |
-        tar -cvf openwrt-build.tar openwrt filename_mapping.json
-        echo "查看归档后文件大小" && ls -lh openwrt-build.tar
+        tar -cvf Lienol-build.tar openwrt filename_mapping.json
+        echo "查看归档后文件大小" && ls -lh Lienol-build.tar
     
     - name: Upload to Google Drive
       run: |
-        rclone copy openwrt-build.tar gdrive: -P --log-file upload.log
-        FILE_ID=$(rclone lsjson gdrive: | jq -r '.[] | select(.Name == "openwrt-build.tar") | .ID')
+        rclone copy Lienol-build.tar gdrive: -P --log-file upload.log
+        FILE_ID=$(rclone lsjson gdrive: | jq -r '.[] | select(.Name == "Lienol-build.tar") | .ID')
         echo "Google Drive File ID: $FILE_ID"
         echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
     
