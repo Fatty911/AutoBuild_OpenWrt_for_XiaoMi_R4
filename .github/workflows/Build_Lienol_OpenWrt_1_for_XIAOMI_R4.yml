@@ -165,7 +165,7 @@ jobs:
       id: compile_core_packages
       run: |
         cd openwrt
-        sex -x
+        set -x
         echo "Starting core packages compilation at $(date)"
         free -h
         LOG_FILE="packages.log"
