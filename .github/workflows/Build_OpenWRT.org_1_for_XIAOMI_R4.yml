@@ -60,14 +60,26 @@ jobs:
           cpulimit -e ls -l 80 -b
           
 
-      - name: Install Latest gdrive CLI
+      - name: Install rclone
         run: |
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | test("linux-amd64\\.tar\\.gz$")) | .browser_download_url' | head -n 1)
-          echo "Latest gdrive release URL: $LATEST_RELEASE"
-          wget $LATEST_RELEASE -O gdrive.tar.gz
-          tar -xzf gdrive.tar.gz
-          sudo mv gdrive /usr/local/bin/
-          gdrive version || exit 1
+          curl https://rclone.org/install.sh | sudo bash
+          rclone --version || exit 1
+      
+      - name: Configure rclone
+        run: |
+          CLIENT_ID=${{ secrets.GDRIVE_CREDENTIALS }}
+          CLIENT_SECRET=${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          REFRESH_TOKEN=${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          
+          # 创建 rclone 配置文件
+          mkdir -p ~/.config/rclone
+          cat <<EOF > ~/.config/rclone/rclone.conf
+          [gdrive]
+          type = drive
+          client_id = $CLIENT_ID
+          client_secret = $CLIENT_SECRET
+          token = {"refresh_token":"$REFRESH_TOKEN"}
+          EOF
           
       - name: Clone source code
         working-directory: ${{ github.workspace }}
