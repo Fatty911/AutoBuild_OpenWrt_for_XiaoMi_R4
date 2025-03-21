@@ -151,23 +151,7 @@ jobs:
           exit 1
         fi
         
-    # - name: Compile core packages
-    #   id: compile_core_packages
-    #   run: |
-    #     cd openwrt
-    #     set -x
-    #     echo "Starting core packages compilation at $(date)"
-    #     free -h
-    #     LOG_FILE="packages.log"
-    #     ERROR_PATTERN="error|failed|undefined reference|cannot"
-    #     MAX_RETRY=6
-    #     retry_count=0  
-    #     { make -j2 V=s > core_packages.log 2>&1 && break;} || { make -j1 V=s > core_packages.log 2>&1 && break;} || {
-    #       echo "Core packages compilation failed, printing last 100 lines:"
-    #       tail -n 100 core_packages.log
-    #       exit 1
-    #     }
-    #     echo "Core packages compiled successfully at $(date)"
+
     - name: Compile packages by feeds
       run: |
         cd openwrt
@@ -175,15 +159,22 @@ jobs:
         while IFS= read -r line; do
           [[ -z "$line" || "$line" =~ ^# ]] && continue
           FEED=$(echo "$line" | awk '{print $2}')
-          echo "开始编译 feed: $FEED 于 $(date)"
-          LOG_FILE="${FEED}_feed.log"
-          make package/feeds/$FEED/compile -j1 V=s > "$LOG_FILE" 2>&1 || {
-            echo "编译 feed $FEED 失败，输出最后 100 行日志："
-            tail -n 100 "$LOG_FILE"
-            exit 1
-          }
-          echo "Feed $FEED 编译成功 于 $(date)"
-        done < feeds.conf.default  
+          echo "处理 feed: $FEED 于 $(date)"
+          # 提取该 feed 下的软件包
+          PACKAGES=$(ls package/feeds/$FEED 2>/dev/null | grep -v Makefile || true)
+          if [ -z "$PACKAGES" ]; then
+            echo "警告: $FEED 下没有找到软件包，跳过"
+            continue
+          fi
+          for pkg in $PACKAGES; do
+            echo "编译软件包: $pkg 于 $(date)"
+            make package/$pkg/compile -j2 V=s || {
+              echo "编译 $pkg 失败"
+              exit 1
+            }
+          done
+          echo "Feed $FEED 编译完成 于 $(date)"
+        done < feeds.conf.default
 
     - name: Compile Remaining packages
       id: compile_packages
