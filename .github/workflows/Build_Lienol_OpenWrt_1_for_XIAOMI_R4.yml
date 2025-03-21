@@ -169,22 +169,22 @@ jobs:
     #     }
     #     echo "Core packages compiled successfully at $(date)"
     - name: Compile packages by feeds
-        run: |
-          cd openwrt
-          # 逐行读取 feeds.conf.default 并编译
-          while IFS= read -r line; do
-            [[ -z "$line" || "$line" =~ ^# ]] && continue
-            FEED=$(echo "$line" | awk '{print $2}')
-            echo "开始编译 feed: $FEED 于 $(date)"
-            LOG_FILE="${FEED}_feed.log"
-            make package/feeds/$FEED/compile -j1 V=s > "$LOG_FILE" 2>&1 || {
-              echo "编译 feed $FEED 失败，输出最后 100 行日志："
-              tail -n 100 "$LOG_FILE"
-              exit 1
-            }
-            echo "Feed $FEED 编译成功 于 $(date)"
-          done < feeds.conf.default  
-  
+      run: |
+        cd openwrt
+        # 逐行读取 feeds.conf.default 并编译
+        while IFS= read -r line; do
+          [[ -z "$line" || "$line" =~ ^# ]] && continue
+          FEED=$(echo "$line" | awk '{print $2}')
+          echo "开始编译 feed: $FEED 于 $(date)"
+          LOG_FILE="${FEED}_feed.log"
+          make package/feeds/$FEED/compile -j1 V=s > "$LOG_FILE" 2>&1 || {
+            echo "编译 feed $FEED 失败，输出最后 100 行日志："
+            tail -n 100 "$LOG_FILE"
+            exit 1
+          }
+          echo "Feed $FEED 编译成功 于 $(date)"
+        done < feeds.conf.default  
+
     - name: Compile Remaining packages
       id: compile_packages
       run: |
