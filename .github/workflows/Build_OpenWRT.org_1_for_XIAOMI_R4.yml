@@ -74,12 +74,13 @@ jobs:
           # 创建 rclone 配置文件
           mkdir -p ~/.config/rclone
           cat <<EOF > ~/.config/rclone/rclone.conf
-          [gdrive]
+          [googledrive]
           type = drive
           client_id = $CLIENT_ID
           client_secret = $CLIENT_SECRET
           token = {"refresh_token":"$REFRESH_TOKEN"}
           EOF
+          rclone mkdir googledrive:/openwrt.org || exit 1
           
       - name: Clone source code
         working-directory: ${{ github.workspace }}
@@ -405,28 +406,20 @@ jobs:
           ./replace_special_chars.sh
           
 
-
-      - name: Compress build artifacts
-        run: |
-          tar -cvf openwrt.org-official-build.tar openwrt filename_mapping.json
-          echo "查看归档后文件大小" && ls -lh openwrt.org-official-build.tar
-
       - name: Upload to Google Drive
-        env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
         run: |
-          echo "$GDRIVE_CREDENTIALS" > credentials.json
-          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
-          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" upload openwrt.org-official-build.tar > upload.log
-          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
+          set -x
+          rclone copy ./openwrt googledrive:/openwrt.org/ -P --log-file upload.log
+          rclone copy ./filename_mapping.json gdrive:/openwrt.org/
+          FILE_ID=$(rclone lsjson gdrive:/openwrt.org/ | jq -r '.[] | select(.Name == "openwrt.org") | .ID')
           echo "Google Drive File ID: $FILE_ID"
           echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
+
 
       - name: Save File ID as Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gdrive-file-id
+          name: googledrive-file-id
           path: |
             upload.log
           compression-level: 0
