@@ -78,19 +78,20 @@ jobs:
     
     - name: Configure rclone
       run: |
-        CLIENT_ID=${{ secrets.GDRIVE_CREDENTIALS }}
-        CLIENT_SECRET=${{ secrets.GDRIVE_REFRESH_TOKEN }}
-        REFRESH_TOKEN=${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        CLIENT_ID=${{ secrets.googledrive_CREDENTIALS }}
+        CLIENT_SECRET=${{ secrets.googledrive_REFRESH_TOKEN }}
+        REFRESH_TOKEN=${{ secrets.googledrive_REFRESH_TOKEN }}
         
         # 创建 rclone 配置文件
         mkdir -p ~/.config/rclone
         cat <<EOF > ~/.config/rclone/rclone.conf
-        [gdrive]
+        [googledrive]
         type = drive
         client_id = $CLIENT_ID
         client_secret = $CLIENT_SECRET
         token = {"refresh_token":"$REFRESH_TOKEN"}
         EOF
+        rclone mkdir googledrive:/Lienol || exit 1
         
     - name: Clone source code
       working-directory: ${{ github.workspace }}
@@ -390,22 +391,19 @@ jobs:
 
     
     
-    - name: Compress build artifacts
-      run: |
-        tar -cvf Lienol-build.tar openwrt filename_mapping.json
-        echo "查看归档后文件大小" && ls -lh Lienol-build.tar
     
     - name: Upload to Google Drive
       run: |
-        rclone copy Lienol-build.tar gdrive: -P --log-file upload.log
-        FILE_ID=$(rclone lsjson gdrive: | jq -r '.[] | select(.Name == "Lienol-build.tar") | .ID')
+        rclone copy openwrt googledrive:/Lienol/ -P --log-file upload.log
+        rclone copy openwrt googledrive:/Lienol/
+        FILE_ID=$(rclone lsjson googledrive: | jq -r '.[] | select(.Name == "openwrt") | .ID')
         echo "Google Drive File ID: $FILE_ID"
         echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
     
     - name: Save File ID as Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: gdrive-file-id
+        name: googledrive-file-id
         path: |
           upload.log
         compression-level: 0
