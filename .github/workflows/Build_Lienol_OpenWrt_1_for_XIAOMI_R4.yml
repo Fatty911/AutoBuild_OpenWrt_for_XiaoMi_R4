@@ -162,7 +162,7 @@ jobs:
         ERROR_PATTERN="error|failed|undefined reference|cannot"
         MAX_RETRY=6
         retry_count=0  
-        { make package/feeds/base/compile -j2 V=s > core_packages.log 2>&1 && break;} || { make package/feeds/base/compile -j1 V=s > core_packages.log 2>&1 && break;} || {
+        { make -j2 V=s > core_packages.log 2>&1 && break;} || { make -j1 V=s > core_packages.log 2>&1 && break;} || {
           echo "Core packages compilation failed, printing last 100 lines:"
           tail -n 100 core_packages.log
           exit 1
