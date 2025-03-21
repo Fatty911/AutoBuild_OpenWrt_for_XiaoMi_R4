@@ -60,6 +60,7 @@ jobs:
         sudo -E apt-get -qq install $(curl -fsSL git.io/depends-ubuntu-2004) libpam0g-dev liblzma-dev libsnmp-dev 
         sudo apt -y install gcc g++ build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc-s1 libc6-dev-i386 uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool
         sudo -E apt-get -qq install libcrypto++-dev  qtbase5-dev qtbase5-dev-tools qtchooser qt5-qmake qtbase5-private-dev libqt5sql5 libqt5sql5-mysql libqt5sql5-odbc libqt5sql5-psql libqt5sql5-sqlite libqt5sql5-tds qttools5-dev-tools 
+        sudo apt install python3-pip -y
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
@@ -76,22 +77,9 @@ jobs:
         curl https://rclone.org/install.sh | sudo bash
         rclone --version || exit 1
     
-    - name: Configure rclone
-      run: |
-        CLIENT_ID=${{ secrets.GOOGLEDRIVE_CLIENT_ID }}
-        CLIENT_SECRET=${{ secrets.GOOGLEDRIVE_CLIENT_SECRET }}
-        REFRESH_TOKEN=${{ secrets.RCLONE_GOOGLEDRIVE_REFRESHTOKEN }}
-        
-        # 创建 rclone 配置文件
-        mkdir -p ~/.config/rclone
-        cat <<EOF > ~/.config/rclone/rclone.conf
-        [googledrive]
-        type = drive
-        client_id = $CLIENT_ID
-        client_secret = $CLIENT_SECRET
-        token = {"refresh_token":"$REFRESH_TOKEN"}
-        EOF
-        rclone mkdir googledrive:/Lienol || exit 1
+    - name: Install MEGA SDK
+      run: pip install mega.py || pip3 install mega.py || exit 1
+      
         
     - name: Clone source code
       working-directory: ${{ github.workspace }}
@@ -393,21 +381,21 @@ jobs:
     
     
     
-    - name: Upload to Google Drive
+    - name: Upload to MEGA
+      env:
+        MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
+        MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}  # 从 Secrets 中获取密码
       run: |
-        rclone copy openwrt googledrive:/Lienol/ -P --log-file upload.log
-        rclone copy openwrt googledrive:/Lienol/
-        FILE_ID=$(rclone lsjson googledrive: | jq -r '.[] | select(.Name == "openwrt") | .ID')
-        echo "Google Drive File ID: $FILE_ID"
-        echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
+        python -c "
+        from mega import Mega
+        mega = Mega()
+        m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')  # 登录 MEGA
+        folder = m.find('Lienol')  # 查找名为 'GitHubFiles' 的文件夹
+        if not folder:
+            folder = m.create_folder('Lienol')  # 如果不存在，则创建该文件夹
+        m.upload('./openwrt', folder[0])  # 上传文件到指定文件夹
+        "
     
-    - name: Save File ID as Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: googledrive-file-id
-        path: |
-          upload.log
-        compression-level: 0
         
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@v2
