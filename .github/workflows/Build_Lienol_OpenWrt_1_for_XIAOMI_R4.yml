@@ -151,23 +151,23 @@ jobs:
           exit 1
         fi
         
-    - name: Compile core packages
-      id: compile_core_packages
-      run: |
-        cd openwrt
-        set -x
-        echo "Starting core packages compilation at $(date)"
-        free -h
-        LOG_FILE="packages.log"
-        ERROR_PATTERN="error|failed|undefined reference|cannot"
-        MAX_RETRY=6
-        retry_count=0  
-        { make -j2 V=s > core_packages.log 2>&1 && break;} || { make -j1 V=s > core_packages.log 2>&1 && break;} || {
-          echo "Core packages compilation failed, printing last 100 lines:"
-          tail -n 100 core_packages.log
-          exit 1
-        }
-        echo "Core packages compiled successfully at $(date)"
+    # - name: Compile core packages
+    #   id: compile_core_packages
+    #   run: |
+    #     cd openwrt
+    #     set -x
+    #     echo "Starting core packages compilation at $(date)"
+    #     free -h
+    #     LOG_FILE="packages.log"
+    #     ERROR_PATTERN="error|failed|undefined reference|cannot"
+    #     MAX_RETRY=6
+    #     retry_count=0  
+    #     { make -j2 V=s > core_packages.log 2>&1 && break;} || { make -j1 V=s > core_packages.log 2>&1 && break;} || {
+    #       echo "Core packages compilation failed, printing last 100 lines:"
+    #       tail -n 100 core_packages.log
+    #       exit 1
+    #     }
+    #     echo "Core packages compiled successfully at $(date)"
         
     - name: Compile Remaining packages
       id: compile_packages
@@ -180,7 +180,7 @@ jobs:
         MAX_RETRY=6
         retry_count=0                    
         while [ $retry_count -lt $MAX_RETRY ]; do
-                          { make package/feeds/base/compile -j2 V=s > core_packages.log 2>&1 && break;} || { make -j1 package/compile V=s > packages.log 2>&1 && break;}|| {
+                           { make -j1 package/compile V=s > packages.log 2>&1 && break;}|| {
                           retry_count=$((retry_count + 1))
                           echo "尝试第 $retry_count 次修复..."
                           if grep -q "PKG_VERSION.*error" packages.log; then
