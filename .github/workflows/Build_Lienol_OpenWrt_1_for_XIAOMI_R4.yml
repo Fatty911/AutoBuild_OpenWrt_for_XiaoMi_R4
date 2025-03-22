@@ -68,7 +68,7 @@ jobs:
         # sudo chown -R $USER:$GROUPS ${{ github.repository }}    解析为Fatty911/AutoBuild~
         sudo chown -R $USER:$GROUPS /workdir
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
-        sudo apt -y install cpulimit 
+        sudo apt -y install cpulimit pigz
         cpulimit -e tar -l 80 -b
         cpulimit -e make -l 90 -b
         cpulimit -e ls -l 80 -b
@@ -411,7 +411,7 @@ jobs:
 
     - name: 归档
       run: |
-        tar cv openwrt -C Lienol.tar
+        tar -cf - openwrt/ | pigz > Lienol.tar.gz
     
     
     - name: Upload to MEGA
@@ -426,7 +426,7 @@ jobs:
         folder = m.find('Lienol')  # 查找名为 'GitHubFiles' 的文件夹
         if not folder:
             folder = m.create_folder('Lienol')  # 如果不存在，则创建该文件夹
-        m.upload('./Lienol.tar', folder[0])  # 上传文件到指定文件夹
+        m.upload('./Lienol.tar.gz', folder[0])  # 上传文件到指定文件夹
         "
     
         
