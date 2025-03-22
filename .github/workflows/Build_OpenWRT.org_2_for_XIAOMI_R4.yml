@@ -52,11 +52,12 @@ jobs:
           sudo add-apt-repository universe || true
           sudo add-apt-repository multiverse || true
           sudo apt update
-          sudo apt install -y parallel jq perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-distutils rsync bc wget ccache flex bison libelf-dev || sudo apt install -y flex bison libelf-dev build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-venv python3-pip rsync bc wget ccache perl || sudo apt policy build-essential git gettext subversion ccache python3-distutils
+          sudo apt install -y python3-pip parallel jq perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-distutils rsync bc wget ccache flex bison libelf-dev || sudo apt install -y flex bison libelf-dev build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-venv python3-pip rsync bc wget ccache perl || sudo apt policy build-essential git gettext subversion ccache python3-distutils
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
+          pip install mega.py || pip3 install mega.py || python -m pip install mega.py || exit 1
 
       - name: Get Latest gdrive CLI Release
         id: get_gdrive
@@ -72,27 +73,26 @@ jobs:
           sudo mv gdrive /usr/local/bin/
           gdrive version
 
-      - name: Download from Google Drive
+      - name: Download from MEGA
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          echo "$GDRIVE_CREDENTIALS" > credentials.json
-          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
-          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
-          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" download $FILE_ID
-          ls -lh openwrt-build.tar
-
-      - name: Extract build artifacts
-        run: |
-          tar -xvf openwrt-build.tar 
-          ls -lh .
-          cd openwrt && ls -lh
+          python -c "
+          from mega import Mega
+          mega = Mega()
+          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
+          folder = m.find('OpenWrt.org_official')  # 查找 'OpenWrt.org_official' 文件夹
+          if folder:
+              files = m.get_files_in_node(folder[0])  # 获取文件夹中的文件
+              for file in files.values():
+                  m.download(file)  # 下载每个文件
+          "
       
-      - name: 恢复原始文件名
-        run: |
-          chmod +x restore_filenames.sh
-          ./restore_filenames.sh
+      # - name: 恢复原始文件名
+      #   run: |
+      #     chmod +x restore_filenames.sh
+      #     ./restore_filenames.sh
           
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
@@ -101,7 +101,7 @@ jobs:
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
           # Clone lede-source for necessary files
-          git clone https://github.com/coolsnowwolf/lede lede-source
+          git clone https://github.com/OpenWrt.org_official/lede lede-source
           # Copy DTS file
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           # Define mt7621.mk
@@ -395,17 +395,21 @@ jobs:
             name: ${{ steps.generate_release_tag.outputs.release_tag }}
             tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
             
-      - name: Delete Google Drive Temporary File
-        if: steps.up-release.conclusion == 'success'
+      - name: Delete temporary files from MEGA
+        if: steps.up-release.outcome == 'success'  # 仅在上传 Release 成功后执行
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          echo "$GDRIVE_CREDENTIALS" > credentials.json
-          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
-          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
-          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" delete $FILE_ID
-          echo "Deleted Google Drive file with ID: $FILE_ID"
+          python -m pip install mega.py  # 安装 mega.py 库
+          python -c "
+          from mega import Mega
+          mega = Mega()
+          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
+          folder = m.find('OpenWrt.org_official')  # 假设临时文件在 'OpenWrt.org_official' 文件夹中
+          if folder:
+              m.destroy(folder[0])  # 删除文件夹及其内容
+          "
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
