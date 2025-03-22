@@ -378,10 +378,10 @@ jobs:
             fi
           fi
           
-      - name: replace special chars before upload artifacts
-        run: |
-          chmod +x replace_special_chars.sh
-          ./replace_special_chars.sh
+      #- name: replace special chars before upload artifacts
+        #run: |
+          #chmod +x replace_special_chars.sh
+          #./replace_special_chars.sh
           
       - name: 归档
         run: |
