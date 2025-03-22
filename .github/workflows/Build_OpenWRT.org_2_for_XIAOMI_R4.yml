@@ -73,7 +73,7 @@ jobs:
           if folder:
               files = m.get_files_in_node(folder[0])  # 获取文件夹中的文件
               for file in files.values():
-                  m.download(file)  # 下载每个文件
+                  m.download(file['h'])  # 使用文件句柄下载
           "
       
       # - name: 恢复原始文件名
