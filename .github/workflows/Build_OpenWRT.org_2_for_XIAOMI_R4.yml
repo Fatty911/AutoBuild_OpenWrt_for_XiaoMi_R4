@@ -59,19 +59,6 @@ jobs:
           sudo chown -R $USER:$GROUPS /workdir/openwrt
           pip install mega.py || pip3 install mega.py || python -m pip install mega.py || exit 1
 
-      - name: Get Latest gdrive CLI Release
-        id: get_gdrive
-        run: |
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url')
-          echo "Latest gdrive release URL: $LATEST_RELEASE"
-          echo "GDRIVE_URL=$LATEST_RELEASE" >> $GITHUB_ENV
-
-      - name: Install gdrive CLI
-        run: |
-          wget ${{ env.GDRIVE_URL }} -O gdrive.tar.gz
-          tar -xzf gdrive.tar.gz
-          sudo mv gdrive /usr/local/bin/
-          gdrive version
 
       - name: Download from MEGA
         env:
