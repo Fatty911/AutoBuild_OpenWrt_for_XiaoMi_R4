@@ -54,7 +54,7 @@ jobs:
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
-          sudo apt install -y cpulimit jq parallel python3-pip
+          sudo apt install -y cpulimit jq parallel python3-pip pigz
           cpulimit -e tar -l 80 -b
           cpulimit -e make -l 90 -b
           cpulimit -e ls -l 80 -b
@@ -385,7 +385,7 @@ jobs:
           
       - name: 归档
         run: |
-          tar cv openwrt -C OpenWrt.org_official.tar
+          tar -cf - openwrt | pigz > OpenWrt.org_official.tar.gz
       - name: Upload to MEGA
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
@@ -398,7 +398,7 @@ jobs:
           folder = m.find('OpenWrt.org_official')  # 查找名为 'GitHubFiles' 的文件夹
           if not folder:
               folder = m.create_folder('OpenWrt.org_official')  # 如果不存在，则创建该文件夹
-          m.upload('./OpenWrt.org_official.tar', folder[0])"  # 上传文件到指定文件夹
+          m.upload('./OpenWrt.org_official.tar.gz', folder[0])"  # 上传文件到指定文件夹
          
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
