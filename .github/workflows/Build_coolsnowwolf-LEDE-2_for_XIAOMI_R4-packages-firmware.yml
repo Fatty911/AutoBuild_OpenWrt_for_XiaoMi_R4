@@ -71,42 +71,29 @@ jobs:
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
+          sudo apt-get -y install python3-pip
+          pip install mega.py || pip3 install mega.py || python -m pip install mega.py || exit 1
 
-      - name: Get Latest gdrive CLI Release
-        id: get_gdrive
-        run: |
-          LATEST_RELEASE=$(curl -s https://api.github.com/repos/prasmussen/gdrive/releases/latest | jq -r '.assets[] | select(.name | contains("linux-amd64")) | .browser_download_url')
-          echo "Latest gdrive release URL: $LATEST_RELEASE"
-          echo "GDRIVE_URL=$LATEST_RELEASE" >> $GITHUB_ENV
-
-      - name: Install gdrive CLI
-        run: |
-          wget ${{ env.GDRIVE_URL }} -O gdrive.tar.gz
-          tar -xzf gdrive.tar.gz
-          sudo mv gdrive /usr/local/bin/
-          gdrive version
-
-      - name: Download from Google Drive
+      - name: Download from MEGA
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          echo "$GDRIVE_CREDENTIALS" > credentials.json
-          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
-          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
-          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" download $FILE_ID
-          ls -lh openwrt-build.tar
-
-      - name: Extract build artifacts
-        run: |
-          tar -xvf openwrt-build.tar 
-          ls -lh .
-          cd openwrt && ls -lh
+          python -c "
+          from mega import Mega
+          mega = Mega()
+          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
+          folder = m.find('coolsnowwolf')  # 查找 'coolsnowwolf' 文件夹
+          if folder:
+              files = m.get_files_in_node(folder[0])  # 获取文件夹中的文件
+              for file in files.values():
+                  m.download(file)  # 下载每个文件
+          "
       
-      - name: 恢复原始文件名
-        run: |
-          chmod +x restore_filenames.sh
-          ./restore_filenames.sh
+      # - name: 恢复原始文件名
+      #   run: |
+      #     chmod +x restore_filenames.sh
+      #     ./restore_filenames.sh
 
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
@@ -234,17 +221,21 @@ jobs:
           name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           
-      - name: Delete Google Drive Temporary File
-        if: steps.up-release.conclusion == 'success'
+      - name: Delete temporary files from MEGA
+        if: steps.up-release.outcome == 'success'  # 仅在上传 Release 成功后执行
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_CREDENTIALS }}
-          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          echo "$GDRIVE_CREDENTIALS" > credentials.json
-          echo "refresh_token: $GDRIVE_REFRESH_TOKEN" > token.yml
-          FILE_ID=$(grep "Id:" upload.log | awk '{print $2}')
-          gdrive --config . --refresh-token "$(cat token.yml | grep refresh_token | cut -d' ' -f2)" delete $FILE_ID
-          echo "Deleted Google Drive file with ID: $FILE_ID"
+          python -m pip install mega.py  # 安装 mega.py 库
+          python -c "
+          from mega import Mega
+          mega = Mega()
+          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
+          folder = m.find('coolsnowwolf')  # 假设临时文件在 'coolsnowwolf' 文件夹中
+          if folder:
+              m.destroy(folder[0])  # 删除文件夹及其内容
+          "
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
