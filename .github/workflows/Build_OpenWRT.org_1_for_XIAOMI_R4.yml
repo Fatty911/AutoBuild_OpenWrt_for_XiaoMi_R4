@@ -383,7 +383,9 @@ jobs:
           chmod +x replace_special_chars.sh
           ./replace_special_chars.sh
           
-
+      - name: 归档
+        run: |
+          tar cv openwrt -C OpenWrt.org_official.tar
       - name: Upload to MEGA
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
@@ -396,7 +398,7 @@ jobs:
           folder = m.find('OpenWrt.org_official')  # 查找名为 'GitHubFiles' 的文件夹
           if not folder:
               folder = m.create_folder('OpenWrt.org_official')  # 如果不存在，则创建该文件夹
-          m.upload('./openwrt', folder[0])"  # 上传文件到指定文件夹
+          m.upload('./OpenWrt.org_official.tar', folder[0])"  # 上传文件到指定文件夹
          
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
