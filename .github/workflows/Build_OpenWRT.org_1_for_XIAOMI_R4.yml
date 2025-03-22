@@ -54,33 +54,11 @@ jobs:
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
-          sudo apt install -y cpulimit jq parallel
+          sudo apt install -y cpulimit jq parallel python3-pip
           cpulimit -e tar -l 80 -b
           cpulimit -e make -l 90 -b
           cpulimit -e ls -l 80 -b
-          
-
-      - name: Install rclone
-        run: |
-          curl https://rclone.org/install.sh | sudo bash
-          rclone --version || exit 1
-      
-      - name: Configure rclone
-        run: |
-          CLIENT_ID=${{ secrets.GDRIVE_CREDENTIALS }}
-          CLIENT_SECRET=${{ secrets.GDRIVE_REFRESH_TOKEN }}
-          REFRESH_TOKEN=${{ secrets.GDRIVE_REFRESH_TOKEN }}
-          
-          # 创建 rclone 配置文件
-          mkdir -p ~/.config/rclone
-          cat <<EOF > ~/.config/rclone/rclone.conf
-          [googledrive]
-          type = drive
-          client_id = $CLIENT_ID
-          client_secret = $CLIENT_SECRET
-          token = {"refresh_token":"$REFRESH_TOKEN"}
-          EOF
-          rclone mkdir googledrive:/openwrt.org || exit 1
+          pip install mega.py || pip3 install mega.py || exit 1
           
       - name: Clone source code
         working-directory: ${{ github.workspace }}
@@ -406,24 +384,20 @@ jobs:
           ./replace_special_chars.sh
           
 
-      - name: Upload to Google Drive
+      - name: Upload to MEGA
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}  # 从 Secrets 中获取密码
         run: |
-          set -x
-          rclone copy ./openwrt googledrive:/openwrt.org/ -P --log-file upload.log
-          rclone copy ./filename_mapping.json gdrive:/openwrt.org/
-          FILE_ID=$(rclone lsjson gdrive:/openwrt.org/ | jq -r '.[] | select(.Name == "openwrt.org") | .ID')
-          echo "Google Drive File ID: $FILE_ID"
-          echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
-
-
-      - name: Save File ID as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: googledrive-file-id
-          path: |
-            upload.log
-          compression-level: 0
-          
+          python -c "
+          from mega import Mega
+          mega = Mega()
+          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')  # 登录 MEGA
+          folder = m.find('OpenWrt.org_official')  # 查找名为 'GitHubFiles' 的文件夹
+          if not folder:
+              folder = m.create_folder('OpenWrt.org_official')  # 如果不存在，则创建该文件夹
+          m.upload('./openwrt', folder[0])"  # 上传文件到指定文件夹
+         
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
         with:
