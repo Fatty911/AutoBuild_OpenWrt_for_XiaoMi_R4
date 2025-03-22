@@ -72,13 +72,7 @@ jobs:
         cpulimit -e tar -l 80 -b
         cpulimit -e make -l 90 -b
         cpulimit -e ls -l 80 -b
-    - name: Install rclone
-      run: |
-        curl https://rclone.org/install.sh | sudo bash
-        rclone --version || exit 1
-    
-    - name: Install MEGA SDK
-      run: pip install mega.py || pip3 install mega.py || exit 1
+        pip install mega.py || pip3 install mega.py || exit 1
       
         
     - name: Clone source code
