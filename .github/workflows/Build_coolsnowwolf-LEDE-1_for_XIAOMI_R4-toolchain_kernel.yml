@@ -155,7 +155,7 @@ jobs:
           
       - name: 归档
         run: |
-          tar cv openwrt -C coolsnowwolf.tar
+          tar -cf - openwrt/ | pigz > coolsnowwolf.tar.gz
 
       - name: Upload to MEGA
         env:
@@ -169,7 +169,7 @@ jobs:
           folder = m.find('coolsnowwolf')  # 查找名为 'GitHubFiles' 的文件夹
           if not folder:
               folder = m.create_folder('coolsnowwolf')  # 如果不存在，则创建该文件夹
-          m.upload('./coolsnowwolf.tar', folder[0])"  # 上传文件到指定文件夹
+          m.upload('./coolsnowwolf.tar.gz', folder[0])"  # 上传文件到指定文件夹
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
