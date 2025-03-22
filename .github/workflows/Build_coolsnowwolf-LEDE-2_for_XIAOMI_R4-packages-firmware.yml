@@ -24,6 +24,7 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   ACTIONS_STEP_DEBUG: true
+  SOURCE: coolsnowwolf
 
 permissions:
   contents: write
@@ -83,17 +84,16 @@ jobs:
           from mega import Mega
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
-          folder = m.find('coolsnowwolf')  # 查找 'coolsnowwolf' 文件夹
+          folder = m.find('${{ env.SOURCE }}')  # 查找 '${{ env.SOURCE }}' 文件夹
           if folder:
               files = m.get_files_in_node(folder[0])  # 获取文件夹中的文件
-              for file in files.values():
-                  m.download(file)  # 下载每个文件
+              for handle, file_info in files.items():
+                m.download((handle, file_info))  # 传递 (handle, info_dict) 元组
           "
       
-      # - name: 恢复原始文件名
-      #   run: |
-      #     chmod +x restore_filenames.sh
-      #     ./restore_filenames.sh
+      - name: 解压文件
+        run: |
+          tar -xzvf ${{ env.SOURCE }}.tar.gz
 
       - name: Compile Luci-base and Batman-adv
         id: compile_batman_1
