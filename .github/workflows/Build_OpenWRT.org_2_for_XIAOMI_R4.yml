@@ -88,7 +88,7 @@ jobs:
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
           # Clone lede-source for necessary files
-          git clone https://github.com/${{ env.SOURCE }}/lede lede-source
+          git clone https://github.com/coolsnowwolf/lede lede-source
           # Copy DTS file
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           # Define mt7621.mk
