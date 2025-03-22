@@ -168,7 +168,7 @@ jobs:
           fi
           for pkg in $PACKAGES; do
             echo "编译软件包: $pkg 于 $(date)"
-            make package/$pkg/compile -j2 V=s > packages.log 2>&1 && break;}|| {
+            { make package/$pkg/compile -j1 V=s > packages.log 2>&1 && break;}|| {
                           retry_count=$((retry_count + 1))
                           echo "尝试第 $retry_count 次修复..."
                           if grep -q "PKG_VERSION.*error" packages.log; then
