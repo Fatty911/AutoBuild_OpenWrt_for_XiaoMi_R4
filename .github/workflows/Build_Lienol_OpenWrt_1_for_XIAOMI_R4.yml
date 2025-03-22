@@ -210,7 +210,7 @@ jobs:
       id: compile_packages
       run: |
         cd openwrt
-        sex -x
+        set -x
         LOG_FILE="packages.log"
         ERROR_PATTERN="error|failed|undefined reference|cannot"
         # 编译并记录日志
