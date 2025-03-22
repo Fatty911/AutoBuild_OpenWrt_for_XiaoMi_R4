@@ -21,6 +21,7 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
+  SOURCE: OpenWrt.org_official
 
 jobs:
   build:
@@ -69,17 +70,16 @@ jobs:
           from mega import Mega
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
-          folder = m.find('OpenWrt.org_official')  # 查找 'OpenWrt.org_official' 文件夹
+          folder = m.find('${{ env.SOURCE }}')  # 查找 '${{ env.SOURCE }}' 文件夹
           if folder:
               files = m.get_files_in_node(folder[0])  # 获取文件夹中的文件
               for handle, file_info in files.items():
                 m.download((handle, file_info))  # 传递 (handle, info_dict) 元组
           "
       
-      # - name: 恢复原始文件名
-      #   run: |
-      #     chmod +x restore_filenames.sh
-      #     ./restore_filenames.sh
+      - name: 解压文件
+        run: |
+          tar -xzvf ${{ env.SOURCE }}.tar.gz
           
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
@@ -88,7 +88,7 @@ jobs:
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
           # Clone lede-source for necessary files
-          git clone https://github.com/OpenWrt.org_official/lede lede-source
+          git clone https://github.com/${{ env.SOURCE }}/lede lede-source
           # Copy DTS file
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           # Define mt7621.mk
@@ -393,7 +393,7 @@ jobs:
           from mega import Mega
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
-          folder = m.find('OpenWrt.org_official')  # 假设临时文件在 'OpenWrt.org_official' 文件夹中
+          folder = m.find('${{ env.SOURCE }}')  # 假设临时文件在 '${{ env.SOURCE }}' 文件夹中
           if folder:
               m.destroy(folder[0])  # 删除文件夹及其内容
           "
