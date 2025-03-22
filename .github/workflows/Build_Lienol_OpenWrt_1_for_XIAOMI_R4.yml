@@ -225,7 +225,7 @@ jobs:
     
     - name: Upload package logs
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@master
       with:
         name: package-logs
         path: openwrt/*.log
