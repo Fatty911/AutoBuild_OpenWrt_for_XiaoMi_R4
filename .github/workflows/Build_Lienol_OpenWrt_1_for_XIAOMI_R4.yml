@@ -199,9 +199,39 @@ jobs:
           done
           echo "Feed $FEED 编译完成 于 $(date)"
         done < feeds.conf.default
-
+    - name: List main packages
+      run: |
+        cd openwrt
+        # Find directories with Makefiles, excluding package/feeds/
+        find package/ -type f -name Makefile -not -path 'package/feeds/*' -exec dirname {} \; > main_packages.txt
+        echo "Main packages to compile:"
+        cat main_packages.txt
+    
+    - name: Compile main packages
+      id: main_packages
+      run: |
+        cd openwrt
+        while read -r pkg; do
+          echo "Compiling $pkg at $(date)"
+          # Compile each package individually, redirect output to a log file
+          make $pkg/compile -j1 V=s > "$pkg.log" 2>&1
+          if [ $? -ne 0 ]; then
+            echo "Failed to compile $pkg"
+            cat "$pkg.log"
+            exit 1
+          fi
+          echo "Successfully compiled $pkg"
+        done < main_packages.txt
+    
+    - name: Upload package logs
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: package-logs
+        path: openwrt/*.log
     - name: Compile Remaining packages
       id: compile_packages
+      if: steps.main_packages.conclusion == 'success'
       run: |
         cd openwrt
         set -x
@@ -408,6 +438,7 @@ jobs:
                           fi     
             }
           done 
+    
 
     - name: 归档
       run: |
