@@ -67,32 +67,13 @@ jobs:
           fi
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
+          sudo apt -y install python3-pip
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
-      - name: Install rclone
-        run: |
-          curl https://rclone.org/install.sh | sudo bash
-          rclone --version || exit 1
+          pip install mega.py || pip3 install mega.py || exit 1
       
-      - name: Configure rclone
-        run: |
-          CLIENT_ID=${{ secrets.googledrive_CREDENTIALS }}
-          CLIENT_SECRET=${{ secrets.googledrive_REFRESH_TOKEN }}
-          REFRESH_TOKEN=${{ secrets.googledrive_REFRESH_TOKEN }}
-          
-          # 创建 rclone 配置文件
-          mkdir -p ~/.config/rclone
-          cat <<EOF > ~/.config/rclone/rclone.conf
-          [googledrive]
-          type = drive
-          client_id = $CLIENT_ID
-          client_secret = $CLIENT_SECRET
-          token = {"refresh_token":"$REFRESH_TOKEN"}
-          EOF
-          rclone mkdir googledrive:/coolsnowwolf || exit 1
-          
       - name: Clone source code
         working-directory: ${{ github.workspace }}
         run: |
@@ -167,33 +148,26 @@ jobs:
             exit 1
           }
 
-      - name: replace special chars before upload artifacts
-        run: |
-          chmod +x replace_special_chars.sh
-          ./replace_special_chars.sh
+      # - name: replace special chars before upload artifacts
+      #   run: |
+      #     chmod +x replace_special_chars.sh
+      #     ./replace_special_chars.sh
           
 
 
-      #- name: Compress build artifacts
-        #run: |
-          #tar -cvf coolsnowwolf-build.tar openwrt filename_mapping.json || tar -cvf coolsnowwolf-build.tar openwrt
-          #echo "查看归档后文件大小" && ls -lh openwrt-build.tar
-
-      - name: Upload to Google Drive
+      - name: Upload to MEGA
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}  # 从 Secrets 中获取密码
         run: |
-          rclone copy openwrt googledrive:/coolsnowwolf/ -P --log-file upload.log
-          rclone copy filename_mapping.json googledrive:/coolsnowwolf/
-          FILE_ID=$(rclone lsjson googledrive:/coolsnowwolf/ | jq -r '.[] | select(.Name == "openwrt") | .ID')
-          echo "Google Drive File ID: $FILE_ID"
-          echo "FILE_ID=$FILE_ID" >> $GITHUB_ENV
-
-      - name: Save File ID as Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: googledrive-file-id
-          path: |
-            upload.log
-          compression-level: 0
+          python -c "
+          from mega import Mega
+          mega = Mega()
+          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')  # 登录 MEGA
+          folder = m.find('coolsnowwolf')  # 查找名为 'GitHubFiles' 的文件夹
+          if not folder:
+              folder = m.create_folder('coolsnowwolf')  # 如果不存在，则创建该文件夹
+          m.upload('./openwrt', folder[0])"  # 上传文件到指定文件夹
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
