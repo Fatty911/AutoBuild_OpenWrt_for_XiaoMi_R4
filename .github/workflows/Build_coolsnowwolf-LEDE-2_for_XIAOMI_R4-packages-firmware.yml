@@ -94,18 +94,22 @@ jobs:
       - name: 解压文件
         run: |
           tar -xzvf ${{ env.SOURCE }}.tar.gz
+      - name: 编译Luci-base
+        run: |
+          cd openwrt
+          make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
 
-      - name: Compile Luci-base and Batman-adv
+      - name: Compile  Batman-adv
         id: compile_batman_1
         run: |         
-          sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
-          ls -l
-          echo "sudo chown -R $USER:$GROUPS openwrt"
-          sudo chown -R $USER:$GROUPS openwrt
+          # sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
+          # ls -l
+          # echo "sudo chown -R $USER:$GROUPS openwrt"
+          # sudo chown -R $USER:$GROUPS openwrt
           cd openwrt
-          ls -l
-          sudo chown -R $USER:$GROUPS ./*
-          make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
+          # ls -l
+          # sudo chown -R $USER:$GROUPS ./*
+          
           make -j1 V=s package/feeds/routing/batman-adv/compile > batman-adv.log 2>&1 || {
           cd ..   
             # 赋予脚本执行权限并运行
