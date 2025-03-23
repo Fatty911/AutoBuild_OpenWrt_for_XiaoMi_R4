@@ -199,6 +199,7 @@ jobs:
           done
           echo "Feed $FEED 编译完成 于 $(date)"
         done < feeds.conf.default
+        
     - name: List main packages
       run: |
         cd openwrt
@@ -212,23 +213,18 @@ jobs:
       run: |
         cd openwrt
         while read -r pkg; do
-          echo "Compiling $pkg at $(date)"
+          echo "编译 $pkg at $(date)"
           # Compile each package individually, redirect output to a log file
           make $pkg/compile -j1 V=s > "$pkg.log" 2>&1
           if [ $? -ne 0 ]; then
-            echo "Failed to compile $pkg"
+            echo "编译 $pkg 失败，查看编译此包时的日志"
             cat "$pkg.log"
             exit 1
           fi
           echo "Successfully compiled $pkg"
         done < main_packages.txt
     
-    - name: Upload package logs
-      if: always()
-      uses: actions/upload-artifact@master
-      with:
-        name: package-logs
-        path: openwrt/*.log
+
     - name: Compile Remaining packages
       id: compile_packages
       if: steps.main_packages.conclusion == 'success'
