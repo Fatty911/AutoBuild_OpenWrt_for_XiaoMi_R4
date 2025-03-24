@@ -74,7 +74,7 @@ jobs:
           target_file = f'${{ env.SOURCE }}.tar.gz'  # 直接拼接文件名
       
           # 2. 查找目标文件夹
-          folder = m.find(source)  # 保持变量原样传递
+          folder = m.find(${{ env.SOURCE }})  # 保持变量原样传递
           if folder:
               # 3. 精准匹配目标文件
               files = m.get_files_in_node(folder[0])
