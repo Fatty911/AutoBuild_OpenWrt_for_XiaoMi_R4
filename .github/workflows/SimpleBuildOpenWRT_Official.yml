@@ -1,10 +1,15 @@
 name: Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages
 
 on:
+  #手动运行
+  workflow_dispatch:
+  #文件修改时触发
   push:
     branches:
       - main
-
+    # 添加路径过滤，仅当当前工作流文件被修改时触发
+    paths:
+      - .github/workflows/SimpleBuildOpenWRT_Official.yml  # 需替换为当前工作流文件的实际路径
 jobs:
   build:
     runs-on: ubuntu-latest
