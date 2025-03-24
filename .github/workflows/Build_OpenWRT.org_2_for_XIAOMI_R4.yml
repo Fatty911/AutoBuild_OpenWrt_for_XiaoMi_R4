@@ -9,6 +9,9 @@ on:
   push:
     branches: 
       - master
+      - main
+    paths:
+      - .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
