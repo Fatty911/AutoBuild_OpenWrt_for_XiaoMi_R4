@@ -1,0 +1,54 @@
+name: Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout OpenWRT
+        uses: actions/checkout@v4
+        with:
+          repository: openwrt/openwrt
+          ref: master
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libncurses5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync
+
+      - name: Clone OpenClash
+        run: git clone https://github.com/vernesong/OpenClash.git package/luci-app-openclash
+
+      - name: Clone Passwall2
+        run: git clone https://github.com/xiaorouji/openwrt-passwall2.git package/passwall2
+
+      - name: Create seed.config
+        run: |
+          cat << EOF > seed.config
+          CONFIG_TARGET_ramips=y
+          CONFIG_TARGET_ramips_mt7621=y
+          CONFIG_TARGET_ramips_mt7621_DEVICE_xiaomi_mi-router-4=y
+          CONFIG_PACKAGE_luci=y
+          CONFIG_PACKAGE_luci-app-openclash=y
+          CONFIG_PACKAGE_luci-app-passwall2=y
+          CONFIG_PACKAGE_wpad-mesh=y
+          # CONFIG_PACKAGE_wpad-basic is not set
+          EOF
+
+      - name: Apply configuration
+        run: |
+          cp seed.config .config
+          make defconfig
+
+      - name: Build firmware
+        run: make -j$(nproc)
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@master
+        with:
+          name: openwrt-firmware
+          path: bin/targets/ramips/mt7621/openwrt-ramips-mt7621-xiaomi_mi-router-4-squashfs-sysupgrade.bin
