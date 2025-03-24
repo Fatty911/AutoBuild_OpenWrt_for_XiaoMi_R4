@@ -11,6 +11,12 @@ on:
     workflows: ["Build coolsnowwolf-LEDE 1 Toolchain and Kernel for XIAOMI_R4"]  # 工作流 1 的名称
     types:
       - completed  # 当工作流 1 完成时触发
+  push:
+    branches: 
+      - master
+      - main
+    paths:
+      - .github/workflows/Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware.yml
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
