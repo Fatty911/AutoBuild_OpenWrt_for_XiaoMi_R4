@@ -398,9 +398,10 @@ jobs:
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
           # 1. 定位或创建目标文件夹
-          folder = m.find('${{ env.SOURCE }}')
+          folder_name = ${{ env.SOURCE }}
+          folder = m.find(folder_name)
           if not folder:
-              folder = m.create_folder('${{ env.SOURCE }}')
+              folder = m.create_folder(folder_name)
           folder_id = folder[0]['h']  # 获取文件夹节点ID
           # 2. 检查目标文件夹中是否存在同名文件
           target_file = '${{ env.SOURCE }}.tar.gz'
@@ -428,6 +429,7 @@ jobs:
               m.rename(existing_file_id, new_name)
           # 5. 上传新文件
           m.upload('./${{ env.SOURCE }}.tar.gz', folder_id)
+          "
          
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@v2
