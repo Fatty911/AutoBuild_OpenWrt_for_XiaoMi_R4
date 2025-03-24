@@ -17,6 +17,9 @@ on:
   push:
     branches: 
       - master
+      - main
+    paths:
+      - .github/workflows/Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml
 
 env:
   REPO_URL: https://github.com/Lienol/openwrt
@@ -70,9 +73,9 @@ jobs:
         sudo chown -R $USER:$GROUPS /workdir
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
         sudo apt -y install cpulimit pigz
-        cpulimit -e tar -l 80 -b
-        cpulimit -e make -l 90 -b
-        cpulimit -e ls -l 80 -b
+        # cpulimit -e tar -l 80 -b
+        # cpulimit -e make -l 90 -b
+        # cpulimit -e ls -l 80 -b
         pip install mega.py || pip3 install mega.py || exit 1
       
         
@@ -396,14 +399,14 @@ jobs:
                                           if [ -n "$PKG_PATH" ]; then
                                               PKG_NAME=$(basename "$PKG_PATH")
                                               echo "重新编译包: $PKG_NAME"
-                                              make -j$(nproc) "$PKG_PATH/compile" V=s || make -j1 "$PKG_PATH/compile" V=s
+                                              make -j1 "$PKG_PATH/compile" V=s
                                           else
                                               echo "无法推断包名，尝试重新编译所有包"
-                                              make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
+                                              make -j1 package/compile V=s
                                           fi
                                       else
                                           echo "无法提取失败路径，尝试重新编译所有包"
-                                          make -j$(nproc) package/compile V=s || make -j1 package/compile V=s
+                                          make -j1 package/compile V=s
                                       fi  
                           else
                                   tee "$LOG_FILE" || {
