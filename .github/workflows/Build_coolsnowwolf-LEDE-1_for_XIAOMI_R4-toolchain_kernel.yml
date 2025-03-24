@@ -164,13 +164,16 @@ jobs:
           python -c "
           from mega import Mega
           import re
+          # import os
+          # folder_name = os.environ['SOURCE']
+          folder_name = ${{ env.SOURCE }}
           # 登录MEGA账户
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
           # 1. 定位或创建目标文件夹
-          folder = m.find('${{ env.SOURCE }}')
+          folder = m.find(folder_name)
           if not folder:
-              folder = m.create_folder('${{ env.SOURCE }}')
+              folder = m.create_folder(folder_name)
           # 检查folder是否为有效字典
           if isinstance(folder, dict):
               folder_id = folder.get('h')  # 直接通过键访问
