@@ -84,11 +84,19 @@ jobs:
         from mega import Mega
         mega = Mega()
         m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
-        folder = m.find('${{ env.SOURCE }}')  # 查找 '${{ env.SOURCE }}' 文件夹
+        # 1. 动态生成目标文件名
+        target_file = f'${{ env.SOURCE }}.tar.gz'  # 直接拼接文件名
+    
+        # 2. 查找目标文件夹
+        folder = m.find(${{ env.SOURCE }})  # 保持变量原样传递
         if folder:
-            files = m.get_files_in_node(folder[0])  # 获取文件夹中的文件
+            # 3. 精准匹配目标文件
+            files = m.get_files_in_node(folder[0])
             for handle, file_info in files.items():
-              m.download((handle, file_info))  # 传递 (handle, info_dict) 元组
+                if file_info['a']['name'] == target_file:
+                    # 4. 下载到当前目录
+                    m.download((handle, file_info), dest_path='./')
+                    break
         "
     
     - name: 解压文件
