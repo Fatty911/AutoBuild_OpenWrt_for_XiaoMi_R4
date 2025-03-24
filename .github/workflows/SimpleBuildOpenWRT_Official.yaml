@@ -54,10 +54,40 @@ jobs:
           make defconfig
 
       - name: Build firmware
-        run: make -j$(nproc) V=s || make -j1 V=s
+        id: build
+        run: make -j$(nproc) V=s || make -j1 V=s > compile.log 2>&1
+        
+      - name: 查看报错日志
+        if: steps.build.conclusion != 'success'
+        run: |
+          LOG_FILE='compile.log'
+          # 错误处理：动态截取倒数第二个 Entering directory 到错误行
+          echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
+          
+          # 步骤1：倒序日志并定位关键行
+          tac "$LOG_FILE" | awk '
+              BEGIN { entry_count=0; error_found=0 }
+              /Entering directory/ && !error_found { 
+                  entry_count++
+                  if (entry_count == 2) {  # 倒数第二个Entering directory
+                      print "----- 错误触发目录入口 -----"
+                      print $0
+                      print "============================="
+                      error_found=1
+                      next
+                  }
+              }
+              error_found { 
+                  # 反转回正序前缓存内容
+                  buffer = $0 "\n" buffer
+                  if ($0 ~ /error|failed/) { exit }
+              }
+              END { print buffer }
+          ' | tac  # 恢复正序输出
 
       - name: Upload firmware
+        if: steps.build.conclusion == 'success'
         uses: actions/upload-artifact@master
         with:
           name: openwrt-firmware
-          path: bin/targets/ramips/mt7621/openwrt-ramips-mt7621-xiaomi_mi-router-4-squashfs-sysupgrade.bin
+          path: bin/targets/ramips/mt7621/*
