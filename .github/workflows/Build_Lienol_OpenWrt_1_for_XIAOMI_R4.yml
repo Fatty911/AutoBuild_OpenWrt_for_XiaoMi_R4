@@ -205,7 +205,7 @@ jobs:
       run: |
         cd openwrt
         # Find directories with Makefiles, excluding package/feeds/
-        find package/ -type f -name Makefile -not -path 'package/feeds/*' -exec dirname {} \; > main_packages.txt
+        find package/ -type d -name src -prune -o -type f -name Makefile -not -path 'package/feeds/*' -exec dirname {} \; > main_packages.txt
         echo "Main packages to compile:"
         cat main_packages.txt
     
