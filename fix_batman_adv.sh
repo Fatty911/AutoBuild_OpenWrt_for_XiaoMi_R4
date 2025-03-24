@@ -103,6 +103,34 @@ fix_dependency_duplicates() {
     fi
   ' _ {} \;
 }
+# 第一阶段：仅切换batman-adv组件到指定commit
+switch_batman_adv_commit() {
+  echo "尝试仅切换batman-adv组件到指定commit..."
+  if [ -d "feeds/routing/batman-adv" ]; then
+    cd feeds/routing/batman-adv
+    git fetch origin
+    git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
+    cd ../../..
+    ./scripts/feeds update -i batman-adv  # 仅更新batman-adv组件[1](@ref)
+    ./scripts/feeds install -p routing batman-adv
+  else
+    echo "batman-adv组件目录不存在，尝试完整切换"
+    switch_routing_commit
+  fi
+}
+
+# 第二阶段：切换整个routing仓库
+switch_routing_commit() {
+  echo "切换整个routing仓库到指定commit..."
+  rm -rf feeds/routing
+  git clone https://github.com/coolsnowwolf/routing.git feeds/routing
+  cd feeds/routing
+  git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
+  cd ../..
+  ./scripts/feeds update -i routing  # 更新整个routing仓库[1](@ref)
+  ./scripts/feeds install -p routing batman-adv
+}
+
 
 # 主逻辑：循环重试
 cd "$OPENWRT_DIR"
@@ -139,13 +167,19 @@ while [ $retry_count -lt $MAX_RETRY ]; do
 
     # 如果达到最大重试次数，切换到指定 commit
     if [ $retry_count -eq $MAX_RETRY ]; then
-      switch_to_commit
+      # 先尝试仅切换组件
+      switch_batman_adv_commit
       if compile_batman; then
-        echo "切换 commit 后编译成功"
+        echo "切换batman-adv组件后编译成功"
       else
-        echo "所有尝试均失败，退出"
-        exit 1
+        # 组件切换失败则切换整个仓库
+        switch_routing_commit
+        if compile_batman; then
+          echo "切换整个routing仓库后编译成功"
+        else
+          echo "所有尝试均失败，退出"
+          exit 1
+        fi
       fi
     fi
-  fi
 done
