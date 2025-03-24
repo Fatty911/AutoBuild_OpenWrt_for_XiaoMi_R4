@@ -3,7 +3,10 @@ name: Build coolsnowwolf-LEDE 1 Toolchain and Kernel for XIAOMI_R4
 on:
   push:
     branches:
+      - main
       - master
+    paths:
+      - Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml
   repository_dispatch:
     types: coolsnowwolf Source Code Update
   workflow_dispatch:
@@ -148,11 +151,6 @@ jobs:
             echo "$LOG_TAIL"
             exit 1
           }
-
-      # - name: replace special chars before upload artifacts
-      #   run: |
-      #     chmod +x replace_special_chars.sh
-      #     ./replace_special_chars.sh
           
       - name: 归档
         run: |
@@ -172,12 +170,16 @@ jobs:
           # 1. 定位或创建目标文件夹
           folder = m.find('${{ env.SOURCE }}')
           if not folder:
-              folder = m.create_folder('${{ env.SOURCE }}')  # 新版本返回字符串ID
-          # 处理不同版本的返回值
-          if isinstance(folder, list):  # 旧版本兼容
-              folder_id = folder[0]['h']
+              folder = m.create_folder('${{ env.SOURCE }}')
+          # 检查folder是否为有效字典
+          if isinstance(folder, dict):
+              folder_id = folder.get('h')  # 直接通过键访问
+          elif isinstance(folder, list) and len(folder) > 0:
+              folder_id = folder[0].get('h')
           else:
-              folder_id = folder
+              raise ValueError("无法获取文件夹ID")
+          # else:
+          #     folder_id = folder
           # 2. 检查目标文件夹中是否存在同名文件
           target_file = '${{ env.SOURCE }}.tar.gz'
           existing_files = [
