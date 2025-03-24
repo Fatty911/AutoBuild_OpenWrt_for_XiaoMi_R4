@@ -6,7 +6,7 @@ on:
       - main
       - master
     paths:
-      - Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml
+      - .github/workflows/Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml
   repository_dispatch:
     types: coolsnowwolf Source Code Update
   workflow_dispatch:
