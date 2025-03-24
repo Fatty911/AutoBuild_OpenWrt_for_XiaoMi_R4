@@ -386,6 +386,7 @@ jobs:
       - name: 归档
         run: |
           tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
+          
       - name: Upload to MEGA
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
@@ -398,7 +399,7 @@ jobs:
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
           # 1. 定位或创建目标文件夹
-          folder_name = ${{ env.SOURCE }}
+          folder_name = '${{ env.SOURCE }}'
           folder = m.find(folder_name)
           if not folder:
               folder = m.create_folder(folder_name)
