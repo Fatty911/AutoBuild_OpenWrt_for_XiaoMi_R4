@@ -63,7 +63,7 @@ jobs:
         run: make -j$(nproc) V=s || make -j1 V=s > compile.log 2>&1
         
       - name: 查看报错日志
-        if: steps.build.conclusion != 'success'
+        if: always()
         run: |
           LOG_FILE='compile.log'
           # 错误处理：动态截取倒数第二个 Entering directory 到错误行
