@@ -166,7 +166,7 @@ jobs:
           import re
           # import os
           # folder_name = os.environ['SOURCE']
-          folder_name = "${{ env.SOURCE }}"
+          folder_name = '${{ env.SOURCE }}'
           # 登录MEGA账户
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
