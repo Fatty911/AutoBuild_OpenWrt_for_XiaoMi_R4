@@ -219,13 +219,10 @@ jobs:
         while read -r pkg; do
           echo "编译 $pkg at $(date)"
           # Compile each package individually, redirect output to a log file
-          make $pkg/compile -j1 V=s > "$pkg.log" 2>&1
-          if [ $? -ne 0 ]; then
+          { make $pkg/compile -j1 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || {
             echo "编译 $pkg 失败，查看编译此包时的日志"
             cat "$pkg.log"
-            exit 1
-          fi
-          echo "Successfully compiled $pkg"
+            }
         done < main_packages.txt
     
 
@@ -442,7 +439,7 @@ jobs:
 
     - name: 归档
       run: |
-        tar -cf - openwrt/ | pigz > Lienol.tar.gz
+        tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
     
     
     - name: Upload to MEGA
@@ -457,12 +454,12 @@ jobs:
         mega = Mega()
         m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
         # 1. 定位或创建目标文件夹
-        folder = m.find('${{ env.SOURCE }}')
+        folder = m.find(${{ env.SOURCE }})
         if not folder:
-            folder = m.create_folder('${{ env.SOURCE }}')
+            folder = m.create_folder(${{ env.SOURCE }})
         folder_id = folder[0]['h']  # 获取文件夹节点ID
         # 2. 检查目标文件夹中是否存在同名文件
-        target_file = '${{ env.SOURCE }}.tar.gz'
+        target_file = f'${{ env.SOURCE }}.tar.gz'
         existing_files = [
             f for f in m.get_files().values()
             if f['a']['name'] == target_file and f['p'] == folder_id
@@ -487,6 +484,7 @@ jobs:
             m.rename(existing_file_id, new_name)
         # 5. 上传新文件
         m.upload('./${{ env.SOURCE }}.tar.gz', folder_id)
+        "
     
         
     - name: Delete workflow runs
