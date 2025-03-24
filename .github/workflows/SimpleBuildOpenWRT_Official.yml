@@ -1,4 +1,4 @@
-name: Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages
+name: Simple Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages
 
 on:
   #手动运行
@@ -85,7 +85,12 @@ jobs:
               END { 
                   print buffer 
               }
-          ' | tac
+          ' 
+# | tac 少一次反转试试
+      - name: 直接tail试试
+        if: always()
+        run: ｜
+          tail -300 compile.log
 
       - name: Upload firmware
         if: steps.build.conclusion == 'success'
