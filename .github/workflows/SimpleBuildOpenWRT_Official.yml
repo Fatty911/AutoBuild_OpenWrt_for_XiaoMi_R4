@@ -52,11 +52,13 @@ jobs:
           CONFIG_PACKAGE_wpad-mesh=y
           # CONFIG_PACKAGE_wpad-basic is not set
           EOF
-
+          
       - name: Apply configuration
         run: |
           cp seed.config .config
           make defconfig
+          sed -i -e 's/^CONFIG_TOOLS_LIBCRYPTO=y$/CONFIG_TOOLS_LIBCRYPTO=n/' -e 's/^CONFIG_FIT_SIGNATURE=y$/CONFIG_FIT_SIGNATURE=n/' .config
+
 
       - name: Build firmware
         id: build
@@ -89,8 +91,7 @@ jobs:
 # | tac 少一次反转试试
       - name: 直接tail试试
         if: always()
-        run: ｜
-          tail -300 compile.log
+        run: tail -300 compile.log
 
       - name: Upload firmware
         if: steps.build.conclusion == 'success'
