@@ -62,7 +62,9 @@ jobs:
 
       - name: Build firmware
         id: build
-        run: make -j$(nproc) V=s || make -j1 V=s > compile.log 2>&1
+        run: |
+          make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
+          make -j$(nproc) V=s || make -j1 V=s > compile.log 2>&1
         
       - name: 查看报错日志
         if: always()
