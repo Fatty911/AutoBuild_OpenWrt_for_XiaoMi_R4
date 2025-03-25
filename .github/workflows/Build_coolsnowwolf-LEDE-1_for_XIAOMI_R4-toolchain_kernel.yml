@@ -164,25 +164,21 @@ jobs:
           python -c "
           from mega import Mega
           import re
-          # import os
-          # folder_name = os.environ['SOURCE']
-          folder_name = '${{ env.SOURCE }}'
           # 登录MEGA账户
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
           # 1. 定位或创建目标文件夹
+          folder_name = '${{ env.SOURCE }}'
           folder = m.find(folder_name)
           if not folder:
               folder = m.create_folder(folder_name)
-          # 检查folder是否为有效字典
-          if isinstance(folder, dict):
-              folder_id = folder.get('h')  # 直接通过键访问
-          elif isinstance(folder, list) and len(folder) > 0:
-              folder_id = folder[0].get('h')
+              folder_id = folder['h']  # 新创建的文件夹，folder 是字典
           else:
-              raise ValueError("无法获取文件夹ID")
-          # else:
-          #     folder_id = folder
+              # 如果 find() 返回的是列表，取第一个元素；否则直接使用字典
+              if isinstance(folder, list):
+                  folder_id = folder[0]['h']
+              else:
+                  folder_id = folder['h']
           # 2. 检查目标文件夹中是否存在同名文件
           target_file = '${{ env.SOURCE }}.tar.gz'
           existing_files = [
@@ -193,8 +189,7 @@ jobs:
               # 3. 提取所有带序号的历史文件并计算最大序号
               all_files_in_folder = [f for f in m.get_files().values() if f['p'] == folder_id]
               max_num = 0
-              pattern = re.compile(r'^${{ env.SOURCE }}(?:|_(\d+))\.tar\.gz$')
-          
+              pattern = re.compile(r'^${{ env.SOURCE }}(?:|_(\d+))\\.tar\\.gz$')
               for file_info in all_files_in_folder:
                   name = file_info['a']['name']
                   match = pattern.match(name)
@@ -202,7 +197,6 @@ jobs:
                       num_str = match.group(1)
                       current_num = int(num_str) if num_str else 0
                       max_num = max(max_num, current_num)
-          
               # 4. 重命名旧文件为递增序号（新序号 = max_num + 1）
               new_name = f'${{ env.SOURCE }}_{max_num + 1}.tar.gz'
               existing_file_id = existing_files[0]['h']
