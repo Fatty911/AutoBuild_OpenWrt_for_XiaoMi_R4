@@ -169,16 +169,22 @@ jobs:
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
           # 1. 定位或创建目标文件夹
           folder_name = '${{ env.SOURCE }}'
+          # 修改后的代码片段（处理元组和类型问题）
           folder = m.find(folder_name)
           if not folder:
               folder = m.create_folder(folder_name)
-              folder_id = folder['h']  # 新创建的文件夹，folder 是字典
+              folder_id = folder['h']
           else:
-              # 如果 find() 返回的是列表，取第一个元素；否则直接使用字典
-              if isinstance(folder, list):
-                  folder_id = folder[0]['h']
-              else:
+              # 统一处理返回值类型（列表、元组、字典）
+              if isinstance(folder, (list, tuple)):
+                  if len(folder) == 0:
+                      folder_id = None  # 或重新创建文件夹
+                  else:
+                      folder_id = folder[0]['h']  # 确保第一个元素是字典
+              elif isinstance(folder, dict):
                   folder_id = folder['h']
+              else:
+                  raise TypeError(f"Unexpected folder type: {type(folder)}")
           # 2. 检查目标文件夹中是否存在同名文件
           target_file = '${{ env.SOURCE }}.tar.gz'
           existing_files = [
