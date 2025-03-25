@@ -32,7 +32,11 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libncurses5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync
+          sudo apt-get install -y build-essential libncurses5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync python3-distutils ruby unzip libpam0g-dev libcurl4-openssl-dev
+      - name: Update feeds
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       - name: Clone OpenClash
         run: git clone https://github.com/vernesong/OpenClash.git package/luci-app-openclash
@@ -50,6 +54,10 @@ jobs:
           CONFIG_PACKAGE_luci-app-openclash=y
           CONFIG_PACKAGE_luci-app-passwall2=y
           CONFIG_PACKAGE_wpad-mesh=y
+          CONFIG_PACKAGE_luci-lib-base=y
+          CONFIG_PACKAGE_luci-lib-ipkg=y
+          CONFIG_PACKAGE_ruby=y
+          CONFIG_PACKAGE_bash=y
           # CONFIG_PACKAGE_wpad-basic is not set
           EOF
           
