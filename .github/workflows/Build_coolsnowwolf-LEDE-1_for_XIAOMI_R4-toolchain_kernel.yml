@@ -169,28 +169,23 @@ jobs:
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
           # 1. 定位或创建目标文件夹
           folder_name = '${{ env.SOURCE }}'
-          # 修改后的代码片段（处理元组和类型问题）
           folder = m.find(folder_name)
           if not folder:
-              folder = m.create_folder(folder_name)
-              folder_id = folder['h']
+              folder_id = m.create_folder(folder_name)  # 直接使用返回的句柄
           else:
-              # 统一处理返回值类型（列表、元组、字典）
-              if isinstance(folder, (list, tuple)):
-                  if len(folder) == 0:
-                      folder_id = None  # 或重新创建文件夹
-                  else:
-                      folder_id = folder[0]['h']  # 确保第一个元素是字典
-              elif isinstance(folder, dict):
-                  folder_id = folder['h']
-              else:
-                  raise TypeError(f"Unexpected folder type: {type(folder)}")
+              if not isinstance(folder, list):
+                  folder = [folder]  # 如果是单个元组，转换为列表
+              # folder 是列表，元素为元组 (node, path)
+              node = folder[0][0]  # 获取节点字典
+              folder_id = node['h']  # 从字典中获取文件夹 ID
+          
           # 2. 检查目标文件夹中是否存在同名文件
           target_file = '${{ env.SOURCE }}.tar.gz'
           existing_files = [
               f for f in m.get_files().values()
               if f['a']['name'] == target_file and f['p'] == folder_id
           ]
+          
           if existing_files:
               # 3. 提取所有带序号的历史文件并计算最大序号
               all_files_in_folder = [f for f in m.get_files().values() if f['p'] == folder_id]
