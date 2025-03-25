@@ -302,7 +302,7 @@ jobs:
                                                   rm -f "$makefile.tmp"
                                                 fi
                                               ' _ {} \; || exit 1
-                                if              
+                                fi              
                                 if grep -q "dependency format is invalid" packages.log; then
                                                     echo "处理依赖格式错误..."
                                                     find . -type f $ -name "Makefile" -o -name "*.mk" $ -exec sh -c '
