@@ -86,20 +86,15 @@ jobs:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          python -c "
-          from mega import Mega
-          mega = Mega()
-          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
-          folder = m.find('${{ env.SOURCE }}')  # 查找 '${{ env.SOURCE }}' 文件夹
-          if folder:
-              files = m.get_files_in_node(folder[0])  # 获取文件夹中的文件
-              for handle, file_info in files.items():
-                m.download((handle, file_info))  # 传递 (handle, info_dict) 元组
-          "
+          # 确保 mega.py 已安装
+          pip install mega.py || exit 1
+          # 下载文件到当前目录
+          python download_from_mega.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}"
       
       - name: 解压文件
         run: |
           tar -xzvf ${{ env.SOURCE }}.tar.gz
+          
       - name: 编译Luci-base
         run: |
           cd openwrt
