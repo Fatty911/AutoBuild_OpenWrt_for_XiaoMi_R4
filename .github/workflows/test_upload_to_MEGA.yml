@@ -37,6 +37,7 @@ jobs:
         run: |
           mkdir openwrt
           tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
+          pwd && ls
           
       - name: Upload to MEGA
         env:
@@ -46,8 +47,9 @@ jobs:
           python -c "
           from mega import Mega
           import re
+          import os
           
-          # 登录MEGA账户
+          # 登录 MEGA 账户
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
           
@@ -55,11 +57,16 @@ jobs:
           folder_name = '${{ env.SOURCE }}'
           folder = m.find(folder_name)
           if not folder:
-              folder_id = m.create_folder(folder_name)  # 直接使用返回的句柄
+              # 如果文件夹不存在，创建新文件夹并获取句柄
+              folder_id = m.create_folder(folder_name)
+              print(f"创建新文件夹: {folder_name}, folder_id: {folder_id}")
           else:
+              # 如果文件夹存在，处理返回值以获取正确的 folder_id
               if not isinstance(folder, list):
-                  folder = [folder]  # 如果是单个对象，转换为列表
-              folder_id = folder[0]  # 获取文件夹的 handle
+                  folder = [folder]  # 如果是单个元组，转换为列表
+              node = folder[0][0]  # 获取节点字典
+              folder_id = node['h']  # 从节点字典中提取句柄
+              print(f"找到现有文件夹: {folder_name}, folder_id: {folder_id}")
           
           # 2. 检查目标文件夹中是否存在同名文件
           target_file = '${{ env.SOURCE }}.tar.gz'
@@ -84,10 +91,17 @@ jobs:
                       current_num = int(num_str) if num_str else 0
                       max_num = max(max_num, current_num)
               # 4. 重命名旧文件为递增序号（新序号 = max_num + 1）
-              new_name = f'${{ env.SOURCE }}{max_num + 1}.tar.gz'
+              new_name = f'${{ env.SOURCE }}_{max_num + 1}.tar.gz'
               existing_file_id = existing_files[0]['h']
               m.rename(existing_file_id, new_name)
+              print(f"重命名旧文件为: {new_name}")
           
           # 5. 上传新文件
-          m.upload('./${{ env.SOURCE }}.tar.gz', folder_id)
+          local_file = './${{ env.SOURCE }}.tar.gz'
+          if os.path.exists(local_file):
+              print(f"开始上传文件: {local_file} 到 folder_id: {folder_id}")
+              m.upload(local_file, folder_id)
+              print("上传完成")
+          else:
+              raise FileNotFoundError(f"本地文件 {local_file} 不存在")
           "
