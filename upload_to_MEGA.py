@@ -20,11 +20,10 @@ if not folder:
     folder_id = m.create_folder(folder_name)
     print(f"创建新文件夹: {folder_name}, folder_id: {folder_id}")
 else:
-    # 如果文件夹存在，处理返回值以获取正确的 folder_id
+    # 如果文件夹存在，直接使用 folder[0] 作为 folder_id
     if not isinstance(folder, list):
-        folder = [folder]  # 如果是单个元组，转换为列表
-    node = folder[0][0]  # 获取节点字典
-    folder_id = node['h']  # 从节点字典中提取句柄
+        folder = [folder]
+    folder_id = folder[0]  # 假设 folder[0] 是句柄字符串
     print(f"找到现有文件夹: {folder_name}, folder_id: {folder_id}")
 
 # 2. 检查目标文件夹中是否存在同名文件
