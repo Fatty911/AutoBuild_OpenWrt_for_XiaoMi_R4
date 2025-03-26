@@ -1,0 +1,10 @@
+--- a/src/core/service.cpp
++++ b/src/core/service.cpp
+@@ -547,7 +547,7 @@
+         // ...
+         some_function(
+-            boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf())),
++            static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data()),
+             read_length,
+             ttl
+         );
