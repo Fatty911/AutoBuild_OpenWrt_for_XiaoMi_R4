@@ -50,8 +50,9 @@ if existing_files:
             max_num = max(max_num, current_num)
     # 4. Rename the existing file with an incremented number
     new_name = f"{SOURCE}_{max_num + 1}.tar.gz"
-    existing_file_id = existing_files[0]['h']
-    m.rename(existing_file_id, new_name)
+    existing_file = existing_files[0]  # Use the full file metadata dictionary
+    existing_file_id = existing_file['h']  # Extract handle for logging or reference
+    m.rename(existing_file, new_name)  # Pass the full file object
     print(f"重命名旧文件为: {new_name}")
 
 # 5. Upload the new file
