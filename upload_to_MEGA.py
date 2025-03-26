@@ -2,67 +2,75 @@ import os
 import re
 from mega import Mega
 
-# Get environment variables
+# 获取环境变量
 MEGA_USERNAME = os.getenv('MEGA_USERNAME')
 MEGA_PASSWORD = os.getenv('MEGA_PASSWORD')
 SOURCE = os.getenv('SOURCE')
 
-# Log in to MEGA
+# 登录 MEGA
 mega = Mega()
 m = mega.login(MEGA_USERNAME, MEGA_PASSWORD)
 
-# 1. Locate or create the target folder
+# 1. 定位或创建目标文件夹
 folder_name = SOURCE
 folder = m.find(folder_name)
 
 if not folder:
-    # If folder doesn't exist, create it and get the handle
+    # 如果文件夹不存在，创建并获取句柄
     folder_id = m.create_folder(folder_name)
     print(f"创建新文件夹: {folder_name}, folder_id: {folder_id}")
 else:
-    # If folder exists, extract the handle (string) from the tuple
+    # 如果文件夹存在，从元组中提取句柄（字符串）
     if not isinstance(folder, list):
         folder = [folder]
-    folder_id = folder[0][0]  # Extract the handle string (e.g., 'alhTyR5B')
+    folder_id = folder[0][0]  # 提取句柄字符串，例如 'Ck4HnCCY'
     print(f"找到现有文件夹: {folder_name}, folder_id: {folder_id}")
 
-# 2. Check for existing files with the same name in the target folder
-target_file = f"{SOURCE}.tar.gz"
-existing_files = [
-    f for f in m.get_files().values()
-    if f.get('t') == 0 and f.get('a', {}).get('n') == target_file and f.get('p') == folder_id
+# 2. 获取目标文件夹中的所有文件
+all_files = m.get_files()
+files_in_folder = [
+    f for f in all_files.values()
+    if f.get('t') == 0 and f.get('p') == folder_id
 ]
 
-if existing_files:
-    # 3. Find the highest numbered historical file
-    all_files_in_folder = [
-        f for f in m.get_files().values()
-        if f.get('t') == 0 and f.get('p') == folder_id
-    ]
-    max_num = 0
-    pattern = re.compile(rf'^{SOURCE}(?:|_(\d+))\.tar\.gz$')
-    for file_info in all_files_in_folder:
-        name = file_info.get('a', {}).get('n', '')
-        match = pattern.match(name)
-        if match:
-            num_str = match.group(1)
-            current_num = int(num_str) if num_str else 0
-            max_num = max(max_num, current_num)
-    # 4. Rename the existing file with an incremented number
-    new_name = f"{SOURCE}_{max_num + 1}.tar.gz"
-    existing_file_id = existing_files[0]['h']  # 提取文件句柄，例如 'xyz123'
-    try:
-        # 方案 1：直接使用文件句柄字符串进行重命名
-        m.rename(existing_file_id, new_name)
-        print(f"重命名旧文件为: {new_name} (方案 1 成功)")
-    except TypeError:
-        # 方案 2：如果方案 1 失败，使用元组（句柄和元数据）重命名
-        existing_file_metadata = existing_files[0]
-        file_tuple = (existing_file_id, existing_file_metadata)
-        m.rename(file_tuple, new_name)
-        print(f"重命名旧文件为: {new_name} (方案 2 成功)")
+# 3. 筛选匹配 SOURCE(_\d+)?\.tar\.gz 的文件
+pattern = re.compile(rf'^{re.escape(SOURCE)}(_(\d+))?\.tar\.gz$')
+historical_files = []
+current_file = None
 
-# 5. Upload the new file
+for file_info in files_in_folder:
+    name = file_info.get('a', {}).get('n', '')
+    match = pattern.match(name)
+    if match:
+        num_str = match.group(2)
+        if num_str:  # 历史文件，带有数字
+            historical_files.append((int(num_str), file_info))
+        else:  # 当前文件，不带数字
+            current_file = file_info
+
+# 4. 管理历史版本：只保留最新的一个
+if historical_files:
+    # 按数字降序排序，保留最新的一个
+    historical_files.sort(key=lambda x: x[0], reverse=True)
+    latest_historical = historical_files[0]  # 最新的历史文件
+    # 删除其他旧的历史文件
+    for num, file_info in historical_files[1:]:
+        m.destroy(file_info['h'])
+        print(f"删除旧历史文件: {file_info['a']['n']}")
+
+# 5. 如果当前文件存在，重命名它为下一个可用数字
+if current_file:
+    if historical_files:
+        next_num = latest_historical[0] + 1  # 基于最新历史文件的数字加1
+    else:
+        next_num = 1  # 如果没有历史文件，从1开始
+    new_name = f"{SOURCE}_{next_num}.tar.gz"
+    m.rename(current_file['h'], new_name)
+    print(f"重命名当前文件为: {new_name}")
+else:
+    print("当前文件不存在，无需重命名")
+
+# 6. 上传新文件
 local_file = f"./{SOURCE}.tar.gz"
 if os.path.exists(local_file):
     print(f"开始上传文件: {local_file} 到 folder_id: {folder_id}")
