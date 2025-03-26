@@ -5,7 +5,7 @@ on:
       - main
       - master
     paths:
-      - .github/workflows/test_upload_to_MEGA.yml.yml
+      - .github/workflows/test_upload_to_MEGA.yml
   workflow_dispatch:
 
 
