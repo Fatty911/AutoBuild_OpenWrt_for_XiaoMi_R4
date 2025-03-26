@@ -56,10 +56,8 @@ jobs:
               folder_id = m.create_folder(folder_name)  # 直接使用返回的句柄
           else:
               if not isinstance(folder, list):
-                  folder = [folder]  # 如果是单个元组，转换为列表
-              # folder 是列表，元素为元组 (node, path)
-              node = folder[0][0]  # 获取节点字典
-              folder_id = node['h']  # 从字典中获取文件夹 ID
+                  folder = [folder]  # 如果是单个对象，转换为列表
+              folder_id = folder[0]  # 获取文件夹的 handle
           
           # 2. 检查目标文件夹中是否存在同名文件
           target_file = '${{ env.SOURCE }}.tar.gz'
