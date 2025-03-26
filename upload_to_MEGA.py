@@ -50,10 +50,17 @@ if existing_files:
             max_num = max(max_num, current_num)
     # 4. Rename the existing file with an incremented number
     new_name = f"{SOURCE}_{max_num + 1}.tar.gz"
-    existing_file = existing_files[0]  # Use the full file metadata dictionary
-    existing_file_id = existing_file['h']  # Extract handle for logging or reference
-    m.rename(existing_file, new_name)  # Pass the full file object
-    print(f"重命名旧文件为: {new_name}")
+    existing_file_id = existing_files[0]['h']  # 提取文件句柄，例如 'xyz123'
+    try:
+        # 方案 1：直接使用文件句柄字符串进行重命名
+        m.rename(existing_file_id, new_name)
+        print(f"重命名旧文件为: {new_name} (方案 1 成功)")
+    except TypeError:
+        # 方案 2：如果方案 1 失败，使用元组（句柄和元数据）重命名
+        existing_file_metadata = existing_files[0]
+        file_tuple = (existing_file_id, existing_file_metadata)
+        m.rename(file_tuple, new_name)
+        print(f"重命名旧文件为: {new_name} (方案 2 成功)")
 
 # 5. Upload the new file
 local_file = f"./{SOURCE}.tar.gz"
