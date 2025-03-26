@@ -44,7 +44,7 @@ jobs:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}  # 从 Secrets 中获取密码
         run: |
-          python -c "
+          python -c '
           from mega import Mega
           import re
           import os
@@ -104,4 +104,4 @@ jobs:
               print("上传完成")
           else:
               raise FileNotFoundError(f"本地文件 {local_file} 不存在")
-          "
+          '
