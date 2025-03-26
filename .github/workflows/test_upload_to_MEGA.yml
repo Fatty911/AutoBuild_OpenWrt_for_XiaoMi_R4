@@ -46,9 +46,11 @@ jobs:
           python -c "
           from mega import Mega
           import re
+          
           # 登录MEGA账户
           mega = Mega()
           m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
+          
           # 1. 定位或创建目标文件夹
           folder_name = '${{ env.SOURCE }}'
           folder = m.find(folder_name)
@@ -63,25 +65,29 @@ jobs:
           target_file = '${{ env.SOURCE }}.tar.gz'
           existing_files = [
               f for f in m.get_files().values()
-              if f['a']['name'] == target_file and f['p'] == folder_id
+              if f.get('t') == 0 and f.get('a', {}).get('n') == target_file and f.get('p') == folder_id
           ]
           
           if existing_files:
               # 3. 提取所有带序号的历史文件并计算最大序号
-              all_files_in_folder = [f for f in m.get_files().values() if f['p'] == folder_id]
+              all_files_in_folder = [
+                  f for f in m.get_files().values()
+                  if f.get('t') == 0 and f.get('p') == folder_id
+              ]
               max_num = 0
               pattern = re.compile(r'^${{ env.SOURCE }}(?:|_(\d+))\\.tar\\.gz$')
               for file_info in all_files_in_folder:
-                  name = file_info['a']['name']
+                  name = file_info.get('a', {}).get('n', '')
                   match = pattern.match(name)
                   if match:
                       num_str = match.group(1)
                       current_num = int(num_str) if num_str else 0
                       max_num = max(max_num, current_num)
               # 4. 重命名旧文件为递增序号（新序号 = max_num + 1）
-              new_name = f'${{ env.SOURCE }}_{max_num + 1}.tar.gz'
+              new_name = f'${{ env.SOURCE }}{max_num + 1}.tar.gz'
               existing_file_id = existing_files[0]['h']
               m.rename(existing_file_id, new_name)
+          
           # 5. 上传新文件
           m.upload('./${{ env.SOURCE }}.tar.gz', folder_id)
           "
