@@ -41,7 +41,11 @@ jobs:
           echo 'src-git small8 https://github.com/kenzok8/small-package' >>feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-
+          
+      - name: Apply patch to trojan-plus
+        run: |
+          cd feeds/small8/trojan-plus
+          patch -p1 < ../../../trojan-plus.patch  # 假设补丁文件位于仓库根目录
 
       - name: Create seed.config
         run: |
