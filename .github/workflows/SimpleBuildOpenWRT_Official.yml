@@ -23,11 +23,19 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
           remove-docker-images: 'true'
-      - name: Checkout OpenWRT
+      - name: Checkout Self Repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          ref: master
+          path: $GITHUB_WORKSPACE
+          
+      - name: Checkout OpenWRT.org_Official
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
           ref: master
+          path: openwrt
 
       - name: Install dependencies
         run: |
@@ -36,6 +44,7 @@ jobs:
           
       - name: Update feeds
         run: |
+          cd openwrt
           echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
           echo 'src-git OpenClash https://github.com/vernesong/OpenClash' >>feeds.conf.default
           echo 'src-git small8 https://github.com/kenzok8/small-package' >>feeds.conf.default
@@ -44,11 +53,13 @@ jobs:
           
       - name: Apply patch to trojan-plus
         run: |
+          cd openwrt
           cd feeds/small8/trojan-plus
           patch -p1 < ../../../trojan-plus.patch  # 假设补丁文件位于仓库根目录
 
       - name: Create seed.config
         run: |
+          cd openwrt
           cat << EOF > seed.config
           CONFIG_TARGET_ramips=y
           CONFIG_TARGET_ramips_mt7621=y
@@ -68,6 +79,7 @@ jobs:
           
       - name: Apply configuration
         run: |
+          cd openwrt
           cp seed.config .config
           make defconfig
           sed -i -e 's/^CONFIG_TOOLS_LIBCRYPTO=y$/CONFIG_TOOLS_LIBCRYPTO=n/' -e 's/^CONFIG_FIT_SIGNATURE=y$/CONFIG_FIT_SIGNATURE=n/' .config
@@ -76,6 +88,7 @@ jobs:
       - name: Build firmware
         id: build
         run: |
+          cd openwrt
           make -j$(nproc) tools/install  V=s || make -j1 tools/install  V=s
           make -j$(nproc) toolchain/install  V=s || make -j1 toolchain/install  V=s
           make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j$(nproc) package/luci/modules/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s || make -j1 package/luci/modules/luci-base/compile V=s
@@ -84,6 +97,7 @@ jobs:
       - name: 查看报错日志
         if: always()
         run: |
+          cd openwrt
           LOG_FILE='compile.log'
           # 错误处理：动态截取倒数第二个 Entering directory 到错误行
           echo "=== 从倒数第二个目录入口到日志结尾 ==="
@@ -108,11 +122,13 @@ jobs:
 # | tac 少一次反转试试
       - name: 直接tail试试
         if: always()
-        run: tail -300 compile.log
+        run: |
+          cd openwrt
+          tail -300 compile.log
 
       - name: Upload firmware
         if: steps.build.conclusion == 'success'
         uses: actions/upload-artifact@master
         with:
           name: openwrt-firmware
-          path: bin/targets/ramips/mt7621/*
+          path: openwrt/bin/targets/ramips/mt7621/*
