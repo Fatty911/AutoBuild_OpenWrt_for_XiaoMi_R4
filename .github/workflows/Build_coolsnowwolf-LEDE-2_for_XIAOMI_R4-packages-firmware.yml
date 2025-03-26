@@ -39,7 +39,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')|| github.event_name == 'push'}}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -89,7 +89,7 @@ jobs:
           # 确保 mega.py 已安装
           pip install mega.py || exit 1
           # 下载文件到当前目录
-          python download_from_mega.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}"
+          python download_from_MEGA.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}"
       
       - name: 解压文件
         run: |
