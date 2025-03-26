@@ -47,9 +47,9 @@ jobs:
           
       - name: Apply patch to trojan-plus
         run: |
-          cd openwrt
-          cd feeds/small8/trojan-plus
-          patch -p1 < ../../../trojan-plus.patch  # 假设补丁文件位于仓库根目录
+          cp trojan-plus.patch openwrt/feeds/small8/trojan-plus/
+          cd openwrt/feeds/small8/trojan-plus
+          patch trojan-plus.patch  
 
       - name: Create seed.config
         run: |
