@@ -388,28 +388,30 @@ jobs:
                                                         ' _ {} \; || exit 1 
                                 fi                        
                                 if grep -q "mkdir: cannot create directory.*File exists" packages.log; then
-                                                  echo "检测到构建目录冲突错误，尝试修复..."
-                                                  # 提取最后一次出现的失败目录路径
-                                                  FAILED_DIR=$(grep -oP "mkdir: cannot create directory '\K[^']+" packages.log | tail -n1)
-                                                  if [ -n "$FAILED_DIR" ]; then
-                                                      echo "正在清理冲突目录: $FAILED_DIR"
-                                                      rm -rf "$FAILED_DIR"   
-                                                      # 通过路径推断包名（示例路径：.../coremark-d5fad6bd094899101a4e5fd53af7298160ced6ab/mipsel）
-                                                      PKG_PATH=$(echo "$FAILED_DIR" | grep -oE 'package/feeds/[^/]+/[^/]+')
-                                                      if [ -n "$PKG_PATH" ]; then
-                                                          PKG_NAME=$(basename "$PKG_PATH")
-                                                          echo "重新编译包: $PKG_NAME"
-                                                          make -j1 "$PKG_PATH/compile" V=s
-                                                      else
-                                                          echo "无法推断包名，尝试重新编译所有包"
-                                                          make -j1 package/compile V=s 
-                                                      fi
-                                                  else
-                                                      echo "无法提取失败路径，尝试重新编译所有包"
-                                                      make -j1 package/compile V=s
-                                                  fi  
-                                   
-                                fi     
+                                    echo "检测到构建目录冲突错误，尝试修复..."
+                                    LAST_ENTERING=$(tac packages.log | grep -m1 "make.*: Entering directory")
+                                    PKG_DIR=$(echo "$LAST_ENTERING" | sed -n "s/.*Entering directory '\(.*\)'.*/\1/p")
+                                    if [ -n "$PKG_DIR" ]; then
+                                        REL_PKG_PATH=$(echo "$PKG_DIR" | sed "s|$PWD/||")
+                                        echo "正在清理包: $REL_PKG_PATH"
+                                        make "$REL_PKG_PATH/clean" V=s
+                                        echo "正在重新编译包: $REL_PKG_PATH"
+                                        make "$REL_PKG_PATH/compile" V=s
+                                        if [ $? -eq 0 ]; then
+                                            echo "包 $REL_PKG_PATH 修复成功，继续编译剩余包"
+                                        else
+                                            echo "包 $REL_PKG_PATH 修复失败，退出"
+                                            exit 1
+                                        fi
+                                    else
+                                        echo "无法确定包路径，尝试重新编译所有包"
+                                        make -j1 package/compile V=s
+                                        if [ $? -ne 0 ]; then
+                                            echo "重新编译所有包失败，退出"
+                                            exit 1
+                                        fi
+                                    fi
+                                fi
                       }
                 done 
     - name: 查看报错日志
