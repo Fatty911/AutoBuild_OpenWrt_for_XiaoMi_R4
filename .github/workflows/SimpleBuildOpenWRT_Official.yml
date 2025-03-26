@@ -24,23 +24,17 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
       - name: Checkout Self Repo
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository }}
-          ref: master
-          path: $GITHUB_WORKSPACE
+        uses: actions/checkout@main
+        
           
-      - name: Checkout OpenWRT.org_Official
-        uses: actions/checkout@v4
-        with:
-          repository: openwrt/openwrt
-          ref: master
-          path: openwrt
+      - name: Clone OpenWRT.org_Official
+        run: |
+          git clone http://github.com/openwrt/openwrt openwrt
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libncurses5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync ruby unzip libpam0g-dev libcurl4-openssl-dev libdeflate-dev
+          sudo apt update
+          sudo apt install -y build-essential libncurses5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync ruby unzip libpam0g-dev libcurl4-openssl-dev libdeflate-dev
           
       - name: Update feeds
         run: |
