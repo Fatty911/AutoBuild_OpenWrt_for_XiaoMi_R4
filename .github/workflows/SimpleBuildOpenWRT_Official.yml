@@ -10,6 +10,8 @@ on:
     # 添加路径过滤，仅当当前工作流文件被修改时触发
     paths:
       - .github/workflows/SimpleBuildOpenWRT_Official.yml  # 需替换为当前工作流文件的实际路径
+env:
+  TERM: xterm
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -34,7 +36,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential musl-tools libncurses5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync ruby unzip libpam0g-dev libcurl4-openssl-dev libdeflate-dev
+          sudo apt install -y build-essential musl-tools libncurses5-dev libncursesw5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync ruby unzip libpam0g-dev libcurl4-openssl-dev libdeflate-dev
           
       - name: Update feeds
         run: |
@@ -45,6 +47,7 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           cp ../config_for_OpenWrt_org config
+          make oldconfig
           
           
       # - name: Apply patch to trojan-plus
