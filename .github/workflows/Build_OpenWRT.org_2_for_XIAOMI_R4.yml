@@ -102,7 +102,7 @@ jobs:
           sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           # Define partitions if not present
           if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
-            echo "Partition not defined, fixing..."
+            echo "分区未定义, 修复中..."
             sed -i '/partitions {/a\
               compatible = "fixed-partitions";\
               #address-cells = <1>;\
@@ -136,135 +136,8 @@ jobs:
         if: steps.transplant.outputs.isFixed == 'true'
         run: |
             cd openwrt
-            # 定义统一错误日志处理函数
-            handle_error_log() {
-                local log_file=$1
-                tee "$log_file"
-                echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
-                tac "$log_file" | awk '
-                    BEGIN { entry_count=0; error_found=0 }
-                    /Entering directory/ && !error_found { 
-                        entry_count++
-                        if (entry_count == 2) {
-                            print "----- 错误触发目录入口 -----"
-                            print $0
-                            print "============================="
-                            error_found=1
-                            next
-                        }
-                    }
-                    error_found { 
-                        buffer = $0 "\n" buffer
-                        if ($0 ~ /error|failed/) { exit }
-                    }
-                    END { print buffer }
-                ' | tac
-            }
-  
-            make -j1 V=s -d > compile.log 2>&1 || {
-                MAX_RETRY=6
-                retry_count=0
-                while [ $retry_count -lt $MAX_RETRY ]; do
-                    make -j1 V=s > compile.log 2>&1 && break
-                    
-                    # PKG_VERSION 错误处理
-                    if grep -q "PKG_VERSION" compile.log; then
-                        echo "遇到PKG_VERSION格式错误，先查看报错..."
-                        handle_error_log "$LOG_FILE"
-                        echo "尝试修复 PKG_VERSION formats..."
-                        find . -type f $ -name "Makefile" -o -name "*.mk" $ | while read -r makefile; do
-                            if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
-                                echo "Found target in $makefile"
-                                sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
-                                echo "Modified $makefile:"
-                                grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
-                            fi
-                        done
-                    
-                    # DEPENDS 错误处理
-                    elif grep -q "DEPENDS" compile.log; then
-                        echo "遇到DEPENDS格式错误，先查看报错..."
-                        handle_error_log "$LOG_FILE"
-                        echo "尝试修复 dependency duplicates..."
-                        find . -type f $ -name "Makefile" -o -name "*.mk" $ -exec sh -c '
-                            makefile="$1"
-                            awk '\''BEGIN { FS = "[[:space:]]+" }
-                            /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
-                                split($0, deps, " ")
-                                seen_versioned = ""
-                                seen_bare = ""
-                                result = $1
-                                for (i = 2; i <= length(deps); i++) {
-                                    dep = deps[i]
-                                    pos = index(dep, ">=")
-                                    if (pos > 0) {
-                                        bare = substr(dep, 2, pos-2)
-                                    } else {
-                                        bare = substr(dep, 2)
-                                    }
-                                    if (match(dep, />=/)) {
-                                        if (seen_versioned !~ bare) {
-                                            result = result " " dep
-                                            seen_versioned = seen_versioned " " bare
-                                            gsub(" *" bare " *", " ", seen_bare)
-                                        }
-                                    } else {
-                                        if (seen_versioned !~ bare && seen_bare !~ bare) {
-                                            result = result " " dep
-                                            seen_bare = seen_bare " " bare
-                                        }
-                                    }
-                                }
-                                print result
-                                next
-                            }
-                            { print }
-                            '\'' "$makefile" > "$makefile.tmp"
-                            if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
-                                echo "Modified $makefile:"
-                                grep -E "(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=" "$makefile.tmp"
-                                mv "$makefile.tmp" "$makefile"
-                            else
-                                rm -f "$makefile.tmp"
-                            fi
-                        ' _ {} \;
-                    
-                    # 制表符错误处理
-                    elif grep -i "missing separator" compile.log; then
-                        echo "遇到分隔符或制表符错误，先查看报错..."
-                        handle_error_log "$LOG_FILE"
-                        echo "尝试修复制表符错误"
-                        find . -type f $ -name "Makefile" -o -name "*.mk" $ | while read -r makefile; do
-                            awk '
-                            {
-                                if ((prev ~ /:$/ || ($0 ~ /^[ ]+/ && $0 !~ /^[ ]*[A-Za-z0-9_]+:=/)) && $0 !~ /^\t/) {
-                                    print "Found potential issue in " FILENAME " at line " NR ": " $0
-                                    sub(/^[ ]+/, "\t")
-                                    print "Fixed line: " $0
-                                }
-                                print $0 > FILENAME ".tmp"
-                                prev = $0
-                            }
-                            ' "$makefile"
-                            
-                            if [ -f "$makefile.tmp" ]; then
-                                mv "$makefile" "$makefile.bak"
-                                mv "$makefile.tmp" "$makefile"
-                                echo "Updated $makefile (backup saved as $makefile.bak)"
-                            fi
-                        done
-                    
-                    # 未知错误处理
-                    else
-                        echo "非已知错误类型，直接查看日志"
-                        handle_error_log "$LOG_FILE"
-                        exit 1
-                    fi
-                    
-                    retry_count=$((retry_count + 1))
-                done
-                make -j1 V=s || exit 1
-            }
+            cp ../compile_with_retry.sh .
+            bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" || exit 1
             echo "status=success" >> $GITHUB_OUTPUT
           
       - name: Set environment variables
