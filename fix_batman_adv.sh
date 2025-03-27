@@ -103,6 +103,7 @@ fix_dependency_duplicates() {
     fi
   ' _ {} \;
 }
+
 # 第一阶段：仅切换batman-adv组件到指定commit
 switch_batman_adv_commit() {
   echo "尝试仅切换batman-adv组件到指定commit..."
@@ -111,7 +112,7 @@ switch_batman_adv_commit() {
     git fetch origin
     git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
     cd ../../..
-    ./scripts/feeds update -i batman-adv  # 仅更新batman-adv组件[1](@ref)
+    ./scripts/feeds update -i batman-adv
     ./scripts/feeds install -p routing batman-adv
   else
     echo "batman-adv组件目录不存在，尝试完整切换"
@@ -127,10 +128,9 @@ switch_routing_commit() {
   cd feeds/routing
   git checkout 5437d2c91fd9f15e06fbea46677abb529ed3547c
   cd ../..
-  ./scripts/feeds update -i routing  # 更新整个routing仓库[1](@ref)
+  ./scripts/feeds update -i routing
   ./scripts/feeds install -p routing batman-adv
 }
-
 
 # 主逻辑：循环重试
 cd "$OPENWRT_DIR"
@@ -182,4 +182,5 @@ while [ $retry_count -lt $MAX_RETRY ]; do
         fi
       fi
     fi
-    done
+  fi
+done
