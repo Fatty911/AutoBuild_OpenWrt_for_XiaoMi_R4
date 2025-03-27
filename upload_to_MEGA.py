@@ -1,5 +1,4 @@
 import os
-import re
 from mega import Mega
 
 # 获取环境变量
@@ -23,7 +22,7 @@ else:
     # 如果文件夹存在，从元组中提取句柄（字符串）
     if not isinstance(folder, list):
         folder = [folder]
-    folder_id = folder[0][0]  # 提取句柄字符串，例如 'Ck4HnCCY'
+    folder_id = folder[0][0]  # 提取句柄字符串，例如 'alhTyR5B'
     print(f"找到现有文件夹: {folder_name}, folder_id: {folder_id}")
 
 # 2. 获取目标文件夹中的所有文件
@@ -33,46 +32,22 @@ files_in_folder = [
     if f.get('t') == 0 and f.get('p') == folder_id
 ]
 
-# 3. 筛选匹配 SOURCE(_\d+)?\.tar\.gz 的文件
-pattern = re.compile(rf'^{re.escape(SOURCE)}(_(\d+))?\.tar\.gz$')
-historical_files = []
-current_file = None
+# 3. 检查是否存在同名文件 SOURCE.tar.gz
+target_file_name = f"{SOURCE}.tar.gz"
+target_file = None
 
 for file_info in files_in_folder:
     name = file_info.get('a', {}).get('n', '')
-    match = pattern.match(name)
-    if match:
-        num_str = match.group(2)
-        if num_str:  # 历史文件，带有数字
-            historical_files.append((int(num_str), file_info))
-        else:  # 当前文件，不带数字
-            current_file = file_info
+    if name == target_file_name:
+        target_file = file_info
+        break
 
-# 4. 管理历史版本：只保留最新的一个
-if historical_files:
-    # 按数字降序排序，保留最新的一个
-    historical_files.sort(key=lambda x: x[0], reverse=True)
-    latest_historical = historical_files[0]  # 最新的历史文件
-    # 删除其他旧的历史文件
-    for num, file_info in historical_files[1:]:
-        m.destroy(file_info['h'])
-        print(f"删除旧历史文件: {file_info['a']['n']}")
+# 4. 如果存在同名文件，删除它
+if target_file:
+    m.destroy(target_file['h'])
+    print(f"删除旧文件: {target_file_name}")
 
-# 5. 如果当前文件存在，重命名它为下一个可用数字
-if current_file:
-    print(f"当前文件信息: {current_file}")
-    print(f"文件句柄: {current_file['h']}")
-    if historical_files:
-        next_num = latest_historical[0] + 1
-    else:
-        next_num = 1
-    new_name = f"{SOURCE}_{next_num}.tar.gz"
-    m.rename(current_file['h'], new_name)
-    print(f"重命名当前文件为: {new_name}")
-else:
-    print("当前文件不存在，无需重命名")
-
-# 6. 上传新文件
+# 5. 上传新文件
 local_file = f"./{SOURCE}.tar.gz"
 if os.path.exists(local_file):
     print(f"开始上传文件: {local_file} 到 folder_id: {folder_id}")
