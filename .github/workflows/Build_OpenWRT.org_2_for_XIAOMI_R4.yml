@@ -77,7 +77,11 @@ jobs:
       
       - name: 解压文件
         run: |
+          echo "解压前执行pwd && ls看看"
+          pwd && ls
           tar -xzvf ${{ env.SOURCE }}.tar.gz
+          echo "解压后执行pwd && ls看看"
+          pwd && ls
           
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
@@ -135,8 +139,9 @@ jobs:
         id: compile_with_fixes
         if: steps.transplant.outputs.isFixed == 'true'
         run: |
+            pwd && ls
+            cp compile_with_retry.sh openwrt/ 
             cd openwrt
-            cp ../compile_with_retry.sh .
             bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" || exit 1
             echo "status=success" >> $GITHUB_OUTPUT
           
