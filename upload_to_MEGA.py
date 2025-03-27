@@ -60,10 +60,12 @@ if historical_files:
 
 # 5. 如果当前文件存在，重命名它为下一个可用数字
 if current_file:
+    print(f"当前文件信息: {current_file}")
+    print(f"文件句柄: {current_file['h']}")
     if historical_files:
-        next_num = latest_historical[0] + 1  # 基于最新历史文件的数字加1
+        next_num = latest_historical[0] + 1
     else:
-        next_num = 1  # 如果没有历史文件，从1开始
+        next_num = 1
     new_name = f"{SOURCE}_{next_num}.tar.gz"
     m.rename(current_file['h'], new_name)
     print(f"重命名当前文件为: {new_name}")
