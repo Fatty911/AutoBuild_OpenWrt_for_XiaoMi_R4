@@ -14,7 +14,15 @@ if [ -z "$MAKE_COMMAND" ] || [ -z "$LOG_FILE" ]; then
     echo "错误：缺少必要参数。用法: $0 <make_command> <log_file> [max_retry] [error_pattern]"
     exit 1
 fi
-
+# 修复 po2lmo 命令未找到
+fix_po2lmo() {
+    echo "检测到 po2lmo 命令未找到，尝试编译 luci-base..."
+    make package/feeds/luci/luci-base/compile V=s || {
+        echo "编译 luci-base 失败"
+        extract_error_block "$LOG_FILE"
+        exit 1
+    }
+}
 # 日志截取函数
 extract_error_block() {
     local log_file="$1"
@@ -136,6 +144,8 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     echo "编译失败，检查错误..."
     if grep -q "PKG_VERSION" "$LOG_FILE"; then
         fix_pkg_version
+    elif grep -q "po2lmo: command not found" "$LOG_FILE"; then
+        fix_po2lmo
     elif grep -q "DEPENDS" "$LOG_FILE"; then
         fix_depends
     elif grep -q "dependency format is invalid" "$LOG_FILE"; then
