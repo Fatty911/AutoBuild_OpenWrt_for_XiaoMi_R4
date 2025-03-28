@@ -225,34 +225,34 @@ jobs:
     
 
     
-    - name: 查看报错日志
-      if: always()
-      run: |
-        LOG_FILE='compile.log'
-        # 错误处理：动态截取倒数第二个 Entering directory 到错误行
-        echo "=== 从倒数第二个目录入口到日志结尾 ==="
-        tac "$LOG_FILE" | awk '
-            /Entering directory/ { 
-                entry_count++
-                if (entry_count == 2) { 
-                    print "----- 倒数第二个目录入口 -----"
-                    print $0
-                    print "============================="
-                    buffer = $0 "\n" buffer
-                    next
-                }
-            }
-            { 
-                buffer = $0 "\n" buffer 
-            }
-            END { 
-                print buffer 
-            }
-        ' 
-# | tac 少一次反转试试
-    - name: 直接tail试试
-      if: always()
-      run: tail -300 compile.log
+#     - name: 查看报错日志
+#       if: always()
+#       run: |
+#         LOG_FILE='compile.log'
+#         # 错误处理：动态截取倒数第二个 Entering directory 到错误行
+#         echo "=== 从倒数第二个目录入口到日志结尾 ==="
+#         tac "$LOG_FILE" | awk '
+#             /Entering directory/ { 
+#                 entry_count++
+#                 if (entry_count == 2) { 
+#                     print "----- 倒数第二个目录入口 -----"
+#                     print $0
+#                     print "============================="
+#                     buffer = $0 "\n" buffer
+#                     next
+#                 }
+#             }
+#             { 
+#                 buffer = $0 "\n" buffer 
+#             }
+#             END { 
+#                 print buffer 
+#             }
+#         ' 
+# # | tac 少一次反转试试
+#     - name: 直接tail试试
+#       if: always()
+#       run: tail -300 compile.log
 
     - name: 归档
       run: |
@@ -272,6 +272,6 @@ jobs:
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         repository: ${{ github.repository }}
-        retain_days: 10
+        retain_days: 2
         keep_minimum_runs: 2
 
