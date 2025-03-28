@@ -46,7 +46,7 @@ jobs:
           echo 'src-git small8 https://github.com/kenzok8/small-package' >>feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          cp ../config_for_OpenWrt_org config
+          cp ../config_for_OpenWrt_org .config
           make defconfig
           echo "在defconfig之后查看配置文件"
           cat .config | grep CONFIG_TARGET_.*=y
