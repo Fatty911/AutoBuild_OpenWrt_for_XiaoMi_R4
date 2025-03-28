@@ -18,26 +18,8 @@ fi
 # 日志截取函数
 extract_error_block() {
     local log_file="$1"
-    echo "=== 错误块截取（倒数第二个目录入口到错误行） ==="
-    tac "$log_file" | awk '
-        BEGIN { entry_count=0; error_found=0 }
-        /Entering directory/ && !error_found { 
-            entry_count++
-            if (entry_count == 2) {
-                print "----- 错误触发目录入口 -----"
-                print $0
-                print "============================="
-                error_found=1
-                next
-            }
-        }
-        error_found { 
-            buffer = $0 "\n" buffer
-            if ($0 ~ /error|failed/) { exit }
-        }
-        END { print buffer }
-    ' | tac
-}
+    tail -200 $log_file
+    }
 
 # 修复 PKG_VERSION 格式
 fix_pkg_version() {
