@@ -49,28 +49,22 @@ jobs:
           cp ../config_for_OpenWrt_org config
           make defconfig
           
-          
-      # - name: Apply patch to trojan-plus
-      #   run: |
-      #     cp trojan-plus.patch openwrt/feeds/small8/trojan-plus/
-      #     cd openwrt/feeds/small8/trojan-plus
-      #     patch trojan-plus.patch  
-
-     
-          
-      # - name: Apply configuration
-      #   run: |
-          
-          # cd openwrt
-          
-          # make defconfig
-          # sed -i -e 's/^CONFIG_TOOLS_LIBCRYPTO=y$/CONFIG_TOOLS_LIBCRYPTO=n/' -e 's/^CONFIG_FIT_SIGNATURE=y$/CONFIG_FIT_SIGNATURE=n/' .config
 
 
       - name: Build firmware
         id: build
         run: |
           cd openwrt
+          # 检查 DEVICE_MODEL 是否已设置为 "Xiaomi Mi Router 4"
+          if ! grep -q '^CONFIG_TARGET_DEVICE_MODEL="Xiaomi Mi Router 4"$' .config; then
+            echo 'CONFIG_TARGET_DEVICE_MODEL="Xiaomi Mi Router 4"' >>.config
+          fi
+          # 检查 TARGET_ARCH 是否已设置为 "mt7621"
+          if ! grep -q '^CONFIG_TARGET_ARCH="mt7621"$' .config; then
+            echo 'CONFIG_TARGET_ARCH="mt7621"' >>.config
+          fi
+          # 重新运行 defconfig 以应用更改
+          make defconfig
           make -j$(nproc) toolchain/install  V=s || make -j1 toolchain/install  V=s
           make -j$(nproc) tools/install  V=s || make -j1 tools/install  V=s
           
@@ -98,5 +92,5 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           repository: ${{ github.repository }}
-          retain_days: 2
+          retain_days: 0
           keep_minimum_runs: 2
