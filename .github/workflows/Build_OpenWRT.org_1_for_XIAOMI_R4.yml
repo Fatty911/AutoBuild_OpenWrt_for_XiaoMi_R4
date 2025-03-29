@@ -102,7 +102,7 @@ jobs:
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
           
       - name: Download package
-        id: package
+        id: download_package
         run: |
           cd openwrt
           #make defconfig
@@ -116,6 +116,7 @@ jobs:
         
 
       - name: Compile tools
+        id: compile_tools
         run: |
           cd openwrt
           make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
@@ -125,6 +126,7 @@ jobs:
           fi
 
       - name: Compile toolchain
+        id: compile_toolchain
         run: |
           cd openwrt
           make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
@@ -134,6 +136,7 @@ jobs:
           fi
 
       - name: Compile kernel
+        id: compile_kernel
         run: |
           cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
@@ -153,12 +156,34 @@ jobs:
 
       
       - name: Build image
+        id: build_image
         run: |
           cd openwrt
           cp ../compile_with_retry.sh .
           LOG_FILE="image.log"
           (bash compile_with_retry.sh "make -j1 V=s" "image.log" 6 "error:|failed|undefined reference") || exit 1
-
+      - name: 查看日志结尾300行
+        if: always()
+        run: |
+          cd openwrt
+          if [ "${{ steps.compile_tools.outcome }}" = "failure" ]; then             
+            echo "Compile tools failed. Showing last 300 lines of tools.log:"             
+            tail -300 tools.log           
+          elif [ "${{ steps.compile_toolchain.outcome }}" = "failure" ]; then             
+            echo "Compile toolchain failed. Showing last 300 lines of toolchain.log:"             
+            tail -300 toolchain.log           
+          elif [ "${{ steps.compile_kernel.outcome }}" = "failure" ]; then             
+            echo "Compile kernel failed. Showing last 300 lines of kernel.log:"             
+            tail -300 kernel.log           
+          elif [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
+            echo "Compile packages failed. Showing last 300 lines of packages.log:"             
+            tail -300 packages.log         
+          elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
+            echo "Build image failed. Showing last 300 lines of image.log:"             
+            tail -300 image.log           
+          else             
+            echo "All steps completed successfully. No log to show."           
+          fi 
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
@@ -191,6 +216,6 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           repository: ${{ github.repository }}
-          retain_days: 1
+          retain_days: 0
           keep_minimum_runs: 2
 
