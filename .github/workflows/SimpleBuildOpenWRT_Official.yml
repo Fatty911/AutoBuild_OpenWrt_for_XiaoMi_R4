@@ -55,7 +55,7 @@ jobs:
           
           
       - name: Download package
-        id: package
+        id: download_package
         run: |
           cd openwrt
           make download -j2
@@ -63,16 +63,19 @@ jobs:
           find dl -size -1024c -exec rm -f {} \;     
 
       - name: Compile tools
+        id: compile_tools
         run: |
           cd openwrt
           make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
 
       - name: Compile toolchain
+        id: compile_toolchain
         run: |
           cd openwrt
           make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
 
       - name: Compile kernel
+        id: compile_kernel
         run: |
           cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
@@ -88,6 +91,7 @@ jobs:
 
       
       - name: Build image
+        id: build_image
         run: |
           cd openwrt
           cp ../compile_with_retry.sh .
