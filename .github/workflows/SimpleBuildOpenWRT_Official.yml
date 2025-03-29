@@ -111,7 +111,24 @@ jobs:
         if: always()
         run: |
           cd openwrt
-          tail -300 image.log
+          if [ "${{ steps.compile_tools.outcome }}" = "failure" ]; then             
+            echo "Compile tools failed. Showing last 300 lines of tools.log:"             
+            tail -300 tools.log           
+          elif [ "${{ steps.compile_toolchain.outcome }}" = "failure" ]; then             
+            echo "Compile toolchain failed. Showing last 300 lines of toolchain.log:"             
+            tail -300 toolchain.log           
+          elif [ "${{ steps.compile_kernel.outcome }}" = "failure" ]; then             
+            echo "Compile kernel failed. Showing last 300 lines of kernel.log:"             
+            tail -300 kernel.log           
+          elif [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
+            echo "Compile packages failed. Showing last 300 lines of packages.log:"             
+            tail -300 packages.log         
+          elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
+            echo "Build image failed. Showing last 300 lines of image.log:"             
+            tail -300 image.log           
+          else             
+            echo "All steps completed successfully. No log to show."           
+          fi 
 
 
       - name: Upload firmware
