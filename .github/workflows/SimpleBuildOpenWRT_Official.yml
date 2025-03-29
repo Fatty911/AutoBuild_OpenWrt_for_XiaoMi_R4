@@ -86,7 +86,7 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           echo "开始尝试编译packages" 
-          bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" 
+          make -j1 V=s > packs.log 2>&1 || bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" 
 
 
       
@@ -126,7 +126,9 @@ jobs:
             tail -300 kernel.log           
           elif [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
             echo "Compile packages failed. Showing last 300 lines of packages.log:"             
-            tail -300 packages.log         
+            tail -300 packages.log     
+            echo "编译packages失败，查看日志结尾"
+            tail -300 packs.log    
           elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
             echo "Build image failed. Showing last 300 lines of image.log:"             
             tail -300 image.log           
