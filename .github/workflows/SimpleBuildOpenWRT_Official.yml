@@ -73,7 +73,8 @@ jobs:
         run: |
           cd openwrt
           make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
-
+          make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j$(nproc) package/luci/modules/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s || make -j1 package/luci/modules/luci-base/compile V=s
+          
       - name: Compile kernel
         id: compile_kernel
         run: |
@@ -96,7 +97,6 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           LOG_FILE="image.log"
-          make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j$(nproc) package/luci/modules/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s || make -j1 package/luci/modules/luci-base/compile V=s
           bash compile_with_retry.sh "make -j1 V=s" "image.log" 6 "error:|failed|undefined reference"
 
       # - name: Build firmware
