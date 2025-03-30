@@ -151,8 +151,7 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           echo "开始尝试编译packages" 
-          bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" || { make -j1 packages/compile V=s > packages.log 2>&1 && tail -300 packages.log}        
-
+          bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" || make -j1 packages/compile V=s > packages.log 2>&1
 
       
       - name: Build image
