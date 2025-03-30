@@ -105,7 +105,6 @@ jobs:
         id: download_package
         run: |
           cd openwrt
-          #make defconfig
           make download -j2
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
@@ -120,30 +119,21 @@ jobs:
         run: |
           cd openwrt
           make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
-          if [ $? -ne 0 ]; then
-            echo "Tools compilation failed"
-            exit 1
-          fi
+
 
       - name: Compile toolchain
         id: compile_toolchain
         run: |
           cd openwrt
           make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
-          if [ $? -ne 0 ]; then
-            echo "Toolchain compilation failed"
-            exit 1
-          fi
+
 
       - name: Compile kernel
         id: compile_kernel
         run: |
           cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
-          if [ $? -ne 0 ]; then
-            echo "Kernel compilation failed"
-            exit 1
-          fi
+
 
       - name: Compile packages
         id: compile_packages
@@ -151,7 +141,7 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           echo "开始尝试编译packages" 
-          bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" || make -j1 packages/compile V=s > packages.log 2>&1
+          bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" || make -j1 packages/compile V=s >> packages.log 2>&1
 
       
       - name: Build image
@@ -160,7 +150,7 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           LOG_FILE="image.log"
-          (bash compile_with_retry.sh "make -j1 V=s" "image.log" 6 "error:|failed|undefined reference") || exit 1
+          (bash compile_with_retry.sh "make -j1 V=s" "image.log" 6 "error:|failed|undefined reference") || make -j1 V=s >> image.log 2>&1
       - name: 查看日志结尾300行
         if: always()
         run: |
