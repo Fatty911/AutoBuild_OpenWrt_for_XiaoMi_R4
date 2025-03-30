@@ -142,7 +142,9 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     }
 
     echo "编译失败，检查错误..."
-    if grep -q "PKG_VERSION" "$LOG_FILE"; then
+    if grep -q "package version is invalid" "$LOG_FILE"; then
+        fix_pkg_version
+    elif grep -q "PKG_VERSION" "$LOG_FILE"; then
         fix_pkg_version
     elif grep -q "po2lmo: command not found" "$LOG_FILE"; then
         fix_po2lmo
