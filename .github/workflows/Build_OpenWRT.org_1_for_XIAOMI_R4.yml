@@ -177,7 +177,7 @@ jobs:
             tail -300 kernel.log           
           elif [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
             echo "Compile packages failed. Showing last 300 lines of packages.log:"             
-            tail -300 packages.log         
+            tail -300 packages.log || { make -j1 packages/compile V=s > packages.log 2>&1 && tail -300 packages.log}         
           elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
             echo "Build image failed. Showing last 300 lines of image.log:"             
             tail -300 image.log           
