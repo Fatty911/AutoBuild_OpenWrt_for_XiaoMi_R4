@@ -33,23 +33,30 @@ extract_error_block() {
 
 # 修复 PKG_VERSION 和 PKG_RELEASE 格式
 fix_pkg_version() {
-    echo "Fixing PKG_VERSION and PKG_RELEASE formats..."
+    echo "修复 PKG_VERSION 和 PKG_RELEASE 格式..."
     find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
-        # 修复 PKG_VERSION 中包含 - 的情况
-        if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
-            echo "Found target in $makefile"
-            sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
-            echo "Modified $makefile:"
-            grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
-        fi
-        # 检查并修复 PKG_RELEASE 格式，确保只包含数字
-        if grep -q "PKG_RELEASE:=" "$makefile"; then
-            local release=$(sed -n 's/^PKG_RELEASE:=\(.*\)/\1/p' "$makefile")
-            if ! echo "$release" | grep -q '^[0-9]\+$'; then
-                local new_release=$(echo "$release" | tr -cd '0-9' | grep -o '[0-9]\+' || echo "1")
-                sed -i.bak "s/^PKG_RELEASE:=.*/PKG_RELEASE:=$new_release/" "$makefile"
-                echo "Set PKG_RELEASE to $new_release in $makefile"
+        # 提取当前 PKG_VERSION 和 PKG_RELEASE
+        version=$(sed -n 's/^PKG_VERSION:=\(.*\)/\1/p' "$makefile")
+        release=$(sed -n 's/^PKG_RELEASE:=\(.*\)/\1/p' "$makefile")
+
+        # 处理 PKG_VERSION 中包含后缀的情况（如 1.2.3-rc1）
+        if [[ "$version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-(.+)$ ]] && [ -z "$release" ]; then
+            new_version="${BASH_REMATCH[1]}"
+            new_release="${BASH_REMATCH[2]}"
+            # 如果后缀是数字，直接用作 PKG_RELEASE，否则设为 1
+            if ! [[ "$new_release" =~ ^[0-9]+$ ]]; then
+                new_release="1"
             fi
+            sed -i.bak -e "s/^PKG_VERSION:=.*/PKG_VERSION:=$new_version/" \
+                       -e "/^PKG_VERSION/a PKG_RELEASE:=$new_release" "$makefile"
+            echo "修改 $makefile: PKG_VERSION=$new_version, PKG_RELEASE=$new_release"
+        fi
+
+        # 确保 PKG_RELEASE 是纯数字
+        if [ -n "$release" ] && ! [[ "$release" =~ ^[0-9]+$ ]]; then
+            new_release=$(echo "$release" | tr -cd '0-9' | grep -o '[0-9]\+' || echo "1")
+            sed -i.bak "s/^PKG_RELEASE:=.*/PKG_RELEASE:=$new_release/" "$makefile"
+            echo "设置 $makefile 中的 PKG_RELEASE 为 $new_release"
         fi
     done
 }
@@ -170,6 +177,7 @@ fix_symbolic_link_conflict() {
 }
 
 # 主编译循环
+# 主编译循环
 retry_count=0
 while [ $retry_count -lt "$MAX_RETRY" ]; do
     echo "尝试编译: $MAKE_COMMAND (第 $((retry_count + 1)) 次)..."
@@ -179,6 +187,9 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     }
 
     echo "编译失败，检查错误..."
+    echo "最近 200 行日志如下："
+    extract_error_block "$LOG_FILE"
+
     if grep -q "package version is invalid" "$LOG_FILE" || grep -q "PKG_VERSION" "$LOG_FILE"; then
         fix_pkg_version
     elif grep -q "po2lmo: command not found" "$LOG_FILE"; then
@@ -200,8 +211,7 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
             exit 1
         }
     else
-        tee "$LOG_FILE"
-        extract_error_block "$LOG_FILE"
+        echo "未识别的错误，请检查完整日志: $LOG_FILE"
         exit 1
     fi
 
