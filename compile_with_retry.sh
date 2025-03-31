@@ -6,7 +6,7 @@
 # 参数解析
 MAKE_COMMAND="$1"           # 编译命令，例如 "make -j1 V=s" 或 "make package/compile V=s"
 LOG_FILE="$2"               # 日志文件路径，例如 "compile.log" 或 "packages.log"
-MAX_RETRY="${3:-6}"         # 最大重试次数，默认6
+MAX_RETRY="${3:-8}"         # 最大重试次数，默认8
 ERROR_PATTERN="${4:-error:|failed|undefined reference}"  # 错误模式，默认值
 
 # 检查必要参数
@@ -14,7 +14,21 @@ if [ -z "$MAKE_COMMAND" ] || [ -z "$LOG_FILE" ]; then
     echo "错误：缺少必要参数。用法: $0 <make_command> <log_file> [max_retry] [error_pattern]"
     exit 1
 fi
-
+# 修复 trojan-plus 源码中的 boost::asio::buffer_cast 错误
+fix_trojan_plus_boost_error() {
+    local trojan_src_dir="/home/runner/work/AutoBuild_OpenWrt_for_XiaoMi_R4/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-mipsel_24kc_musl/trojan-plus-10.0.3"
+    local service_cpp="$trojan_src_dir/src/core/service.cpp"
+    
+    if [ -f "$service_cpp" ]; then
+        echo "修复 $service_cpp 中的 boost::asio::buffer_cast 错误..."
+        sed -i.bak 's/boost::asio::buffer_cast<char\*>(/static_cast<char*>(/' "$service_cpp"
+        sed -i.bak 's/udp_read_buf.prepare(config.get_udp_recv_buf()))/udp_read_buf.prepare(config.get_udp_recv_buf()).data())/' "$service_cpp"
+        echo "已修改 $service_cpp"
+    else
+        echo "未找到 $service_cpp"
+        return 1
+    fi
+}
 # 修复 po2lmo 命令未找到
 fix_po2lmo() {
     echo "检测到 po2lmo 命令未找到，尝试编译 luci-base..."
@@ -203,6 +217,12 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     elif grep -q "mkdir: cannot create directory.*File exists" "$LOG_FILE"; then
         fix_mkdir_conflict "$LOG_FILE" || {
             extract_error_block "$LOG_FILE"
+            exit 1
+        }
+    elif grep -q "trojan-plus.*buffer_cast" "$LOG_FILE"; then
+        fix_trojan_plus_boost_error || {
+            echo "修复 trojan-plus 失败"
+            cat "$LOG_FILE"
             exit 1
         }
     elif grep -q "ln: failed to create symbolic link.*File exists" "$LOG_FILE"; then
