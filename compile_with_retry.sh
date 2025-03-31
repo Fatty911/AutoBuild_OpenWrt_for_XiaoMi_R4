@@ -46,7 +46,6 @@ fix_pkg_version() {
         if grep -q "PKG_RELEASE:=" "$makefile"; then
             local release=$(sed -n 's/^PKG_RELEASE:=\(.*\)/\1/p' "$makefile")
             if ! echo "$release" | grep -q '^[0-9]\+$'; then
-                # 从 release 中提取数字部分，若无数字则默认设为 1
                 local new_release=$(echo "$release" | tr -cd '0-9' | grep -o '[0-9]\+' || echo "1")
                 sed -i.bak "s/^PKG_RELEASE:=.*/PKG_RELEASE:=$new_release/" "$makefile"
                 echo "Set PKG_RELEASE to $new_release in $makefile"
@@ -145,6 +144,31 @@ fix_mkdir_conflict() {
     fi
 }
 
+# 修复符号链接冲突
+fix_symbolic_link_conflict() {
+    local log_file="$1"
+    echo "检测到符号链接冲突错误，尝试修复..."
+    # 提取失败的符号链接路径
+    FAILED_LINK=$(grep -oP "ln: failed to create symbolic link '\K[^']+" "$log_file" | tail -n1)
+    if [ -n "$FAILED_LINK" ]; then
+        echo "正在清理冲突的符号链接: $FAILED_LINK"
+        rm -f "$FAILED_LINK"
+        # 提取包名并重新编译
+        PKG_PATH=$(echo "$FAILED_LINK" | grep -oE 'package/feeds/[^/]+/[^/]+')
+        if [ -n "$PKG_PATH" ]; then
+            PKG_NAME=$(basename "$PKG_PATH")
+            echo "重新编译包: $PKG_NAME"
+            make -j1 "$PKG_PATH/compile" V=s || return 1
+        else
+            echo "无法推断包名，尝试重新编译所有包"
+            eval "$MAKE_COMMAND" || return 1
+        fi
+    else
+        echo "无法提取失败的符号链接路径，尝试重新编译所有包"
+        eval "$MAKE_COMMAND" || return 1
+    fi
+}
+
 # 主编译循环
 retry_count=0
 while [ $retry_count -lt "$MAX_RETRY" ]; do
@@ -167,6 +191,11 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
         fix_depends
     elif grep -q "mkdir: cannot create directory.*File exists" "$LOG_FILE"; then
         fix_mkdir_conflict "$LOG_FILE" || {
+            extract_error_block "$LOG_FILE"
+            exit 1
+        }
+    elif grep -q "ln: failed to create symbolic link.*File exists" "$LOG_FILE"; then
+        fix_symbolic_link_conflict "$LOG_FILE" || {
             extract_error_block "$LOG_FILE"
             exit 1
         }
