@@ -35,16 +35,18 @@ extract_error_block() {
 fix_pkg_version() {
     echo "Fixing PKG_VERSION and PKG_RELEASE formats..."
     find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+        # 修复 PKG_VERSION 中包含 - 的情况
         if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
             echo "Found target in $makefile"
             sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
             echo "Modified $makefile:"
             grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
         fi
-        # 检查并修复 PKG_RELEASE 格式
+        # 检查并修复 PKG_RELEASE 格式，确保只包含数字
         if grep -q "PKG_RELEASE:=" "$makefile"; then
             local release=$(sed -n 's/^PKG_RELEASE:=\(.*\)/\1/p' "$makefile")
             if ! echo "$release" | grep -q '^[0-9]\+$'; then
+                # 从 release 中提取数字部分，若无数字则默认设为 1
                 local new_release=$(echo "$release" | tr -cd '0-9' | grep -o '[0-9]\+' || echo "1")
                 sed -i.bak "s/^PKG_RELEASE:=.*/PKG_RELEASE:=$new_release/" "$makefile"
                 echo "Set PKG_RELEASE to $new_release in $makefile"
