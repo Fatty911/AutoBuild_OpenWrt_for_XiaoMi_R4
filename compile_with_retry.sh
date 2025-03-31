@@ -14,6 +14,7 @@ if [ -z "$MAKE_COMMAND" ] || [ -z "$LOG_FILE" ]; then
     echo "错误：缺少必要参数。用法: $0 <make_command> <log_file> [max_retry] [error_pattern]"
     exit 1
 fi
+
 # 修复 po2lmo 命令未找到
 fix_po2lmo() {
     echo "检测到 po2lmo 命令未找到，尝试编译 luci-base..."
@@ -23,21 +24,31 @@ fix_po2lmo() {
         exit 1
     }
 }
+
 # 日志截取函数
 extract_error_block() {
     local log_file="$1"
-    tail -200 $log_file
-    }
+    tail -200 "$log_file"
+}
 
-# 修复 PKG_VERSION 格式
+# 修复 PKG_VERSION 和 PKG_RELEASE 格式
 fix_pkg_version() {
-    echo "Fixing PKG_VERSION formats..."
+    echo "Fixing PKG_VERSION and PKG_RELEASE formats..."
     find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
         if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
             echo "Found target in $makefile"
             sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile"
             echo "Modified $makefile:"
             grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+        fi
+        # 检查并修复 PKG_RELEASE 格式
+        if grep -q "PKG_RELEASE:=" "$makefile"; then
+            local release=$(sed -n 's/^PKG_RELEASE:=\(.*\)/\1/p' "$makefile")
+            if ! echo "$release" | grep -q '^[0-9]\+$'; then
+                local new_release=$(echo "$release" | tr -cd '0-9' | grep -o '[0-9]\+' || echo "1")
+                sed -i.bak "s/^PKG_RELEASE:=.*/PKG_RELEASE:=$new_release/" "$makefile"
+                echo "Set PKG_RELEASE to $new_release in $makefile"
+            fi
         fi
     done
 }
@@ -142,9 +153,7 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     }
 
     echo "编译失败，检查错误..."
-    if grep -q "package version is invalid" "$LOG_FILE"; then
-        fix_pkg_version
-    elif grep -q "PKG_VERSION" "$LOG_FILE"; then
+    if grep -q "package version is invalid" "$LOG_FILE" || grep -q "PKG_VERSION" "$LOG_FILE"; then
         fix_pkg_version
     elif grep -q "po2lmo: command not found" "$LOG_FILE"; then
         fix_po2lmo
