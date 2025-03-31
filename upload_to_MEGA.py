@@ -16,13 +16,12 @@ folder = m.find(folder_name)
 
 if not folder:
     # 如果文件夹不存在，创建并获取句柄
-    folder_id = m.create_folder(folder_name)
+    folder_dict = m.create_folder(folder_name)
+    folder_id = folder_dict[folder_name]  # 提取句柄字符串，例如 'K9xiSIAC'
     print(f"创建新文件夹: {folder_name}, folder_id: {folder_id}")
 else:
-    # 如果文件夹存在，从元组中提取句柄（字符串）
-    if not isinstance(folder, list):
-        folder = [folder]
-    folder_id = folder[0][0]  # 提取句柄字符串，例如 'alhTyR5B'
+    # 如果文件夹存在，folder 是一个元组 (handle, node_data)
+    folder_id = folder[0]  # 提取句柄字符串，例如 'K9xiSIAC'
     print(f"找到现有文件夹: {folder_name}, folder_id: {folder_id}")
 
 # 2. 获取目标文件夹中的所有文件
