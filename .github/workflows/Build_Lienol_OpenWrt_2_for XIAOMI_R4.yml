@@ -91,15 +91,16 @@ jobs:
     - name: 解压文件
       run: |
         tar -xzvf ${{ env.SOURCE }}.tar.gz
+        
     - name: Compile Remaining packages
       id: compile_remaining
       # if: steps.main_packages.conclusion == 'success'
       run: |
         cd openwrt
-        set -x
+        # set -x
         LOG_FILE="packages.log"
         cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" || exit 1
+        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" 
         
     - name: Compile packages
       id: compile_packages
@@ -108,7 +109,7 @@ jobs:
         # set -o pipefail
         LOG_FILE="packages.log"
         cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" || exit 1
+        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" 
 
     
 
@@ -117,10 +118,10 @@ jobs:
       run: |
         cd openwrt
         echo "开始执行修复后重试编译..."
-        set -o pipefail
+        # set -o pipefail
         LOG_FILE="compile.log"
         cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" || exit 1
+        bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" 
         
         
     - name: Check for .bin file after initial compilation
