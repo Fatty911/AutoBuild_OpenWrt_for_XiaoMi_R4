@@ -91,6 +91,7 @@ jobs:
     - name: 解压文件
       run: |
         tar -xzvf ${{ env.SOURCE }}.tar.gz
+        cat openwrt/feeds/packages/lang/python/python3-version.mk
         
     - name: Compile Remaining packages
       id: compile_remaining
@@ -100,7 +101,7 @@ jobs:
         # set -x
         LOG_FILE="packages.log"
         cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" 
+        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference"  
         
     - name: Compile packages
       id: compile_packages
