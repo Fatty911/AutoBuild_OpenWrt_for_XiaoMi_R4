@@ -49,6 +49,7 @@ def mega_login(username, password):
         sys.exit(1)
 
 def mega_ensure_folder(folder):
+    # 尝试列出目标文件夹
     result = subprocess.run(["mega-ls", f"mega:/{folder}"],
                             capture_output=True, text=True)
     if result.returncode != 0:
@@ -56,11 +57,20 @@ def mega_ensure_folder(folder):
         result = subprocess.run(["mega-mkdir", f"mega:/{folder}"],
                                 capture_output=True, text=True)
         if result.returncode != 0:
-            print("创建文件夹失败:", result.stderr)
-            sys.exit(1)
-        print(f"文件夹 '{folder}' 创建成功.")
+            # 再次检查是否创建成功
+            check = subprocess.run(["mega-ls", f"mega:/{folder}"],
+                                    capture_output=True, text=True)
+            if check.returncode == 0:
+                print(f"文件夹 '{folder}' 已存在（创建过程中可能返回错误码），继续操作。")
+            else:
+                err_msg = result.stderr or result.stdout
+                print("创建文件夹失败:", err_msg)
+                sys.exit(1)
+        else:
+            print(f"文件夹 '{folder}' 创建成功.")
     else:
         print(f"找到现有文件夹: {folder}")
+
 
 def mega_remove_file_if_exists(folder, filename):
     result = subprocess.run(["mega-ls", f"mega:/{folder}"],
