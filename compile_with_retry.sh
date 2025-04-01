@@ -610,7 +610,7 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
             echo "修复 trojan-plus 失败，停止重试。"
             cat "$LOG_FILE"
             exit 1
-        fi
+    fi
     # 2. po2lmo error
     elif grep -q "po2lmo: command not found" "$LOG_FILE"; then
         echo "检测到 'po2lmo' 错误..."
