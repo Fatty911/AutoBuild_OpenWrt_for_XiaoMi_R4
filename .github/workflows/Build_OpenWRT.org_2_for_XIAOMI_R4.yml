@@ -142,8 +142,8 @@ jobs:
             pwd && ls
             cp compile_with_retry.sh openwrt/ 
             cd openwrt
-            bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" || exit 1
-            echo "status=success" >> $GITHUB_OUTPUT
+            bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" &&  echo "status=success" >> $GITHUB_OUTPUT
+
           
       - name: Set environment variables
         id: setEnv
@@ -259,13 +259,13 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           repository: ${{ github.repository }}
-          retain_days: 10
+          retain_days: 1
           keep_minimum_runs: 2
 
       - name: Delete Older Releases
         uses: dev-drprasad/delete-older-releases@master
         with:
-          keep_latest: 5
+          keep_latest: 3
           delete_tag_pattern: OpenWRT.org_*
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
