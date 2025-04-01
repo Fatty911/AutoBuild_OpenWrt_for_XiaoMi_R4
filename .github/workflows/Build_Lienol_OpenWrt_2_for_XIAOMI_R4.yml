@@ -101,18 +101,8 @@ jobs:
         # set -x
         LOG_FILE="packages.log"
         cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference"  
-        
-    - name: Compile packages
-      id: compile_packages
-      run: |
-        cd openwrt
-        # set -o pipefail
-        LOG_FILE="packages.log"
-        cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "packages.log" 6 "error:|failed|undefined reference" 
+        bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 "error:|failed|undefined reference"  
 
-    
 
     - name: Try compiling the firmware
       id: compile_attempt
@@ -122,7 +112,7 @@ jobs:
         # set -o pipefail
         LOG_FILE="compile.log"
         cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" 
+        bash compile_with_retry.sh "make -j1 V=s" "compile.log" 5 "error:|failed|undefined reference" 
         
         
     - name: Check for .bin file after initial compilation
