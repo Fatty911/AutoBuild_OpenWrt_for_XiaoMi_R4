@@ -141,6 +141,7 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           echo "开始尝试编译packages" 
+          bash compile_with_retry.sh "make package/feeds/small8/trojan-plus/compile V=s" "trojanplus.log" 8 "error:|failed|undefined reference" 
           bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 "error:|failed|undefined reference"
 
       
