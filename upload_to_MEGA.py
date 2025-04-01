@@ -54,7 +54,8 @@ def mega_ensure_folder(folder):
                             capture_output=True, text=True)
     if result.returncode != 0:
         print(f"文件夹 '{folder}' 不存在，正在创建...")
-        result = subprocess.run(["mega-mkdir", f"mega:/{folder}"],
+        # 增加 -p 参数以递归创建目录
+        result = subprocess.run(["mega-mkdir", "-p", f"mega:/{folder}"],
                                 capture_output=True, text=True)
         if result.returncode != 0:
             # 再次检查是否创建成功
@@ -70,6 +71,7 @@ def mega_ensure_folder(folder):
             print(f"文件夹 '{folder}' 创建成功.")
     else:
         print(f"找到现有文件夹: {folder}")
+
 
 
 def mega_remove_file_if_exists(folder, filename):
