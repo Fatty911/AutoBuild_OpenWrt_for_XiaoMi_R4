@@ -18,14 +18,13 @@ fi
 
 # --- 修复函数 ---
 
+
 # 修复 trojan-plus 源码中的 boost::asio::buffer_cast 错误
 fix_trojan_plus_boost_error() {
     echo "修复 trojan-plus 中的 boost::asio::buffer_cast 错误..."
-    local trojan_src_dir
-    local service_cpp
-    local found_path=""
+    local trojan_src_dir service_cpp found_path=""
 
-    # 尝试动态查找 build_dir 下的 trojan-plus 源码路径 (relative find)
+    # 尝试动态查找 build_dir 下的 trojan-plus 源码路径
     trojan_src_dir=$(find build_dir -type d -path '*/trojan-plus-*/src/core' -print -quit)
 
     if [ -n "$trojan_src_dir" ]; then
@@ -34,12 +33,14 @@ fix_trojan_plus_boost_error() {
             found_path="$service_cpp"
             echo "找到 trojan-plus 源码: $found_path"
         else
-             echo "在找到的目录 $trojan_src_dir 中未找到 service.cpp"
+            echo "在找到的目录 $trojan_src_dir 中未找到 service.cpp"
         fi
-    else
+    fi
+
+    # 如果动态查找失败，根据日志中的路径猜测
+    if [ -z "$found_path" ]; then
         echo "未能在 build_dir 中动态找到 trojan-plus 源码路径，尝试基于日志猜测路径..."
-        # Try to guess the build directory path structure from the log file itself
-        local target_build_dir=$(grep -o 'build_dir/target-[^/]*/trojan-plus-[^/]*' "$LOG_FILE" | head -n 1)
+        local target_build_dir=$(grep -o '/home/runner/work/AutoBuild_OpenWrt_for_XiaoMi_R4/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-[^/]*/trojan-plus-[^/]*' "$LOG_FILE" | head -n 1)
         if [ -n "$target_build_dir" ] && [ -d "$target_build_dir" ]; then
             service_cpp="$target_build_dir/src/core/service.cpp"
             if [ -f "$service_cpp" ]; then
@@ -51,24 +52,24 @@ fix_trojan_plus_boost_error() {
 
     if [ -z "$found_path" ]; then
         echo "无法定位 trojan-plus 的 service.cpp 文件，跳过修复。"
-        return 1 # Indicate failure to find the file
+        return 1
     fi
 
     echo "尝试修复 $found_path ..."
-    # 使用 \| 作为 sed 分隔符，避免路径中的 / 冲突
-    # Ensure the path ($found_path) used here is relative or absolute as found
-    sed -i.bak "s|boost::asio::buffer_cast<char\*>(\(udp_read_buf.prepare([^)]*)\))|static_cast<char*>(\1.data())|g" "$found_path"
+    # 备份原文件并替换 buffer_cast 为 static_cast ... .data()
+    cp "$found_path" "$found_path.bak"
+    sed -i "s|boost::asio::buffer_cast<char\*>(\(udp_read_buf.prepare([^)]*)\))|static_cast<char*>(\1.data())|g" "$found_path"
 
-    if grep -q 'static_cast<char*>' "$found_path"; then
-        echo "已修改 $found_path"
-        return 0 # Success
+    if grep -q 'static_cast<char\*>' "$found_path"; then
+        echo "已成功修改 $found_path"
+        rm "$found_path.bak"  # 成功后删除备份
+        return 0
     else
-        echo "尝试修改 $found_path 失败。检查 sed 命令和文件内容。"
-        # Consider restoring backup if needed: mv "${found_path}.bak" "$found_path"
-        return 1 # Failure
+        echo "尝试修改 $found_path 失败，恢复备份文件。"
+        mv "$found_path.bak" "$found_path"
+        return 1
     fi
 }
-
 
 # 修复 po2lmo 命令未找到
 fix_po2lmo() {
@@ -593,6 +594,7 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     # --- 错误检测与修复逻辑 (顺序很重要) ---
 
     # 1. Trojan-plus buffer_cast error
+    # --- 错误检测与修复逻辑 ---
     if grep -q 'trojan-plus.*service.cpp.*buffer_cast.*boost::asio' "$LOG_FILE"; then
         echo "检测到 'trojan-plus boost::asio::buffer_cast' 错误..."
         if [ "$last_fix_applied" = "fix_trojan_plus" ]; then
@@ -602,9 +604,13 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
         fi
         last_fix_applied="fix_trojan_plus"
         fix_trojan_plus_boost_error
-        if [ $? -eq 0 ]; then fix_applied_this_iteration=1; else
-            echo "修复 trojan-plus 失败，停止重试。" ; cat "$LOG_FILE"; exit 1; fi
-
+        if [ $? -eq 0 ]; then
+            fix_applied_this_iteration=1
+        else
+            echo "修复 trojan-plus 失败，停止重试。"
+            cat "$LOG_FILE"
+            exit 1
+        fi
     # 2. po2lmo error
     elif grep -q "po2lmo: command not found" "$LOG_FILE"; then
         echo "检测到 'po2lmo' 错误..."
