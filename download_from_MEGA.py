@@ -65,7 +65,7 @@ def mega_download_folder(folder, dest_dir="."):
         print(f"错误: 目录 '{dest_dir}' 不可写")
         sys.exit(1)
     
-    # 检查远程文件夹是否存在 (and print output for debugging)
+    # 检查远程文件夹是否存在
     print(f"Checking remote path: {folder}")
     check_folder = subprocess.run(["mega-ls", f"{folder}"], capture_output=True, text=True)
     if check_folder.returncode != 0:
@@ -74,21 +74,17 @@ def mega_download_folder(folder, dest_dir="."):
         print("mega-ls stderr:", check_folder.stderr)
         sys.exit(1)
     else:
-        # Print contents for verification if needed
         print(f"远程文件夹 '{folder}' 存在。内容预览:")
-        print(check_folder.stdout.strip()[:500] + "..." if len(check_folder.stdout.strip()) > 500 else check_folder.stdout.strip()) # Print first 500 chars
+        print(check_folder.stdout.strip()[:500] + "..." if len(check_folder.stdout.strip()) > 500 else check_folder.stdout.strip())
 
-
-    # 执行下载 (with increased verbosity)
-    print(f"开始下载: {folder} -> {dest_dir} (使用 -vvv 详细模式)")
-    # Use -vvv for maximum verbosity
+    # 执行下载
+    print(f"开始下载: {folder} -> {dest_dir}")
     download_command = ["mega-get", "-vvv", f"{folder}", dest_dir]
-    print("Executing:", " ".join(download_command)) # Log the command being run
+    print("Executing:", " ".join(download_command))
     download = subprocess.run(download_command, capture_output=True, text=True)
 
     if download.returncode != 0:
         print("下载失败!")
-        # Print both stdout and stderr from mega-get, as errors sometimes go to stdout
         print("----- mega-get stdout -----")
         print(download.stdout)
         print("----- mega-get stderr -----")
@@ -96,6 +92,23 @@ def mega_download_folder(folder, dest_dir="."):
         print("--------------------------")
         sys.exit(1)
     print("下载成功完成")
+
+    # 移动文件并删除空文件夹
+    downloaded_folder = os.path.basename(folder.rstrip('/'))
+    downloaded_folder_path = os.path.join(dest_dir, downloaded_folder)
+    if os.path.exists(downloaded_folder_path):
+        print(f"移动文件从 {downloaded_folder_path} 到 {dest_dir}")
+        for item in os.listdir(downloaded_folder_path):
+            item_path = os.path.join(downloaded_folder_path, item)
+            dest_path = os.path.join(dest_dir, item)
+            shutil.move(item_path, dest_path)
+            print(f"已移动 {item} 到 {dest_dir}")
+        # 删除空文件夹
+        os.rmdir(downloaded_folder_path)
+        print(f"已删除空文件夹 {downloaded_folder_path}")
+    else:
+        print(f"错误: 下载的文件夹 {downloaded_folder_path} 不存在")
+        sys.exit(1)
 
 def main():
     if len(sys.argv) < 4 or len(sys.argv) > 5:
