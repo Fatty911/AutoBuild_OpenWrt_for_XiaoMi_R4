@@ -82,7 +82,7 @@ def mega_download_folder(folder, dest_dir="."):
     # 执行下载 (with increased verbosity)
     print(f"开始下载: {folder} -> {dest_dir} (使用 -vvv 详细模式)")
     # Use -vvv for maximum verbosity
-    download_command = ["mega-get", "-r", "-vvv", f"{folder}", dest_dir]
+    download_command = ["mega-get", "-vvv", f"{folder}", dest_dir]
     print("Executing:", " ".join(download_command)) # Log the command being run
     download = subprocess.run(download_command, capture_output=True, text=True)
 
