@@ -268,7 +268,7 @@ jobs:
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@master
-      if: senv.FINAL_BIN_EXISTS == 'true' 
+      if: env.FINAL_BIN_EXISTS == 'true' 
       with:
         name: OpenWrt_${{ env.SOURCE }}_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
@@ -276,7 +276,7 @@ jobs:
 
     - name: Generate release tag
       id: generate_release_tag
-      if: eenv.FINAL_BIN_EXISTS == 'true' 
+      if: env.FINAL_BIN_EXISTS == 'true' 
       run: |
         echo "release_tag=Lienol_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
