@@ -133,96 +133,125 @@ fix_pkg_version() {
     if [ "$changed_count" -gt 0 ]; then return 0; else return 1; fi
 }
 
+
 ### Fix duplicate dependencies
 fix_depends() {
     echo "修复依赖重复..."
     local flag_file=".fix_depends_changed"
     rm -f "$flag_file"
-    find . -type f \( -name "Makefile" -o -name "*.mk" \) -path "./build_dir/*" -prune -o -path "./staging_dir/*" -prune -o -exec sh -c '
-        makefile="$1"
-        flag_file_path="$2"
-        if ! head -n 20 "$makefile" | grep -qE "^\s*include.*\/(package|buildinfo)\.mk"; then
-             exit 0
-        fi
-        awk '\''BEGIN { FS = "[[:space:]]+"; OFS = " "; change_made = 0 }
-        /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=/ {
-            original_line = $0
-            prefix = $0
-            sub(/[[:space:]].*/, "", prefix)
-            line = $0
-            sub(/^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=/, "", line)
-            delete seen_bare; delete seen_versioned_pkg; delete result_deps
-            idx = 0
-            n = split(line, deps, " ")
-            for (i=1; i<=n; i++) {
-                dep = deps[i]
-                if (dep == "" || dep ~ /^\s*$/ || dep ~ /\$\(.*\)/ ) {
-                    result_deps[idx++] = dep
-                    continue
-                }
-                bare_dep = dep
-                sub(/^\+/, "", bare_dep)
-                pkg_name = bare_dep
-                if (match(pkg_name, />=|<=|==/)) {
-                    pkg_name = substr(pkg_name, 1, RSTART - 1)
-                }
-                is_versioned = (bare_dep ~ />=|<=|==/)
-                if (is_versioned) {
-                    if (!(pkg_name in seen_versioned_pkg)) {
+    
+    find . -type f \( -name "Makefile" -o -name "*.mk" \) \
+        \( -path "./build_dir/*" -o -path "./staging_dir/*" \) -prune -o \
+        -exec sh -c '
+            makefile="$1"
+            flag_file_path="$2"
+            
+            # Skip non-Makefile files
+            if ! head -n 20 "$makefile" 2>/dev/null | grep -qE "^\s*include.*\/(package|buildinfo)\.mk"; then
+                exit 0
+            fi
+
+            awk '\''
+            BEGIN { FS = "[[:space:]]+"; OFS = " "; change_made = 0 }
+            /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=/ {
+                original_line = $0
+                prefix = $1
+                line = $0
+                sub(/^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=/, "", line)
+                
+                delete seen_bare
+                delete seen_versioned_pkg
+                delete result_deps
+                idx = 0
+                n = split(line, deps, " ")
+                
+                for (i=1; i<=n; i++) {
+                    dep = deps[i]
+                    if (dep == "" || dep ~ /^\s*$/ || dep ~ /\$\(.*\)/ ) {
                         result_deps[idx++] = dep
-                        seen_versioned_pkg[pkg_name] = 1
-                        if (pkg_name in seen_bare) {
-                            for (k=0; k<idx-1; ++k) {
-                                if (result_deps[k] == pkg_name || result_deps[k] == "+" pkg_name) {
-                                    for (l=k; l<idx-1; ++l) { result_deps[l] = result_deps[l+1]; }
-                                    idx--
-                                    result_deps[idx] = ""
-                                    break
+                        continue
+                    }
+                    
+                    # Remove leading +
+                    bare_dep = dep
+                    sub(/^\+/, "", bare_dep)
+                    
+                    # Extract package name
+                    pkg_name = bare_dep
+                    if (match(pkg_name, />=|<=|==/)) {
+                        pkg_name = substr(pkg_name, 1, RSTART - 1)
+                    }
+                    
+                    is_versioned = (bare_dep ~ />=|<=|==/)
+                    
+                    if (is_versioned) {
+                        if (!(pkg_name in seen_versioned_pkg)) {
+                            result_deps[idx++] = dep
+                            seen_versioned_pkg[pkg_name] = 1
+                            if (pkg_name in seen_bare) {
+                                # Remove existing bare dependency
+                                for (k=0; k<idx-1; ++k) {
+                                    if (result_deps[k] == pkg_name || result_deps[k] == "+" pkg_name) {
+                                        for (l=k; l<idx-1; ++l) {
+                                            result_deps[l] = result_deps[l+1]
+                                        }
+                                        idx--
+                                        result_deps[idx] = ""
+                                        break
+                                    }
                                 }
                             }
+                            delete seen_bare[pkg_name]
                         }
-                        delete seen_bare[pkg_name]
-                    }
-                } else {
-                    if (!(pkg_name in seen_bare) && !(pkg_name in seen_versioned_pkg)) {
-                        result_deps[idx++] = dep
-                        seen_bare[pkg_name] = 1
+                    } else {
+                        if (!(pkg_name in seen_bare) && !(pkg_name in seen_versioned_pkg)) {
+                            result_deps[idx++] = dep
+                            seen_bare[pkg_name] = 1
+                        }
                     }
                 }
+                
+                # Build new deps string
+                new_deps_str = ""
+                for (j=0; j<idx; ++j) {
+                    if (result_deps[j] != "") {
+                        new_deps_str = new_deps_str " " result_deps[j]
+                    }
+                }
+                sub(/^ /, "", new_deps_str)
+                
+                # Generate new line
+                new_line = prefix " " new_deps_str
+                gsub(/[[:space:]]+$/, "", new_line)
+                
+                # Compare with original
+                original_line_trimmed = original_line
+                gsub(/[[:space:]]+$/, "", original_line_trimmed)
+                
+                if (new_line != original_line_trimmed) {
+                    print new_line
+                    change_made = 1
+                } else {
+                    print original_line
+                }
+                next
             }
-            new_deps_str = ""
-            for (j=0; j<idx; ++j) {
-                 if (result_deps[j] != "") {
-                     new_deps_str = new_deps_str " " result_deps[j]
-                 }
-            }
-            sub(/^ /, "", new_deps_str)
-            new_line = prefix (new_deps_str == "" ? "" : " " new_deps_str)
-            gsub(/[[:space:]]+$/, "", new_line)
-            original_line_trimmed = original_line
-            gsub(/[[:space:]]+$/, "", original_line_trimmed)
-            if (new_line != original_line_trimmed) {
-                print new_line
-                change_made = 1
-            } else {
-                print original_line
-            }
-            next
-        }
-        { print }
-        END { exit !change_made }
-        '\'' "$makefile" > "$makefile.tmp"
-        awk_exit_code=$?
-        if [ $awk_exit_code -eq 0 ]; then
-            if [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
+            { print }
+            END { exit !change_made }
+            '\'' "$makefile" > "$makefile.tmp"
+            
+            # Check awk exit status
+            if [ $? -eq 0 ] && [ -s "$makefile.tmp" ] && ! cmp -s "$makefile" "$makefile.tmp"; then
                 echo "修改 $makefile: 修复依赖重复"
                 mv "$makefile.tmp" "$makefile"
                 touch "$flag_file_path"
-            else rm -f "$makefile.tmp"; fi
-        else rm -f "$makefile.tmp"; fi
-    ' _ {} "$flag_file" \;
-    if [ -f "$flag_file" ]; then
-        rm -f "$flag_file"
+            else
+                rm -f "$makefile.tmp"
+            fi
+        ' _ {} "$flag_file" \;
+    
+    if [ -f .fix_depends_changed ]; then
+        rm -f .fix_depends_changed
         return 0
     else
         return 1
