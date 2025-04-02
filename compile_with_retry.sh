@@ -21,8 +21,6 @@ fi
 
 # --- Fix Functions ---
 
-## Existing Functions (unchanged from your big script unless noted)
-
 ### Fix trojan-plus boost::asio::buffer_cast error
 fix_trojan_plus_boost_error() {
     echo "修复 trojan-plus 中的 boost::asio::buffer_cast 错误..."
@@ -93,7 +91,7 @@ fix_pkg_version() {
         if ! grep -qE '^(include \.\./\.\./(package|buildinfo)\.mk|include \$\(INCLUDE_DIR\)/package\.mk)' "$makefile"; then
             continue
         fi
-        local current_version release new_version new_release suffix modified_in_loop=0
+        local current_version release new_version new_Release suffix modified_in_loop=0
         current_version=$(sed -n 's/^PKG_VERSION:=\(.*\)/\1/p' "$makefile")
         release=$(sed -n 's/^PKG_RELEASE:=\(.*\)/\1/p' "$makefile")
         if [[ "$current_version" =~ ^([0-9]+(\.[0-9]+)*)-([a-zA-Z0-9_.-]+)$ ]] && \
@@ -369,7 +367,7 @@ fix_symbolic_link_conflict() {
         echo "无法从日志中提取冲突的符号链接路径。"
         return 1
     fi
-    echo "冲突链接: $FAILED_LINK"
+ucer    echo "冲突链接: $FAILED_LINK"
     if [ -e "$FAILED_LINK" ]; then
         echo "正在清理已存在的冲突文件/链接: $FAILED_LINK"
         rm -rf "$FAILED_LINK"
@@ -452,9 +450,7 @@ fix_makefile_separator() {
     return 0
 }
 
-## New and Merged batman-adv Fix Functions
-
-### Fix batman-adv 'struct br_ip' dst error (New)
+### Fix batman-adv 'struct br_ip' dst error
 fix_batman_br_ip_dst() {
     local log_file="$1"
     echo "尝试修复 batman-adv 的 'struct br_ip has no member named dst' 错误..."
@@ -487,7 +483,7 @@ fix_batman_br_ip_dst() {
     fi
 }
 
-### Fix batman-adv tasklet_setup symbol conflict (Merged)
+### Fix batman-adv tasklet_setup symbol conflict
 fix_batman_patch_tasklet() {
     local log_file="$1"
     echo "尝试修复 batman-adv 的 tasklet_setup 符号冲突..."
@@ -513,7 +509,7 @@ fix_batman_patch_tasklet() {
     fi
 }
 
-### Switch batman-adv package to specified commit (Merged)
+### Switch batman-adv package to specified commit
 fix_batman_switch_package() {
     local target_commit="$1"
     echo "尝试切换 batman-adv 包源码至 commit $target_commit ..."
@@ -541,7 +537,7 @@ fix_batman_switch_package() {
     return 0
 }
 
-### Switch entire routing feed to specified commit (Merged)
+### Switch entire routing feed to specified commit
 fix_batman_switch_feed() {
     local target_commit="$1"
     echo "尝试切换整个 routing feed 至 commit $target_commit ..."
@@ -600,32 +596,180 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     # 1. Batman-adv 'struct br_ip' dst error
     if grep -q "struct br_ip.*has no member named .dst" "$LOG_FILE" && grep -q "batman-adv.*multicast\.c" "$LOG_FILE"; then
         echo "检测到 batman-adv 的 'struct br_ip has no member named dst' 错误..."
-        if [ "$batman_br_ip_patched" -eq 1 ] || [ "$last_fix_applied" = "fix_batman_br_ip_dst" ]; then
-            echo "上次已尝试修补 br_ip dst 错误，但问题仍存在，可能需要切换 commit。"
-        else
+        if [ "$batman_br_ip_patched" -eq 0 ]; then
             last_fix_applied="fix_batman_br_ip_dst"
             fix_batman_br_ip_dst "$LOG_FILE"
             if [ $? -eq 0 ]; then
                 fix_applied_this_iteration=1
                 batman_br_ip_patched=1
             else
-                echo "修补 batman-adv br_ip dst 失败，将尝试其他方法。"
+                echo "修补 batman-adv br_ip dst 失败，尝试切换 commit..."
+                if [ "$batman_package_switched" -eq 0 ]; then
+                    fix_batman_switch_package "$BATMAN_ADV_COMMIT"
+                    if [ $? -eq 0 ]; then
+                        fix_applied_this_iteration=1
+                        batman_package_switched=1
+                    else
+                        echo "切换 batman-adv 包失败，尝试切换整个 feed..."
+                        if [ "$batman_feed_switched" -eq 0 ]; then
+                            fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                            if [ $? -eq 0 ]; then
+                                fix_applied_this_iteration=1
+                                batman_feed_switched=1
+                            else
+                                echo "切换 routing feed 失败，无法修复 batman-adv。"
+                                exit 1
+                            fi
+                        else
+                            echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                            exit 1
+                        fi
+                    fi
+                else
+                    echo "已尝试切换 batman-adv 包，但错误仍然存在，尝试切换整个 feed..."
+                    if [ "$batman_feed_switched" -eq 0 ]; then
+                        fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                        if [ $? -eq 0 ]; then
+                            fix_applied_this_iteration=1
+                            batman_feed_switched=1
+                        else
+                            echo "切换 routing feed 失败，无法修复 batman-adv。"
+                            exit 1
+                        fi
+                    else
+                        echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                        exit 1
+                    fi
+                fi
+            fi
+        else
+            echo "上次已尝试修补 br_ip dst 错误，但问题仍存在，尝试切换 commit..."
+            if [ "$batman_package_switched" -eq 0 ]; then
+                fix_batman_switch_package "$BATMAN_ADV_COMMIT"
+                if [ $? -eq 0 ]; then
+                    fix_applied_this_iteration=1
+                    batman_package_switched=1
+                else
+                    echo "切换 batman-adv 包失败，尝试切换整个 feed..."
+                    if [ "$batman_feed_switched" -eq 0 ]; then
+                        fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                        if [ $? -eq 0 ]; then
+                            fix_applied_this_iteration=1
+                            batman_feed_switched=1
+                        else
+                            echo "切换 routing feed 失败，无法修复 batman-adv。"
+                            exit 1
+                        fi
+                    else
+                        echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                        exit 1
+                    fi
+                fi
+            else
+                echo "已尝试切换 batman-adv 包，但错误仍然存在，尝试切换整个 feed..."
+                if [ "$batman_feed_switched" -eq 0 ]; then
+                    fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                    if [ $? -eq 0 ]; then
+                        fix_applied_this_iteration=1
+                        batman_feed_switched=1
+                    else
+                        echo "切换 routing feed 失败，无法修复 batman-adv。"
+                        exit 1
+                    fi
+                else
+                    echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                    exit 1
+                fi
             fi
         fi
 
     # 2. Batman-adv tasklet_setup error
     elif grep -q 'undefined reference to .*tasklet_setup' "$LOG_FILE" && grep -q -B 10 -A 10 'Entering directory.*batman-adv' "$LOG_FILE"; then
         echo "检测到 batman-adv 的 'tasklet_setup' 符号错误..."
-        if [ "$batman_tasklet_patched" -eq 1 ] || [ "$last_fix_applied" = "fix_batman_tasklet" ]; then
-            echo "上次已尝试修复 tasklet_setup，但错误依旧，可能需要切换 commit。"
-        else
+        if [ "$batman_tasklet_patched" -eq 0 ]; then
             last_fix_applied="fix_batman_tasklet"
             fix_batman_patch_tasklet "$LOG_FILE"
             if [ $? -eq 0 ]; then
                 fix_applied_this_iteration=1
                 batman_tasklet_patched=1
             else
-                echo "修复 batman-adv tasklet 失败。"
+                echo "修复 batman-adv tasklet 失败，尝试切换 commit..."
+                if [ "$batman_package_switched" -eq 0 ]; then
+                    fix_batman_switch_package "$BATMAN_ADV_COMMIT"
+                    if [ $? -eq 0 ]; then
+                        fix_applied_this_iteration=1
+                        batman_package_switched=1
+                    else
+                        echo "切换 batman-adv 包失败，尝试切换整个 feed..."
+                        if [ "$batman_feed_switched" -eq 0 ]; then
+                            fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                            if [ $? -eq 0 ]; then
+                                fix_applied_this_iteration=1
+                                batman_feed_switched=1
+                            else
+                                echo "切换 routing feed 失败，无法修复 batman-adv。"
+                                exit 1
+                            fi
+                        else
+                            echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                            exit 1
+                        fi
+                    fi
+                else
+                    echo "已尝试切换 batman-adv 包，但错误仍然存在，尝试切换整个 feed..."
+                    if [ "$batman_feed_switched" -eq 0 ]; then
+                        fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                        if [ $? -eq 0 ]; then
+                            fix_applied_this_iteration=1
+                            batman_feed_switched=1
+                        else
+                            echo "切换 routing feed 失败，无法修复 batman-adv。"
+                            exit 1
+                        fi
+                    else
+                        echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                        exit 1
+                    fi
+                fi
+            fi
+        else
+            echo "上次已尝试修复 tasklet_setup，但错误依旧，尝试切换 commit..."
+            if [ "$batman_package_switched" -eq 0 ]; then
+                fix_batman_switch_package "$BATMAN_ADV_COMMIT"
+                if [ $? -eq 0 ]; then
+                    fix_applied_this_iteration=1
+                    batman_package_switched=1
+                else
+                    echo "切换 batman-adv 包失败，尝试切换整个 feed..."
+                    if [ "$batman_feed_switched" -eq 0 ]; then
+                        fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                        if [ $? -eq 0 ]; then
+                            fix_applied_this_iteration=1
+                            batman_feed_switched=1
+                        else
+                            echo "切换 routing feed 失败，无法修复 batman-adv。"
+                            exit 1
+                        fi
+                    else
+                        echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                        exit 1
+                    fi
+                fi
+            else
+                echo "已尝试切换 batman-adv 包，但错误仍然存在，尝试切换整个 feed..."
+                if [ "$batman_feed_switched" -eq 0 ]; then
+                    fix_batman_switch_feed "$BATMAN_ADV_COMMIT"
+                    if [ $? -eq 0 ]; then
+                        fix_applied_this_iteration=1
+                        batman_feed_switched=1
+                    else
+                        echo "切换 routing feed 失败，无法修复 batman-adv。"
+                        exit 1
+                    fi
+                else
+                    echo "已尝试切换 batman-adv 包和 feed，但错误仍然存在，放弃。"
+                    exit 1
+                fi
             fi
         fi
 
@@ -719,7 +863,8 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
             echo "上次已尝试修复符号链接冲突，但错误依旧，停止重试。"
             exit 1
         fi
-        last_fix_applied="fix_symlink"
+        last Posted: 1 year ago
+last_fix_applied="fix_symlink"
         fix_symbolic_link_conflict "$LOG_FILE"
         if [ $? -eq 0 ]; then
             fix_applied_this_iteration=1
