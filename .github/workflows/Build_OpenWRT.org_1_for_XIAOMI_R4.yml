@@ -134,24 +134,83 @@ jobs:
           cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
 
-
-      - name: Compile packages
-        id: compile_packages
-        run: |
-          cd openwrt
-          cp ../compile_with_retry.sh .
-          echo "开始尝试编译packages" 
-          bash compile_with_retry.sh "make package/feeds/small8/trojan-plus/compile V=s" "trojanplus.log" 8 "error:|failed|undefined reference" 
-          bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 "error:|failed|undefined reference"
-
       
-      - name: Build image
-        id: build_image
+      - name: Compile packages by feeds
+        id: compile_feeds
         run: |
           cd openwrt
-          cp ../compile_with_retry.sh .
-          LOG_FILE="image.log"
-          (bash compile_with_retry.sh "make -j1 V=s" "image.log" 6 "error:|failed|undefined reference") || make -j1 V=s >> image.log 2>&1
+          # 逐行读取 feeds.conf.default 并编译
+          while IFS= read -r line; do
+            [[ -z "$line" || "$line" =~ ^# ]] && continue
+            FEED=$(echo "$line" | awk '{print $2}')
+            echo "处理 feed: $FEED 于 $(date)"
+            # 提取该 feed 下的软件包
+            PACKAGES=$(ls package/feeds/$FEED 2>/dev/null | grep -v Makefile || true)
+            if [ -z "$PACKAGES" ]; then
+              echo "警告: $FEED 下没有找到软件包，跳过"
+              continue
+            fi
+            for pkg in $PACKAGES; do
+              echo "编译软件包: $pkg 于 $(date)"
+              { make package/$pkg/compile -j1 V=s > packages.log 2>&1 && break;} || {
+                retry_count=$((retry_count + 1))
+                echo "尝试第 $retry_count 次修复..."
+                if grep -q "PKG_VERSION.*error" packages.log; then
+                  echo "Fixing PKG_VERSION formats..."
+                  find . -type f \( -name "Makefile" -o -name "*.mk" \) | while read -r makefile; do
+                    if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                      echo "Found target in $makefile"
+                      sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile" || exit 1
+                      echo "已修改$makefile:"
+                      grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                    fi
+                  done
+                elif grep -q "DEPENDS.*error" packages.log; then
+                  echo "Fixing dependency duplicates..."
+                  find . -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                    makefile="$1"
+                    awk '\''BEGIN { FS = "[[:space:]]+" }
+                    /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                        split($0, deps, " ")
+                        seen_versioned = ""
+                        seen_bare = ""
+                        result = $1
+                        for (i = 2; i <= length(deps); i++) {
+                            dep = deps[i]
+                            if (dep ~ /\$\(/) {
+                                result = result " " dep
+                            }
+                        }
+                        print result
+                    }'\'' "$makefile" > "$makefile.tmp" && mv "$makefile.tmp" "$makefile"
+                  ' sh {} \;
+                fi
+              }
+            done
+            echo "Feed $FEED 编译完成 于 $(date)"
+          done < feeds.conf.default
+          
+      - name: List main packages
+        run: |
+          cd openwrt
+          # Find directories with Makefiles, excluding package/feeds/
+          find package/ -type d -name src -prune -o -type f -name Makefile -not -path 'package/feeds/*' -exec dirname {} \; > main_packages.txt
+          echo "Main packages to compile:"
+          cat main_packages.txt
+      
+      - name: Compile main packages
+        id: main_packages
+        run: |
+          cd openwrt
+          while read -r pkg; do
+            echo "编译 $pkg at $(date)"
+            # Compile each package individually, redirect output to a log file
+            { make $pkg/compile -j1 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || {
+              echo "编译 $pkg 失败，查看编译此包时的日志"
+              cat "$pkg.log"
+              }
+          done < main_packages.txt
+      
           
       - name: 查看日志结尾300行
         if: always()
@@ -166,30 +225,14 @@ jobs:
           elif [ "${{ steps.compile_kernel.outcome }}" = "failure" ]; then             
             echo "Compile kernel failed. Showing last 300 lines of kernel.log:"             
             tail -300 kernel.log           
-          elif [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
-            echo "Compile packages failed. Showing last 300 lines of packages.log:"             
-            tail -300 packages.log  
-          elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
-            echo "Build image failed. Showing last 300 lines of image.log:"             
-            tail -300 image.log           
+          elif [ "${{ steps.main_packages.outcome }}" = "failure" ]; then             
+            echo "Compile feeds failed. Showing last 300 lines of packages.log:"             
+            echo "去上一步查看报错"
           else             
             echo "All steps completed successfully. No log to show."           
           fi 
-      - name: Check for .bin file after initial compilation
-        id: check_bin_initial
-        run: |
-          if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
-            echo "BIN_EXISTS=true" >> $GITHUB_OUTPUT
-          else
-            echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
-            if [ -d "openwrt/bin/targets" ]; then
-              tree openwrt/bin/targets/
-            else
-              echo "Directory openwrt/bin/targets/ does not exist."
-            fi
-          fi
           
-          
+     
       - name: 归档
         run: |
           tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
