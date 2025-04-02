@@ -50,16 +50,16 @@ def mega_login(username, password):
 
 def mega_ensure_folder(folder):
     # 尝试列出目标文件夹
-    result = subprocess.run(["mega-ls", f"mega:/{folder}"],
+    result = subprocess.run(["mega-ls", f"{folder}"],
                             capture_output=True, text=True)
     if result.returncode != 0:
         print(f"文件夹 '{folder}' 不存在，正在创建...")
         # 增加 -p 参数以递归创建目录
-        result = subprocess.run(["mega-mkdir", "-p", f"mega:/{folder}"],
+        result = subprocess.run(["mega-mkdir", "-p", f"{folder}"],
                                 capture_output=True, text=True)
         if result.returncode != 0:
             # 再次检查是否创建成功
-            check = subprocess.run(["mega-ls", f"mega:/{folder}"],
+            check = subprocess.run(["mega-ls", f"{folder}"],
                                     capture_output=True, text=True)
             if check.returncode == 0:
                 print(f"文件夹 '{folder}' 已存在（创建过程中可能返回错误码），继续操作。")
@@ -75,14 +75,14 @@ def mega_ensure_folder(folder):
 
 
 def mega_remove_file_if_exists(folder, filename):
-    result = subprocess.run(["mega-ls", f"mega:/{folder}"],
+    result = subprocess.run(["mega-ls", f"{folder}"],
                             capture_output=True, text=True)
     if result.returncode != 0:
         print("无法列出文件夹内容:", result.stderr)
         sys.exit(1)
     if filename in result.stdout:
         print(f"检测到同名文件 '{filename}'，正在删除...")
-        result = subprocess.run(["mega-rm", f"mega:/{folder}/{filename}"],
+        result = subprocess.run(["mega-rm", f"{folder}/{filename}"],
                                 capture_output=True, text=True)
         if result.returncode != 0:
             print("删除文件失败:", result.stderr)
@@ -95,7 +95,7 @@ def mega_upload_file(folder, local_file):
     if not os.path.exists(local_file):
         raise FileNotFoundError(f"本地文件 {local_file} 不存在")
     print(f"开始上传文件: {local_file} 到文件夹: {folder}")
-    result = subprocess.run(["mega-put", local_file, f"mega:/{folder}"],
+    result = subprocess.run(["mega-put", local_file, f"{folder}"],
                             capture_output=True, text=True)
     if result.returncode != 0:
         print("上传过程中出错:", result.stderr)
