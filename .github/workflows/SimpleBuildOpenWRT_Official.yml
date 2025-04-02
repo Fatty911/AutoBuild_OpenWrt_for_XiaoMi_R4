@@ -87,7 +87,7 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           echo "开始尝试编译packages" 
-          bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 "error:|failed|undefined reference" 
+          bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
 
 
       
@@ -97,7 +97,7 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           LOG_FILE="image.log"
-          bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 "error:|failed|undefined reference"
+          bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
 
           
           
@@ -150,7 +150,7 @@ jobs:
           fi
 
       - name: Upload firmware
-        if: steps.build_image.conclusion == 'success'
+        if: steps.check_bin_final.conclusion == 'success'
         uses: actions/upload-artifact@master
         with:
           name: openwrt-firmware
