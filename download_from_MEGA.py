@@ -66,23 +66,23 @@ def mega_download_folder(folder, dest_dir="."):
         sys.exit(1)
     
     # 检查远程文件夹是否存在 (and print output for debugging)
-    print(f"Checking remote path: mega:/{folder}")
-    check_folder = subprocess.run(["mega-ls", f"mega:/{folder}"], capture_output=True, text=True)
+    print(f"Checking remote path: {folder}")
+    check_folder = subprocess.run(["mega-ls", f"{folder}"], capture_output=True, text=True)
     if check_folder.returncode != 0:
-        print(f"错误: 远程文件夹 'mega:/{folder}' 可能不存在或访问出错。")
+        print(f"错误: 远程文件夹 '{folder}' 可能不存在或访问出错。")
         print("mega-ls stdout:", check_folder.stdout)
         print("mega-ls stderr:", check_folder.stderr)
         sys.exit(1)
     else:
         # Print contents for verification if needed
-        print(f"远程文件夹 'mega:/{folder}' 存在。内容预览:")
+        print(f"远程文件夹 '{folder}' 存在。内容预览:")
         print(check_folder.stdout.strip()[:500] + "..." if len(check_folder.stdout.strip()) > 500 else check_folder.stdout.strip()) # Print first 500 chars
 
 
     # 执行下载 (with increased verbosity)
-    print(f"开始下载: mega:/{folder} -> {dest_dir} (使用 -vvv 详细模式)")
+    print(f"开始下载: {folder} -> {dest_dir} (使用 -vvv 详细模式)")
     # Use -vvv for maximum verbosity
-    download_command = ["mega-get", "-r", "-vvv", f"mega:/{folder}", dest_dir]
+    download_command = ["mega-get", "-r", "-vvv", f"{folder}", dest_dir]
     print("Executing:", " ".join(download_command)) # Log the command being run
     download = subprocess.run(download_command, capture_output=True, text=True)
 
