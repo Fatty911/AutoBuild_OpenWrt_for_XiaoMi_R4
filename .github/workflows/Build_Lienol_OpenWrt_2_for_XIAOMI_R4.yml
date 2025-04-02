@@ -221,9 +221,18 @@ jobs:
         make -j1 V=s || exit 1
         echo "bin_status=success" >> $GITHUB_ENV
         
+    - name: Check for .bin file after final compilation
+      id: check_bin_final
+      run: |
+        if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+          echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
+        else
+          echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
+        fi    
+        
     - name: Set environment variables
       id: setEnv
-      if: env.bin_status == 'success' 
+      if: env.FINAL_BIN_EXISTS == 'true' 
       run: |
         cd openwrt
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
@@ -241,7 +250,7 @@ jobs:
 
     - name: Upload bin directory
       uses: actions/upload-artifact@master
-      if: steps.setEnv.outputs.set_env_variables == 'true' && env.UPLOAD_BIN_DIR == 'true'
+      if: env.FINAL_BIN_EXISTS == 'true' 
       with:
         name: OpenWrt_${{ env.SOURCE }}_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: |
@@ -250,7 +259,7 @@ jobs:
 
     - name: Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: env.FINAL_BIN_EXISTS == 'true' 
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
@@ -259,7 +268,7 @@ jobs:
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@master
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: senv.FINAL_BIN_EXISTS == 'true' 
       with:
         name: OpenWrt_${{ env.SOURCE }}_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
@@ -267,7 +276,7 @@ jobs:
 
     - name: Generate release tag
       id: generate_release_tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: eenv.FINAL_BIN_EXISTS == 'true' 
       run: |
         echo "release_tag=Lienol_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
@@ -276,7 +285,7 @@ jobs:
     - name: Upload firmware to release
       id: up-release
       uses: softprops/action-gh-release@master
-      if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true'
+      if: steps.generate_release_tag.outputs.release_tag_status == 'success'
       env:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
       with:
@@ -308,13 +317,13 @@ jobs:
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         repository: ${{ github.repository }}
-        retain_days: 10
+        retain_days: 0
         keep_minimum_runs: 2
 
     - name: Delete Older Releases
       uses: dev-drprasad/delete-older-releases@master
       with:
-        keep_latest: 5
+        keep_latest: 3
         delete_tag_pattern: .*${{ env.SOURCE }}.*
       env:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
