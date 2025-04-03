@@ -82,14 +82,15 @@ jobs:
           tar -xzvf ${{ env.SOURCE }}.tar.gz
           echo "解压后执行pwd && ls看看"
           pwd && ls
+          
       - name: Compile packages
         id: compile_packages
         run: |
           cd openwrt
           cp ../compile_with_retry.sh .
           echo "开始尝试编译packages" 
-          bash compile_with_retry.sh "make package/feeds/small8/trojan-plus/compile V=s" "trojanplus.log" 8 "error:|failed|undefined reference" 
-          bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 "error:|failed|undefined reference"
+          bash compile_with_retry.sh "make package/feeds/small8/trojan-plus/compile V=s" "trojanplus.log" 8 
+          bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
 
       
       - name: Build image
@@ -98,7 +99,8 @@ jobs:
           cd openwrt
           cp ../compile_with_retry.sh .
           LOG_FILE="image.log"
-          (bash compile_with_retry.sh "make -j1 V=s" "image.log" 6 "error:|failed|undefined reference") || make -j1 V=s >> image.log 2>&1  
+          bash compile_with_retry.sh "make -j1 V=s" "image.log" 6 
+          
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
@@ -171,7 +173,7 @@ jobs:
             pwd && ls
             cp compile_with_retry.sh openwrt/ 
             cd openwrt
-            bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 "error:|failed|undefined reference" &&  echo "status=success" >> $GITHUB_OUTPUT
+            bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 &&  echo "status=success" >> $GITHUB_OUTPUT
 
           
       - name: Set environment variables
@@ -203,16 +205,17 @@ jobs:
               echo "Renamed $file to $new_file"
             fi
           done
-      - name: 查看日志结尾300行
+          
+      - name: 查看日志结尾200行
         if: always()
         run: |
           cd openwrt      
           if [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
-            echo "Compile packages failed. Showing last 300 lines of packages.log:"             
-            tail -300 packages.log  
+            echo "Compile packages failed. Showing last 200 lines of packages.log:" 
+            tail -200 packages.log  
           elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
             echo "Build image failed. Showing last 300 lines of image.log:"             
-            tail -300 image.log           
+            tail -200 image.log           
           else             
             echo "All steps completed successfully. No log to show."           
           fi 
@@ -228,7 +231,7 @@ jobs:
 
       - name: Organize files
         id: organize
-        if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+        if: steps.rename.conclusion == 'success'
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
@@ -254,8 +257,7 @@ jobs:
 
       - name: Generate release tag
         id: generate_release_tag
-        #if: steps.check_bin.conclusion == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
-        if: env.FINAL_BIN_EXISTS == 'true' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+        if: env.FINAL_BIN_EXISTS == 'true'
         run: |
           echo "release_tag=OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           touch release.txt
@@ -265,7 +267,7 @@ jobs:
       - name: Upload firmware to release
         id: up-release
         uses: softprops/action-gh-release@master
-        if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true'
+        if: steps.generate_release_tag.outputs.release_tag_status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         with:
@@ -297,13 +299,13 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           repository: ${{ github.repository }}
-          retain_days: 1
+          retain_days: 0
           keep_minimum_runs: 2
 
       - name: Delete Older Releases
         uses: dev-drprasad/delete-older-releases@master
         with:
           keep_latest: 3
-          delete_tag_pattern: OpenWRT.org_*
+          delete_tag_pattern: .*${{ env.SOURCE }}.*
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
