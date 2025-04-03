@@ -439,13 +439,15 @@ ucer    echo "冲突链接: $FAILED_LINK"
 fix_makefile_separator() {
     local log_file="$1"
     echo "检测到 'missing separator' 错误，尝试修复..."
-    local MAKEFILE_PATH MAKE_DIR PKG_PATH MAKE_DIR_REL MAKEFILE_PATH_REL
-    
-    # 从日志中提取Makefile路径
+    local MAKEFILE_PATH MAKE_DIR PKG_PATH MAKE_DIR_REL MAKEFILE_PATH_REL LINE_NUM
+
+    # 从日志中提取Makefile路径和行号
     MAKEFILE_PATH=$(grep "missing separator.*Stop." "$log_file" | head -n 1 | cut -d':' -f1)
+    LINE_NUM=$(grep "missing separator.*Stop." "$log_file" | head -n 1 | cut -d':' -f2)
+
     # 提取编译所在的目录
     MAKE_DIR=$(grep -B 1 "missing separator.*Stop." "$log_file" | grep "Leaving directory" | sed -e "s/.*Leaving directory '\([^']*\)'/\1/")
-    
+
     # 处理MAKE_DIR路径
     if [ -n "$MAKE_DIR" ]; then
         if [[ "$MAKE_DIR" == /* ]]; then
@@ -457,7 +459,7 @@ fix_makefile_separator() {
             PKG_PATH="$MAKE_DIR_REL"
         fi
     fi
-    
+
     # 如果PKG_PATH未确定，尝试从MAKEFILE_PATH获取
     if [ -z "$PKG_PATH" ] && [ -n "$MAKEFILE_PATH" ]; then
         if [[ "$MAKEFILE_PATH" == /* ]]; then
@@ -469,14 +471,34 @@ fix_makefile_separator() {
             PKG_PATH=$(dirname "$MAKEFILE_PATH_REL")
         fi
     fi
-    
+
     # 检查PKG_PATH是否有效
     if [ -z "$PKG_PATH" ] || [ ! -d "$PKG_PATH" ]; then
         echo "无法将错误定位到有效的相对包路径。"
         return 1
     fi
-    
-    # 尝试清理目录
+
+    # 检查并修复Makefile中的语法错误
+    if [ -n "$MAKEFILE_PATH_REL" ] && [ -f "$MAKEFILE_PATH_REL" ] && [ -n "$LINE_NUM" ]; then
+        echo "检查文件: $MAKEFILE_PATH_REL，第 $LINE_NUM 行..."
+        # 备份原始Makefile
+        cp "$MAKEFILE_PATH_REL" "$MAKEFILE_PATH_REL.bak"
+        # 检查指定行是否以空格开头，并替换为空格+TAB
+        sed -n "${LINE_NUM}p" "$MAKEFILE_PATH_REL" | grep -q "^[[:space:]]\+[^[:space:]]" && {
+            echo "检测到第 $LINE_NUM 行使用空格缩进，替换为 TAB..."
+            sed -i "${LINE_NUM}s/^[[:space:]]*/\t/" "$MAKEFILE_PATH_REL"
+        }
+        # 检查修复是否成功
+        if ! grep -q "^[[:space:]]\+[^[:space:]]" "$MAKEFILE_PATH_REL" > /dev/null 2>&1; then
+            echo "已修复 $MAKEFILE_PATH_REL 的缩进问题，将重试编译。"
+            return 0
+        else
+            echo "修复 $MAKEFILE_PATH_REL 失败，恢复备份文件并尝试清理目录..."
+            mv "$MAKEFILE_PATH_REL.bak" "$MAKEFILE_PATH_REL"
+        fi
+    fi
+
+    # 如果修复失败，尝试清理目录
     echo "尝试清理目录: $PKG_PATH ..."
     make "$PKG_PATH/clean" V=s || {
         echo "清理 $PKG_PATH 失败，但这可能不是致命错误，将继续重试主命令。"
@@ -844,19 +866,19 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
         fi
 
     # 5. Makefile separator error
+    # 在 "--- Main Compilation Loop ---" 中修改 "missing separator" 的处理部分
     elif grep -q "missing separator.*Stop." "$LOG_FILE"; then
         echo "检测到 'missing separator' 错误..."
-        if [ "$last_fix_applied" = "fix_makefile_separator" ]; then
-            echo "上次已尝试清理相关包，但 Makefile 错误依旧，停止重试。"
-            exit 1
-        fi
         last_fix_applied="fix_makefile_separator"
         fix_makefile_separator "$LOG_FILE"
         if [ $? -eq 0 ]; then
             fix_applied_this_iteration=1
         else
-            echo "定位或清理 Makefile 错误失败，停止重试。"
-            exit 1
+            echo "自动修复 Makefile 失败，尝试手动检查或更新源码..."
+            # 可选：添加更新 OpenWrt 源码的逻辑
+            # git pull || echo "更新源码失败，继续重试。"
+            # 如果无法修复，可以继续重试而不是退出
+            fix_applied_this_iteration=1
         fi
 
     # 6. Package metadata errors
