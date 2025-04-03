@@ -435,41 +435,48 @@ ucer    echo "冲突链接: $FAILED_LINK"
 }
 
 ### Fix Makefile "missing separator" error
+### Fix Makefile "missing separator" error
 fix_makefile_separator() {
     local log_file="$1"
     echo "检测到 'missing separator' 错误，尝试修复..."
     local MAKEFILE_PATH MAKE_DIR PKG_PATH MAKE_DIR_REL MAKEFILE_PATH_REL
+    
+    # 从日志中提取Makefile路径
     MAKEFILE_PATH=$(grep "missing separator.*Stop." "$log_file" | head -n 1 | cut -d':' -f1)
+    # 提取编译所在的目录
     MAKE_DIR=$(grep -B 1 "missing separator.*Stop." "$log_file" | grep "Leaving directory" | sed -e "s/.*Leaving directory '\([^']*\)'/\1/")
-    PKG_PATH=""
+    
+    # 处理MAKE_DIR路径
     if [ -n "$MAKE_DIR" ]; then
-         if [[ "$MAKE_DIR" == /* ]]; then
-             MAKE_DIR_REL=$(echo "$MAKE_DIR" | sed 's|^/home/runner/work/[^/]*/[^/]*/openwrt/||' | sed 's|^/github/workspace/openwrt/||' | sed 's|^/mnt/openwrt/||')
-         else
-             MAKE_DIR_REL="$MAKE_DIR"
-         fi
-         if [ -d "$MAKE_DIR_REL" ] && ( [[ "$MAKE_DIR_REL" == package/* ]] || [[ "$MAKE_DIR_REL" == feeds/* ]] || [[ "$MAKE_DIR_REL" == tools/* ]] || [[ "$MAKE_DIR_REL" == target/linux/* ]] ); then
-              PKG_PATH="$MAKE_DIR_REL"
-         fi
+        if [[ "$MAKE_DIR" == /* ]]; then
+            MAKE_DIR_REL=$(echo "$MAKE_DIR" | sed 's|^/home/runner/work/[^/]*/[^/]*/openwrt/||' | sed 's|^/github/workspace/openwrt/||' | sed 's|^/mnt/openwrt/||')
+        else
+            MAKE_DIR_REL="$MAKE_DIR"
+        fi
+        if [ -d "$MAKE_DIR_REL" ]; then
+            PKG_PATH="$MAKE_DIR_REL"
+        fi
     fi
+    
+    # 如果PKG_PATH未确定，尝试从MAKEFILE_PATH获取
     if [ -z "$PKG_PATH" ] && [ -n "$MAKEFILE_PATH" ]; then
         if [[ "$MAKEFILE_PATH" == /* ]]; then
-             MAKEFILE_PATH_REL=$(echo "$MAKEFILE_PATH" | sed 's|^/home/runner/work/[^/]*/[^/]*/openwrt/||' | sed 's|^/github/workspace/openwrt/||' | sed 's|^/mnt/openwrt/||')
+            MAKEFILE_PATH_REL=$(echo "$MAKEFILE_PATH" | sed 's|^/home/runner/work/[^/]*/[^/]*/openwrt/||' | sed 's|^/github/workspace/openwrt/||' | sed 's|^/mnt/openwrt/||')
         else
-             MAKEFILE_PATH_REL="$MAKEFILE_PATH"
+            MAKEFILE_PATH_REL="$MAKEFILE_PATH"
         fi
         if [ -f "$MAKEFILE_PATH_REL" ]; then
             PKG_PATH=$(dirname "$MAKEFILE_PATH_REL")
         fi
     fi
+    
+    # 检查PKG_PATH是否有效
     if [ -z "$PKG_PATH" ] || [ ! -d "$PKG_PATH" ]; then
-         echo "无法将错误定位到有效的相对包路径。"
-         return 1
-    fi
-    if [[ "$PKG_PATH" == "." ]] || [[ "$PKG_PATH" == "include" ]] || [[ "$PKG_PATH" == "scripts" ]] || [[ "$PKG_PATH" == "toolchain" ]] || [[ "$PKG_PATH" == "target" ]] || [[ "$PKG_PATH" == "tools" && "$(basename $PKG_PATH)" == "tools" ]]; then
-        echo "检测到错误在核心目录 ($PKG_PATH)，自动清理可能不安全，跳过。"
+        echo "无法将错误定位到有效的相对包路径。"
         return 1
     fi
+    
+    # 尝试清理目录
     echo "尝试清理目录: $PKG_PATH ..."
     make "$PKG_PATH/clean" V=s || {
         echo "清理 $PKG_PATH 失败，但这可能不是致命错误，将继续重试主命令。"
