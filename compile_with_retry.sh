@@ -329,77 +329,108 @@ fix_depends() {
 
 
 ### Fix dependency format
+### Fix dependency format (Using Temp Awk File)
 fix_dependency_format() {
-    echo "尝试修复 Makefile 中的依赖格式..."
+    echo "尝试修复 Makefile 中的依赖格式 (使用临时文件)..."
     local flag_file=".fix_depformat_changed"
+    local awk_script_file
+    awk_script_file=$(mktemp /tmp/fix_dep_format_awk.XXXXXX)
+    if [ -z "$awk_script_file" ]; then
+        echo "错误: 无法创建临时 awk 脚本文件" >&2
+        return 1
+    fi
+    # Ensure cleanup even if the script exits unexpectedly
+    trap 'rm -f "$awk_script_file"' EXIT HUP INT QUIT TERM
+
+    # Define the awk script content and write it to the temp file
+    # Note: No extra shell quoting needed for the script content itself here.
+    cat > "$awk_script_file" << 'EOF'
+BEGIN { FS="[[:space:]]+"; OFS=" "; changed_file=0 }
+/^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|PKG_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=/ {
+    original_line = $0
+    line_changed = 0
+    delete seen
+    prefix = $1
+    current_deps = ""
+    # Rebuild dependency string, handling potential comments
+    line = $0
+    sub(/^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|PKG_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=[[:space:]]*/, "", line)
+    dep_part = line
+    comment_part = ""
+    if (index(line, "#") > 0) {
+        dep_part = substr(line, 1, index(line, "#") - 1)
+        comment_part = substr(line, index(line, "#"))
+    }
+    gsub(/^[[:space:]]+|[[:space:]]+$/, "", dep_part); # Trim whitespace from dep part
+
+    if (dep_part != "") {
+        split(dep_part, deps, /[[:space:]]+/) # Split deps by space
+        new_deps_str = ""
+        for (i=1; i<=length(deps); i++) {
+            dep = deps[i]
+            if (dep == "") continue
+            original_dep = dep
+            # Remove pkg-release suffix like -1, -10 from version constraints
+            gsub(/(>=|<=|==)([0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9_.]+)?)-[0-9]+$/, "\\1\\2", dep)
+            # Remove spaces after + sign, e.g. "+ lib C" -> "+libC" (though spaces usually separate deps)
+            # This might be too aggressive, let us focus on the version suffix for now.
+            # gsub(/^\+[[:space:]]+/, "+", dep) # Be careful with this
+
+            # Check if modification happened
+            # Using braces for clarity and safety in awk
+            if (original_dep != dep) {
+                line_changed = 1
+            }
+
+            # Add to new string if not already seen (basic duplicate check within the line)
+            if (!seen[dep]++) {
+                 if (new_deps_str != "") new_deps_str = new_deps_str " "
+                new_deps_str = new_deps_str dep
+            }
+        }
+
+        new_line = prefix (new_deps_str == "" ? "" : " " new_deps_str)
+        if (comment_part != "") {
+            new_line = new_line " " comment_part
+        }
+        gsub(/[[:space:]]+$/, "", new_line) # Trim trailing space
+
+        original_line_trimmed = original_line
+        gsub(/[[:space:]]+$/, "", original_line_trimmed)
+
+        if (new_line != original_line_trimmed) {
+             $0 = new_line # Replace the current line with the modified one
+             changed_file=1
+        }
+    }
+}
+{ print } # Print the (potentially modified) line or original line
+END { exit !changed_file } # Exit 0 if changes were made
+EOF
+
+    # Check if the temp file was created successfully
+    if [ ! -s "$awk_script_file" ]; then
+         echo "错误: 未能成功写入临时 awk 脚本文件 $awk_script_file" >&2
+         rm -f "$awk_script_file"
+         trap - EXIT HUP INT QUIT TERM # Clear trap
+         return 1
+    fi
+
+    # Now use find with the awk script file
     rm -f "$flag_file"
     find . -type f \( -name "Makefile" -o -name "*.mk" \) -path "./build_dir/*" -prune -o -path "./staging_dir/*" -prune -o -exec sh -c '
         makefile="$1"
         flag_file_path="$2"
+        awk_script_path="$3" # Pass the temp script path to sh -c
+
         # Skip non-Makefile files more reliably
         if ! head -n 30 "$makefile" 2>/dev/null | grep -qE "^\s*include.*\/(package|buildinfo|kernel)\.mk"; then
              exit 0
         fi
         cp "$makefile" "$makefile.bak"
-        awk '\''BEGIN { FS="[[:space:]]+"; OFS=" "; changed_file=0 }
-         /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|PKG_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=/ {
-            original_line = $0
-            line_changed = 0
-            delete seen
-            prefix = $1
-            current_deps = ""
-            # Rebuild dependency string, handling potential comments
-            line = $0
-            sub(/^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|PKG_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS)\+?=[[:space:]]*/, "", line)
-            dep_part = line
-            comment_part = ""
-            if (index(line, "#") > 0) {
-                dep_part = substr(line, 1, index(line, "#") - 1)
-                comment_part = substr(line, index(line, "#"))
-            }
-            gsub(/^[[:space:]]+|[[:space:]]+$/, "", dep_part); # Trim whitespace from dep part
 
-            if (dep_part != "") {
-                split(dep_part, deps, /[[:space:]]+/) # Split deps by space
-                new_deps_str = ""
-                for (i=1; i<=length(deps); i++) {
-                    dep = deps[i]
-                    if (dep == "") continue
-                    original_dep = dep
-                    # Remove pkg-release suffix like -1, -10 from version constraints
-                    gsub(/(>=|<=|==)([0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9_.]+)?)-[0-9]+$/, "\\1\\2", dep)
-                    # Remove spaces after + sign, e.g. "+ lib C" -> "+libC" (though spaces usually separate deps)
-                    # This might be too aggressive, let's focus on the version suffix for now.
-                    # gsub(/^\+[[:space:]]+/, "+", dep) # Be careful with this
-
-                    # Check if modification happened
-                    if (original_dep != dep) line_changed=1 
-
-                    # Add to new string if not already seen (basic duplicate check within the line)
-                    if (!seen[dep]++) {
-                         if (new_deps_str != "") new_deps_str = new_deps_str " "
-                        new_deps_str = new_deps_str dep
-                    }
-                }
-
-                new_line = prefix (new_deps_str == "" ? "" : " " new_deps_str)
-                if (comment_part != "") {
-                    new_line = new_line " " comment_part
-                }
-                gsub(/[[:space:]]+$/, "", new_line) # Trim trailing space
-
-                original_line_trimmed = original_line
-                gsub(/[[:space:]]+$/, "", original_line_trimmed)
-
-                if (new_line != original_line_trimmed) {
-                     $0 = new_line # Replace the current line with the modified one
-                     changed_file=1
-                }
-            }
-        }
-        { print } # Print the (potentially modified) line or original line
-        END { exit !changed_file } # Exit 0 if changes were made
-        '\'' "$makefile" > "$makefile.tmp"
+        # Execute awk using the script file
+        awk -f "$awk_script_path" "$makefile" > "$makefile.tmp"
         awk_status=$?
 
         if [ $awk_status -eq 0 ]; then # Changes were made by awk
@@ -422,12 +453,22 @@ fix_dependency_format() {
              rm "$makefile.tmp"
              mv "$makefile.bak" "$makefile" # Restore original
         fi
-    ' _ {} "$flag_file" \;
+    ' _ {} "$flag_file" "$awk_script_file" \; # Pass flag_file and awk_script_file as arguments
+
+    local find_status=$? # Capture find's exit status (optional)
+
+    # Clean up the temporary file
+    rm -f "$awk_script_file"
+    trap - EXIT HUP INT QUIT TERM # Clear the trap
 
     if [ -f "$flag_file" ]; then
         rm -f "$flag_file"
         return 0
     else
+        # Check find's status too, perhaps?
+        if [ $find_status -ne 0 ]; then
+             echo "警告: find 命令在 fix_dependency_format 中可能遇到了错误。" >&2
+        fi
         return 1
     fi
 }
