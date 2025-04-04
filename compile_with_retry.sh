@@ -373,7 +373,7 @@ fix_dependency_format() {
                     # gsub(/^\+[[:space:]]+/, "+", dep) # Be careful with this
 
                     # Check if modification happened
-                    if (original_dep != dep) { line_changed=1 }
+                    if (original_dep != dep) line_changed=1 
 
                     # Add to new string if not already seen (basic duplicate check within the line)
                     if (!seen[dep]++) {
