@@ -802,13 +802,14 @@ fix_makefile_separator() {
 
 ### Fix batman-adv 'struct br_ip' dst error
 # (Keep the existing fix_batman_br_ip_dst function)
+### Fix batman-adv 'struct br_ip' dst error (REVISED for IPV6_ADDR_MC_SCOPE)
 fix_batman_br_ip_dst() {
     local log_file="$1"
-    echo "尝试修复 batman-adv 的 'struct br_ip has no member named dst' 错误..."
+    echo "尝试修复 batman-adv 的 'struct br_ip has no member named dst' (特别针对 IPV6_ADDR_MC_SCOPE)..."
 
-    local multicast_file
+    local multicast_file patch_applied=0
+    # Find the multicast.c file (keep existing find logic)
     multicast_file=$(grep -oE 'build_dir/target-[^/]+/linux-[^/]+/(linux-[^/]+|batman-adv-[^/]+)/net/batman-adv/multicast\.c' "$log_file" | head -n 1)
-
     if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
         echo "无法从日志中定位 multicast.c 文件，尝试动态查找..."
         multicast_file=$(find build_dir -type f \( -path "*/batman-adv-*/net/batman-adv/multicast.c" -o -path "*/linux-*/net/batman-adv/multicast.c" \) -print -quit)
@@ -821,27 +822,124 @@ fix_batman_br_ip_dst() {
 
     echo "正在修补 $multicast_file ..."
     cp "$multicast_file" "$multicast_file.bak"
+
+    # --- Specific Patch for IPV6_ADDR_MC_SCOPE ---
+    # Use sed with extended regex (-E) and capture groups to replace the argument
+    # Match: IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr.dst.ip6)
+    # Replace with: IPV6_ADDR_MC_SCOPE(&br_ip_entry->u.ip6)
+    # Using | as delimiter to avoid escaping /
+    sed -i -E 's|IPV6_ADDR_MC_SCOPE\(&br_ip_entry->addr\.dst\.ip6\)|IPV6_ADDR_MC_SCOPE\(&br_ip_entry->u.ip6\)|g' "$multicast_file"
+    if grep -q 'IPV6_ADDR_MC_SCOPE(&br_ip_entry->u.ip6)' "$multicast_file"; then
+        echo "成功修补 $multicast_file 中 IPV6_ADDR_MC_SCOPE 的调用。"
+        patch_applied=1
+    else
+        echo "警告: 未能在 $multicast_file 中应用 IPV6_ADDR_MC_SCOPE 的补丁。"
+    fi
+
+    # --- General Patch (as fallback or additional fix if needed) ---
+    # Replace other instances if they exist
     sed -i 's/br_ip_entry->addr\.dst\.ip6/br_ip_entry->u.ip6/g' "$multicast_file"
     sed -i 's/br_ip_entry->addr\.dst\.ip4/br_ip_entry->u.ip4/g' "$multicast_file"
-
-    if grep -q 'br_ip_entry->u\.ip6' "$multicast_file" || grep -q 'br_ip_entry->u\.ip4' "$multicast_file"; then
-        if ! grep -q 'br_ip_entry->addr\.dst\.ip6' "$multicast_file" && ! grep -q 'br_ip_entry->addr\.dst\.ip4' "$multicast_file" ; then
-            echo "已成功修补 $multicast_file，将重试编译。"
-            rm "$multicast_file.bak"
-            return 0
-        else
-             echo "警告: $multicast_file 中仍然存在 addr.dst 模式，修补可能不完整。"
-             rm "$multicast_file.bak"
-             return 0
-        fi
+    # Check if the *problematic* pattern is gone (more reliable check)
+    if ! grep -q 'br_ip_entry->addr\.dst\.ip6' "$multicast_file" && ! grep -q 'br_ip_entry->addr\.dst\.ip4' "$multicast_file" ; then
+        echo "常规 br_ip_entry->addr.dst.* 替换已应用或无需应用。"
+        # If the specific patch didn't apply, but the general one did, still count as success
+        if [ $patch_applied -eq 0 ]; then patch_applied=1; fi
     else
-        echo "修补 $multicast_file 失败，未找到 'u.ip6' 或 'u.ip4'，恢复备份文件。"
+         echo "警告: $multicast_file 中仍然存在 addr.dst 模式，修补可能不完整。"
+    fi
+
+
+    if [ $patch_applied -eq 1 ]; then
+        echo "修补完成，将重试编译。"
+        rm "$multicast_file.bak"
+        return 0
+    else
+        echo "修补 $multicast_file 失败，恢复备份文件。"
         mv "$multicast_file.bak" "$multicast_file"
         return 1
     fi
 }
 
+### Disable -Werror specifically for batman-adv package
+fix_batman_disable_werror() {
+    local batman_makefile="package/feeds/$FEED_ROUTING_NAME/batman-adv/Makefile"
+    local kmod_makefile="package/kernel/batman-adv/Makefile" # Check if kmod is separate
 
+    echo "尝试在 batman-adv Makefile 中禁用 -Werror..."
+    local modified=0
+
+    # Modify userspace package Makefile
+    if [ -f "$batman_makefile" ]; then
+        # Check if already disabled
+        if ! grep -q "filter.*Werror" "$batman_makefile"; then
+            echo "正在修改 $batman_makefile..."
+            # Add a line to filter out -Werror from CFLAGS before including package.mk
+            # Using awk for safer insertion before a specific line
+            awk '
+            /include \.\.\/\.\.\/package.mk/ {
+              print ""
+              print "# Disable -Werror for this package"
+              print "TARGET_CFLAGS:=$(filter-out -Werror,$(TARGET_CFLAGS))"
+              print ""
+            }
+            { print }
+            ' "$batman_makefile" > "$batman_makefile.tmp"
+
+            if [ $? -eq 0 ] && [ -s "$batman_makefile.tmp" ]; then
+                 mv "$batman_makefile.tmp" "$batman_makefile"
+                 echo "已在 $batman_makefile 中添加 TARGET_CFLAGS 过滤。"
+                 modified=1
+            else
+                 echo "错误: 使用 awk 修改 $batman_makefile 失败。"
+                 rm -f "$batman_makefile.tmp"
+            fi
+        else
+            echo "$batman_makefile 中似乎已禁用 -Werror。"
+            modified=1 # Assume it's okay
+        fi
+    else
+        echo "未找到 $batman_makefile。"
+    fi
+
+    # Modify kernel module Makefile (if it exists separately)
+    if [ -f "$kmod_makefile" ]; then
+         if ! grep -q "filter.*Werror" "$kmod_makefile"; then
+            echo "正在修改 $kmod_makefile..."
+            # Kernel modules might use different includes, target $(KERNEL_MAKE)
+            # A safer approach might be to add it near CFLAGS definition if it exists
+             # Let's try adding to EXTRA_CFLAGS common in kernel modules
+             if grep -q 'EXTRA_CFLAGS +=' "$kmod_makefile"; then
+                 sed -i.bak '/EXTRA_CFLAGS +=/a EXTRA_CFLAGS:=$(filter-out -Werror,$(EXTRA_CFLAGS))' "$kmod_makefile" && rm "$kmod_makefile.bak"
+                 echo "已在 $kmod_makefile 中尝试添加 EXTRA_CFLAGS 过滤。"
+                 modified=1
+             else
+                 # Add the line near the top as a fallback
+                 sed -i.bak '1 a \\n# Disable -Werror for this package\nEXTRA_CFLAGS:=$(filter-out -Werror,$(EXTRA_CFLAGS))\n' "$kmod_makefile" && rm "$kmod_makefile.bak"
+                 echo "已在 $kmod_makefile 顶部尝试添加 EXTRA_CFLAGS 过滤。"
+                 modified=1
+             fi
+         else
+             echo "$kmod_makefile 中似乎已禁用 -Werror。"
+             modified=1
+         fi
+    else
+         echo "未找到单独的 kmod-batman-adv Makefile ($kmod_makefile)。"
+         # If the main Makefile handles both, the first modification might be enough
+    fi
+
+
+    if [ $modified -eq 1 ]; then
+        # Clean the package to ensure new flags are used
+        echo "清理 batman-adv 以应用新的编译标志..."
+        make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
+        [ -f "$kmod_makefile" ] && make "$kmod_makefile/clean" DIRCLEAN=1 V=s || echo "警告: 清理 kmod-batman-adv 失败。"
+        return 0
+    else
+        echo "无法修改任何 Makefile 来禁用 -Werror。"
+        return 1
+    fi
+}
 ### Fix batman-adv tasklet_setup symbol conflict
 # (Keep the existing fix_batman_patch_tasklet function)
 fix_batman_patch_tasklet() {
@@ -1088,94 +1186,114 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     # --- Error Detection and Fix Logic (Order Matters) ---
 
     # 1. Batman-adv C compile error due to -Werror
-    if grep -q "cc1: some warnings being treated as errors" "$LOG_FILE" && grep -q -E "(batman-adv|net/batman-adv).*(multicast\.c|multicast\.o)" "$LOG_FILE"; then
-        echo "检测到 batman-adv C 编译警告被视为错误 (-Werror)..."
-        if [ "$batman_feed_switched" -eq 0 ]; then
+    if grep -q "cc1: some warnings being treated as errors" "$LOG_FILE" && grep -q -E "struct br_ip.*has no member named|batman-adv.*(multicast\.c|multicast\.o)" "$LOG_FILE"; then
+        echo "检测到 batman-adv struct 错误和 -Werror 同时存在..."
+
+        # Step 1: Try the specific patch first
+        if [ "$batman_br_ip_patched" -eq 0 ]; then
+            echo "尝试修补 multicast.c..."
+            last_fix_applied="fix_batman_br_ip_dst_werror"
+            if fix_batman_br_ip_dst "$LOG_FILE"; then
+                fix_applied_this_iteration=1
+                batman_br_ip_patched=1 # Mark as patched
+            else
+                echo "修补 multicast.c 失败。将尝试切换 feed。"
+                 batman_br_ip_patched=1 # Mark patch as attempted even if failed
+            fi
+        fi
+
+        # Step 2: If patch failed or error persists, try switching feed
+        if [ $fix_applied_this_iteration -eq 0 ] && [ "$batman_feed_switched" -eq 0 ]; then
             echo "尝试切换整个 routing feed 到已知良好 commit..."
             last_fix_applied="fix_batman_switch_feed_werror"
             if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
                 fix_applied_this_iteration=1
                 batman_feed_switched=1 # Mark feed as switched
             else
-                echo "切换 routing feed 失败。下次将跳过此修复。"
+                echo "切换 routing feed 失败。下次将尝试禁用 Werror。"
                 batman_feed_switched=1 # Mark as attempted even if failed
             fi
-        else
-            echo "已尝试切换 routing feed，但 -Werror 问题仍然存在。"
-            echo "建议: 手动运行 'make menuconfig' -> Global build settings -> 取消选中 'Compile with WERROR' 后重试。"
-            # Don't apply another fix, let retry potentially fail or hit another error
-             last_fix_applied="fix_batman_werror_manual_suggest"
         fi
 
-    # 2. Batman-adv 'struct br_ip' dst error (or similar struct member errors)
-    # Check this *after* -Werror, as switching feed might fix both
+        # Step 3: If feed switch failed or error persists, try disabling Werror locally
+         if [ $fix_applied_this_iteration -eq 0 ]; then
+              echo "修补和切换 Feed 后错误仍然存在，尝试在包 Makefile 中禁用 -Werror..."
+              last_fix_applied="fix_batman_disable_werror"
+              if fix_batman_disable_werror; then
+                  fix_applied_this_iteration=1
+              else
+                  echo "无法在 Makefile 中禁用 -Werror。放弃修复 batman-adv。"
+                  cat "$LOG_FILE"
+                  exit 1
+              fi
+         fi
+
+    # 2. Batman-adv 'struct br_ip' dst error (WITHOUT -Werror message, less likely now)
     elif grep -q "struct br_ip.*has no member named" "$LOG_FILE" && grep -q -E "(batman-adv|net/batman-adv).*multicast\.c" "$LOG_FILE"; then
-        echo "检测到 batman-adv struct member 错误 (可能是 br_ip->dst)..."
-        # Prioritize patching if not done yet
+        echo "检测到 batman-adv struct member 错误 (无 -Werror)..."
+        # Try patch first
         if [ "$batman_br_ip_patched" -eq 0 ]; then
-            last_fix_applied="fix_batman_br_ip_dst"
+            last_fix_applied="fix_batman_br_ip_dst_no_werror"
             if fix_batman_br_ip_dst "$LOG_FILE"; then
                 fix_applied_this_iteration=1
-                batman_br_ip_patched=1 # Mark as patched
+                batman_br_ip_patched=1
             else
-                echo "修补 batman-adv br_ip dst 失败。将尝试切换 feed (如果尚未进行)。"
-                # Fall through to feed switching logic if patch failed
+                echo "修补 multicast.c 失败。将尝试切换 feed。"
+                 batman_br_ip_patched=1
             fi
         fi
-         # If patching didn't work or was already done, try switching feed
-        if [ $fix_applied_this_iteration -eq 0 ]; then
-             if [ "$batman_feed_switched" -eq 0 ]; then
-                echo "尝试切换整个 routing feed 到已知良好 commit..."
-                last_fix_applied="fix_batman_switch_feed_br_ip"
-                if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
-                    fix_applied_this_iteration=1
-                    batman_feed_switched=1
-                else
-                    echo "切换 routing feed 失败，无法自动修复 batman-adv struct 错误。"
-                     batman_feed_switched=1 # Mark as tried
-                     # Consider exiting if this fails? For now, let it retry.
-                     # exit 1
-                fi
+         # Then try switching feed
+        if [ $fix_applied_this_iteration -eq 0 ] && [ "$batman_feed_switched" -eq 0 ]; then
+             echo "尝试切换整个 routing feed..."
+             last_fix_applied="fix_batman_switch_feed_br_ip"
+             if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
+                 fix_applied_this_iteration=1
+                 batman_feed_switched=1
              else
-                echo "已尝试切换 batman-adv feed，但 struct 错误仍然存在，放弃。"
-                cat "$LOG_FILE"
-                exit 1
+                 echo "切换 routing feed 失败。"
+                 batman_feed_switched=1
              fi
         fi
+         # Give up if both failed
+         if [ $fix_applied_this_iteration -eq 0 ]; then
+              echo "已尝试修补和切换 feed，但 struct 错误仍然存在，放弃。"
+              cat "$LOG_FILE"
+              exit 1
+         fi
 
-    # 3. Batman-adv tasklet_setup error
+    # 3. Batman-adv tasklet_setup error (Keep existing logic, but prioritize feed switch)
     elif grep -q 'undefined reference to .*tasklet_setup' "$LOG_FILE" && grep -q -B 10 -A 10 -E 'Entering directory.*(batman-adv|backports|compat)' "$LOG_FILE"; then
         echo "检测到 batman-adv 的 'tasklet_setup' 符号错误..."
-        # Prioritize patching
-        if [ "$batman_tasklet_patched" -eq 0 ]; then
+        # Try feed switch first for this error now
+        if [ "$batman_feed_switched" -eq 0 ]; then
+             echo "尝试切换整个 routing feed..."
+             last_fix_applied="fix_batman_switch_feed_tasklet"
+            if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
+                fix_applied_this_iteration=1
+                batman_feed_switched=1
+            else
+                echo "切换 routing feed 失败。将尝试修补 backports。"
+                batman_feed_switched=1 # Mark as tried
+            fi
+        fi
+        # If feed switch failed or already done, try patching backports
+        if [ $fix_applied_this_iteration -eq 0 ] && [ "$batman_tasklet_patched" -eq 0 ]; then
             last_fix_applied="fix_batman_tasklet"
             if fix_batman_patch_tasklet "$LOG_FILE"; then
                 fix_applied_this_iteration=1
                 batman_tasklet_patched=1
             else
-                echo "修复 batman-adv tasklet 失败。将尝试切换 feed (如果尚未进行)。"
-                # Fall through
-            fi
-        fi
-        # If patching failed or already done, switch feed
-        if [ $fix_applied_this_iteration -eq 0 ]; then
-            if [ "$batman_feed_switched" -eq 0 ]; then
-                 echo "尝试切换整个 routing feed 到已知良好 commit..."
-                 last_fix_applied="fix_batman_switch_feed_tasklet"
-                if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
-                    fix_applied_this_iteration=1
-                    batman_feed_switched=1
-                else
-                    echo "切换 routing feed 失败，无法自动修复 batman-adv tasklet 错误。"
-                    batman_feed_switched=1 # Mark as tried
-                    # exit 1
-                fi
-            else
-                echo "已尝试切换 batman-adv feed，但 tasklet 错误仍然存在，放弃。"
-                 cat "$LOG_FILE"
+                echo "修复 batman-adv backports tasklet 失败，放弃。"
+                cat "$LOG_FILE"
                 exit 1
             fi
         fi
+         # Give up if both failed
+         if [ $fix_applied_this_iteration -eq 0 ]; then
+              echo "已尝试切换 feed 和修补 backports，但 tasklet 错误仍然存在，放弃。"
+              cat "$LOG_FILE"
+              exit 1
+         fi
 
     # 4. Trojan-plus buffer_cast error
     elif grep -q 'trojan-plus.*service.cpp.*buffer_cast.*boost::asio' "$LOG_FILE"; then
