@@ -34,25 +34,133 @@ get_relative_path() {
         if [ -e "$current_pwd/$path" ]; then
             path="$current_pwd/$path"
         else
-             # If it's not absolute and doesn't exist relative to PWD, return as is (might be a build target name)
-             echo "$path"
-             return 0
+            echo "$path" # Return as-is if can't resolve
+            return
         fi
     fi
+    realpath --relative-to="$current_pwd" "$path" 2>/dev/null || echo "$path"
+}
 
-    # Use realpath to get the canonical path relative to the current directory
-    local relative_path
-    relative_path=$(realpath -m --relative-to="$current_pwd" "$path" 2>/dev/null)
+# --- Function: Switch to a compatible batman-adv feed commit ---
+fix_batman_switch_feed() {
+    local target_commit="$1"
+    local feed_name="$FEED_ROUTING_NAME"
+    local feed_conf_file="feeds.conf.default"
+    local feed_conf_line_pattern="src-git $feed_name .*$FEED_ROUTING_URL_PATTERN"
+    local feed_conf_line_prefix="src-git $feed_name "
 
-    if [ $? -eq 0 ] && [ -n "$relative_path" ] && [[ "$relative_path" != /* ]]; then
-        # Success: realpath gave a relative path
-        echo "$relative_path"
-        return 0
+    echo "尝试切换 $feed_name feed 至 commit $target_commit 通过修改 feeds 配置文件..."
+
+    # Determine which feeds file to use
+    if [ -f "feeds.conf" ]; then
+        feed_conf_file="feeds.conf"
+        echo "使用 feeds.conf 文件。"
+    elif [ -f "feeds.conf.default" ]; then
+        feed_conf_file="feeds.conf.default"
+        echo "使用 feeds.conf.default 文件。"
     else
-        # Fallback/Warning: realpath failed or gave absolute path (outside PWD?)
-        echo "警告: 无法将 '$path' 转换为相对于 '$current_pwd' 的路径，返回原始路径。" >&2
-        echo "$path" # Return original as fallback
-        return 1 # Indicate potential issue
+        echo "错误: 未找到 feeds.conf 或 feeds.conf.default 文件。"
+        return 1
+    fi
+
+    # Check if the line exists and already has the correct commit
+    local current_line=$(grep "^$feed_conf_line_pattern" "$feed_conf_file" | head -n 1)
+    local current_url=$(echo "$current_line" | awk '{print $3}' | cut -d';' -f1)
+    local new_line="$feed_conf_line_prefix$current_url;$target_commit"
+
+    if [ -z "$current_line" ]; then
+        echo "错误: 未能在 $feed_conf_file 中找到 '$feed_conf_line_pattern' 定义。"
+        echo "请手动检查你的 feeds 配置文件。"
+        return 1
+    fi
+
+    if grep -q "^$(echo "$new_line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$" "$feed_conf_file"; then
+        echo "$feed_name feed 已在 $feed_conf_file 中指向 commit $target_commit。"
+        echo "运行 feeds update/install 以确保一致性..."
+        ./scripts/feeds update "$feed_name" || { echo "错误: feeds update $feed_name 失败"; return 1; }
+        ./scripts/feeds install -a -p "$feed_name" || { echo "错误: feeds install -a -p $feed_name 失败"; return 1; }
+        return 0
+    fi
+
+    # Modify the line using sed
+    echo "在 $feed_conf_file 中找到 $feed_name feed 定义，正在修改 commit..."
+    cp "$feed_conf_file" "$feed_conf_file.bak"
+    sed -i "s|^$feed_conf_line_pattern.*|$new_line|" "$feed_conf_file"
+
+    # Verify change
+    if grep -q "^$(echo "$new_line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$" "$feed_conf_file"; then
+        echo "已将 $feed_conf_file 中的 $feed_name 更新为 commit $target_commit"
+        rm "$feed_conf_file.bak"
+    else
+        echo "错误: 使用 sed 修改 $feed_conf_file 失败或未生效。"
+        mv "$feed_conf_file.bak" "$feed_conf_file"
+        return 1
+    fi
+
+    echo "运行 feeds update 和 install 以应用更改..."
+    ./scripts/feeds update "$feed_name" || { echo "错误: feeds update $feed_name 失败"; return 1; }
+    ./scripts/feeds install -a -p "$feed_name" || { echo "错误: feeds install -a -p $feed_name 失败"; return 1; }
+
+    echo "切换 $feed_name feed 至 commit $target_commit 完成。"
+
+    # Clean the potentially problematic package build dir after switching source
+    echo "清理旧的 batman-adv 构建目录..."
+    local build_dirs_found
+    build_dirs_found=$(find build_dir -type d -name "batman-adv-*" -prune 2>/dev/null)
+    if [ -n "$build_dirs_found" ]; then
+        echo "找到以下 batman-adv 构建目录，将进行清理:"
+        echo "$build_dirs_found"
+        echo "$build_dirs_found" | xargs rm -rf
+        if [ $? -eq 0 ]; then
+            echo "构建目录清理完成。"
+        else
+            echo "警告: 清理 batman-adv 构建目录时可能出错。"
+        fi
+    else
+        echo "未找到 batman-adv 构建目录，可能无需清理或查找失败。"
+    fi
+
+    # Also clean the source package directory
+    make "package/feeds/$feed_name/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理旧 batman-adv 包源文件失败。"
+    return 0
+}
+
+# --- Function: Disable -Werror in batman-adv Makefile ---
+fix_batman_disable_werror() {
+    local batman_makefile="package/feeds/$FEED_ROUTING_NAME/batman-adv/Makefile"
+
+    echo "尝试在 batman-adv Makefile 中禁用 -Werror..."
+    if [ -f "$batman_makefile" ]; then
+        if ! grep -qE 'filter-out -Werror|\$\(filter-out -Werror' "$batman_makefile"; then
+            echo "正在修改 $batman_makefile..."
+            awk '
+            /include \.\.\/\.\.\/package.mk|include \$\(TOPDIR\)\/rules\.mk/ {
+              print ""
+              print "# Disable -Werror for this package"
+              print "TARGET_CFLAGS:=$(filter-out -Werror,$(TARGET_CFLAGS))"
+              print ""
+            }
+            { print }
+            ' "$batman_makefile" > "$batman_makefile.tmp"
+
+            if [ $? -eq 0 ] && [ -s "$batman_makefile.tmp" ] && ! cmp -s "$batman_makefile" "$batman_makefile.tmp" ; then
+                 mv "$batman_makefile.tmp" "$batman_makefile"
+                 echo "已在 $batman_makefile 中添加 CFLAGS 过滤。"
+                 # Clean the package to ensure new flags are used
+                 make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
+                 return 0
+            else
+                 echo "错误: 使用 awk 修改 $batman_makefile 失败或无更改。"
+                 rm -f "$batman_makefile.tmp"
+                 return 1
+            fi
+        else
+            echo "$batman_makefile 中似乎已禁用 -Werror。"
+            return 0
+        fi
+    else
+        echo "未找到 $batman_makefile。"
+        return 1
     fi
 }
 
@@ -878,86 +986,6 @@ fix_batman_br_ip_dst() {
         fi
 }
 
-fix_batman_disable_werror() {
-    local batman_makefile="package/feeds/$FEED_ROUTING_NAME/batman-adv/Makefile"
-    local kmod_makefile="package/kernel/batman-adv/Makefile" # Check if kmod is separate
-
-    echo "尝试在 batman-adv Makefile 中禁用 -Werror..."
-    local modified=0
-
-    # Modify userspace package Makefile
-    if [ -f "$batman_makefile" ]; then
-        if ! grep -qE 'filter-out -Werror|\$\(filter-out -Werror' "$batman_makefile"; then
-            echo "正在修改 $batman_makefile..."
-            awk '
-            /include \.\.\/\.\.\/package.mk|include \$\(TOPDIR\)\/rules\.mk/ {
-              print ""
-              print "# Disable -Werror for this package"
-              print "TARGET_CFLAGS:=$(filter-out -Werror,$(TARGET_CFLAGS))"
-              print "HOST_CFLAGS:=$(filter-out -Werror,$(HOST_CFLAGS))" # Also for host tools if any
-              print ""
-            }
-            { print }
-            ' "$batman_makefile" > "$batman_makefile.tmp"
-
-            if [ $? -eq 0 ] && [ -s "$batman_makefile.tmp" ] && ! cmp -s "$batman_makefile" "$batman_makefile.tmp" ; then
-                 mv "$batman_makefile.tmp" "$batman_makefile"
-                 echo "已在 $batman_makefile 中添加 CFLAGS 过滤。"
-                 modified=1
-            else
-                 echo "错误: 使用 awk 修改 $batman_makefile 失败或无更改。"
-                 rm -f "$batman_makefile.tmp"
-            fi
-        else
-            echo "$batman_makefile 中似乎已禁用 -Werror。"
-            modified=1 # Assume it's okay
-        fi
-    else
-        echo "未找到 $batman_makefile。"
-    fi
-
-    # Modify kernel module Makefile (if it exists separately)
-    if [ -f "$kmod_makefile" ]; then
-         if ! grep -qE 'filter-out -Werror|\$\(filter-out -Werror' "$kmod_makefile"; then
-            echo "正在修改 $kmod_makefile..."
-             # Add to EXTRA_CFLAGS common in kernel modules
-             if grep -q 'EXTRA_CFLAGS +=' "$kmod_makefile"; then
-                 sed -i.bak '/EXTRA_CFLAGS +=/a EXTRA_CFLAGS:=$(filter-out -Werror,$(EXTRA_CFLAGS))' "$kmod_makefile" && rm "$kmod_makefile.bak"
-                 echo "已在 $kmod_makefile 中尝试添加 EXTRA_CFLAGS 过滤。"
-                 modified=1
-             else
-                 # Add the line near the top as a fallback
-                 sed -i.bak '1 a \\n# Disable -Werror for this package\nEXTRA_CFLAGS:=$(filter-out -Werror,$(EXTRA_CFLAGS))\n' "$kmod_makefile" && rm "$kmod_makefile.bak"
-                 echo "已在 $kmod_makefile 顶部尝试添加 EXTRA_CFLAGS 过滤。"
-                 modified=1
-             fi
-             # Verify change was actually made
-             if ! grep -qE 'filter-out -Werror|\$\(filter-out -Werror' "$kmod_makefile"; then
-                echo "警告: 尝试在 $kmod_makefile 禁用 Werror 失败。"
-                modified=0
-             fi
-         else
-             echo "$kmod_makefile 中似乎已禁用 -Werror。"
-             modified=1
-         fi
-    else
-         echo "未找到单独的 kmod-batman-adv Makefile ($kmod_makefile)。"
-         # If the main Makefile handles both, the first modification might be enough
-    fi
-
-
-    if [ $modified -eq 1 ]; then
-        # Clean the package to ensure new flags are used
-        echo "清理 batman-adv 以应用新的编译标志..."
-        make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
-        # Clean kmod separately only if its Makefile exists
-        [ -f "$kmod_makefile" ] && make "$kmod_makefile/clean" DIRCLEAN=1 V=s || echo "警告: 清理 kmod-batman-adv 失败 (或无独立 kmod Makefile)。"
-        return 0
-    else
-        echo "无法修改任何 Makefile 来禁用 -Werror。"
-        return 1
-    fi
-}
 
 fix_batman_patch_tasklet() {
     local log_file="$1"
@@ -1001,103 +1029,6 @@ fix_batman_patch_tasklet() {
     fi
 }
 
-fix_batman_switch_feed() {
-    local target_commit="$1"
-    local feed_name="$FEED_ROUTING_NAME"
-    local feed_conf_file="feeds.conf.default"
-    local feed_conf_line_pattern="src-git $feed_name .*$FEED_ROUTING_URL_PATTERN"
-    local feed_conf_line_prefix="src-git $feed_name "
-
-    echo "尝试切换 $feed_name feed 至 commit $target_commit 通过修改 feeds 配置文件..."
-
-    # Determine which feeds file to use
-    if [ -f "feeds.conf" ]; then
-        feed_conf_file="feeds.conf"
-        echo "使用 feeds.conf 文件。"
-    elif [ -f "feeds.conf.default" ]; then
-        feed_conf_file="feeds.conf.default"
-        echo "使用 feeds.conf.default 文件。"
-    else
-        echo "错误: 未找到 feeds.conf 或 feeds.conf.default 文件。"
-        return 1
-    fi
-
-    # Check if the line exists and already has the correct commit
-    local current_line=$(grep "^$feed_conf_line_pattern" "$feed_conf_file" | head -n 1)
-    local current_url=$(echo "$current_line" | awk '{print $3}' | cut -d';' -f1)
-    local new_line="$feed_conf_line_prefix$current_url;$target_commit"
-
-    if [ -z "$current_line" ]; then
-        echo "错误: 未能在 $feed_conf_file 中找到 '$feed_conf_line_pattern' 定义。"
-        echo "请手动检查你的 feeds 配置文件。"
-        return 1
-    fi
-
-    if grep -q "^$(echo "$new_line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$" "$feed_conf_file"; then # Escape regex chars
-        echo "$feed_name feed 已在 $feed_conf_file 中指向 commit $target_commit。"
-        # Still run update/install to ensure consistency
-        echo "运行 feeds update/install 以确保一致性..."
-        ./scripts/feeds update "$feed_name" || { echo "错误: feeds update $feed_name 失败"; return 1; }
-        ./scripts/feeds install -a -p "$feed_name" || { echo "错误: feeds install -a -p $feed_name 失败"; return 1; }
-        return 0
-    fi
-
-    # Modify the line using sed
-    echo "在 $feed_conf_file 中找到 $feed_name feed 定义，正在修改 commit..."
-    # Use alternative delimiter and ensure the correct line is replaced
-    cp "$feed_conf_file" "$feed_conf_file.bak" # Backup
-    sed -i "s|^$feed_conf_line_pattern.*|$new_line|" "$feed_conf_file"
-
-    # Verify change
-    if grep -q "^$(echo "$new_line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$" "$feed_conf_file"; then
-         echo "已将 $feed_conf_file 中的 $feed_name 更新为 commit $target_commit"
-         rm "$feed_conf_file.bak" # Remove backup on success
-    else
-         echo "错误: 使用 sed 修改 $feed_conf_file 失败或未生效。"
-         mv "$feed_conf_file.bak" "$feed_conf_file" # Restore backup
-         return 1
-    fi
-
-    echo "运行 feeds update 和 install 以应用更改..."
-    ./scripts/feeds update "$feed_name" || { echo "错误: feeds update $feed_name 失败"; return 1; }
-    # Install all packages from the feed? Or just batman-adv? Let's try installing just it first.
-    # ./scripts/feeds install -a -p "$feed_name" || { echo "错误: feeds install -a -p $feed_name 失败"; return 1; }
-    ./scripts/feeds install batman-adv || {
-        echo "警告: feeds install batman-adv 失败，尝试安装 feed 中的所有包..."
-        ./scripts/feeds install -a -p "$feed_name" || { echo "错误: feeds install -a -p $feed_name 失败"; return 1; }
-    }
-
-
-    echo "切换 $feed_name feed 至 commit $target_commit 完成。"
-
-    # Clean the potentially problematic package build dir after switching source
-    echo "清理旧的 batman-adv 构建目录..."
-    # Find all possible build directories for batman-adv and remove them
-    local build_dirs_found
-    build_dirs_found=$(find build_dir -type d -name "batman-adv-*" -prune 2>/dev/null)
-    if [ -n "$build_dirs_found" ]; then
-        echo "找到以下 batman-adv 构建目录，将进行清理:"
-        echo "$build_dirs_found"
-        # Use xargs to handle multiple directories, if any
-        echo "$build_dirs_found" | xargs rm -rf
-        if [ $? -eq 0 ]; then
-            echo "构建目录清理完成。"
-        else
-            echo "警告: 清理 batman-adv 构建目录时可能出错。"
-        fi
-    else
-        echo "未找到 batman-adv 构建目录，可能无需清理或查找失败。"
-    fi
-
-    # Also clean the source package directory as before
-    make "package/feeds/$feed_name/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理旧 batman-adv 包源文件失败。"
-    # Also clean the kernel module part if it exists
-    if [ -d "package/kernel/batman-adv" ]; then
-        make package/kernel/batman-adv/clean DIRCLEAN=1 V=s || echo "警告: 清理旧 kmod-batman-adv 构建文件失败。"
-    fi
-
-    return 0
-}
 
 ### Fix missing dependency during packaging stage
 # (Keep existing, logic seems appropriate for this error type)
@@ -1200,6 +1131,7 @@ batman_tasklet_patched=0
 batman_feed_switched=0
 # Flag to indicate a metadata fix ran (PKV_VERSION, DEPENDS, FORMAT)
 metadata_fix_ran_last_iter=0
+batman_werror_disabled=0
 
 
 while [ $retry_count -lt "$MAX_RETRY" ]; do
@@ -1259,7 +1191,31 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
             cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
             exit 1
         fi
-
+    elif grep -q "batman-adv.*multicast\.c.*error:" "$LOG_FILE.tmp"; then
+        echo "检测到 batman-adv 编译错误..."
+        if [ "$batman_feed_switched" -eq 0 ]; then
+            echo "尝试切换 routing feed 到兼容 commit..."
+            if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
+                fix_applied_this_iteration=1
+                batman_feed_switched=1
+                last_fix_applied="切换 batman-adv feed 到 commit $BATMAN_ADV_COMMIT"
+            else
+                echo "切换 routing feed 失败。"
+            fi
+        elif [ "$batman_werror_disabled" -eq 0 ]; then
+            echo "尝试禁用 -Werror..."
+            if fix_batman_disable_werror; then
+                fix_applied_this_iteration=1
+                batman_werror_disabled=1
+                last_fix_applied="禁用 batman-adv 的 -Werror"
+            else
+                echo "禁用 -Werror 失败。"
+            fi
+        else
+            echo "已尝试所有修复方法，但 batman-adv 错误仍存在，停止重试。"
+            cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
+            exit 1
+        fi
     # Batman-adv C compile error due to -Werror
     elif grep -q "cc1: some warnings being treated as errors" "$LOG_FILE.tmp" && grep -q -E "struct br_ip.*has no member named|batman-adv.*(multicast\.c|multicast\.o)" "$LOG_FILE.tmp"; then
         echo "检测到 batman-adv struct 错误和 -Werror 同时存在..."
@@ -1374,7 +1330,7 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
              cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
              exit 1
          fi
-
+     
     # po2lmo error
     elif grep -q "po2lmo: command not found" "$LOG_FILE.tmp"; then
         echo "检测到 'po2lmo' 错误..."
