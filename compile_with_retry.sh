@@ -910,10 +910,10 @@ fix_makefile_separator() {
 ### Fix batman-adv 'struct br_ip' dst error (REVISED for IPV6_ADDR_MC_SCOPE)
 fix_batman_br_ip_dst() {
     local log_file="$1"
-    echo "尝试修复 batman-adv 的 'struct br_ip has no member named dst' (特别针对 IPV6_ADDR_MC_SCOPE)..."
+    echo "尝试修复 batman-adv 的 'struct br_ip has no member named dst' 错误..."
 
     local multicast_file patch_applied=0
-    # Find the multicast.c file (keep existing find logic)
+    # 从日志中提取 multicast.c 文件路径
     multicast_file=$(grep -oE 'build_dir/target-[^/]+/linux-[^/]+/(linux-[^/]+|batman-adv-[^/]+)/net/batman-adv/multicast\.c' "$log_file" | head -n 1)
     if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
         echo "无法从日志中定位 multicast.c 文件，尝试动态查找..."
@@ -928,62 +928,50 @@ fix_batman_br_ip_dst() {
     echo "正在修补 $multicast_file ..."
     cp "$multicast_file" "$multicast_file.bak"
 
-    # --- Specific Patch for IPV6_ADDR_MC_SCOPE ---
-    sed -i -E 's|IPV6_ADDR_MC_SCOPE\(&br_ip_entry->addr\.dst\.ip6\)|IPV6_ADDR_MC_SCOPE\(&br_ip_entry->u.ip6\)|g' "$multicast_file"
-    if grep -q 'IPV6_ADDR_MC_SCOPE(&br_ip_entry->u.ip6)' "$multicast_file"; then
-        echo "成功修补 $multicast_file 中 IPV6_ADDR_MC_SCOPE 的调用。"
+    # 替换所有 addr.dst.ip4 和 addr.dst.ip6 为 u.ip4 和 u.ip6
+    sed -i 's/br_ip_entry->addr\.dst\.ip4/br_ip_entry->u.ip4/g' "$multicast_file"
+    sed -i 's/br_ip_entry->addr\.dst\.ip6/br_ip_entry->u.ip6/g' "$multicast_file"
+    # 处理 IPV6_ADDR_MC_SCOPE 的调用
+    sed -i 's/IPV6_ADDR_MC_SCOPE\(&br_ip_entry->addr\.dst\.ip6\)/IPV6_ADDR_MC_SCOPE\(&br_ip_entry->u.ip6\)/g' "$multicast_file"
+
+    # 检查修补是否成功
+    if ! grep -q 'br_ip_entry->addr\.dst\.ip[4|6]' "$multicast_file" && \
+       ! grep -q 'IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr.dst.ip6)' "$multicast_file"; then
+        echo "成功修补 $multicast_file，所有 'addr.dst' 引用已替换为 'u'。"
         patch_applied=1
     else
-        echo "警告: 未能在 $multicast_file 中应用 IPV6_ADDR_MC_SCOPE 的补丁。"
-    fi
-
-    # --- General Patch (as fallback or additional fix if needed) ---
-    sed -i 's/br_ip_entry->addr\.dst\.ip6/br_ip_entry->u.ip6/g' "$multicast_file"
-    sed -i 's/br_ip_entry->addr\.dst\.ip4/br_ip_entry->u.ip4/g' "$multicast_file"
-    # Check if the *problematic* pattern is gone (more reliable check)
-    if ! grep -q 'br_ip_entry->addr\.dst\.ip6' "$multicast_file" && ! grep -q 'br_ip_entry->addr\.dst\.ip4' "$multicast_file" ; then
-        echo "常规 br_ip_entry->addr.dst.* 替换已应用或无需应用。"
-        if [ $patch_applied -eq 0 ]; then patch_applied=1; fi # Count as success if general patch worked
-    else
-         echo "警告: $multicast_file 中仍然存在 addr.dst 模式，修补可能不完整。"
+        echo "警告: $multicast_file 中仍存在 'addr.dst' 模式，修补可能不完整。"
     fi
 
     if [ $patch_applied -eq 1 ]; then
-            echo "修补完成。清理 batman-adv 构建目录..."
-            # Try to find the specific build directory root from multicast_file path
-            local build_dir_path
-            # Extract the path up to the package version directory (e.g., .../batman-adv-2023.3)
-            build_dir_path=$(echo "$multicast_file" | sed -n 's|\(.*/build_dir/[^/]\+/[^/]\+/[^/]\+\)/.*|\1|p')
-
-            if [[ -n "$build_dir_path" ]] && [[ "$build_dir_path" == *batman-adv* ]] && [ -d "$build_dir_path" ]; then
-                echo "正在清理构建目录: $build_dir_path"
-                rm -rf "$build_dir_path" || echo "警告: 删除构建目录 $build_dir_path 失败。"
-                # Also touch the package Makefile to help ensure rebuild
-                local pkg_makefile
-                pkg_makefile=$(find package feeds -path '*/batman-adv/Makefile' -print -quit)
-                 [ -n "$pkg_makefile" ] && touch "$pkg_makefile"
-
-            else
-                echo "警告: 无法从 $multicast_file 确定精确的构建目录根路径，尝试清理包源..."
-                # Fallback to cleaning package source (less effective but better than nothing)
-                local pkg_dir_rel=""
-                pkg_dir_rel=$(find package feeds -name "batman-adv" -type d -path "*/batman-adv" -print -quit)
-
-                if [[ -n "$pkg_dir_rel" ]] && [ -d "$pkg_dir_rel" ]; then
-                    echo "尝试清理包源 $pkg_dir_rel..."
-                    make "$pkg_dir_rel/clean" DIRCLEAN=1 V=s || echo "警告: 清理 $pkg_dir_rel 失败。"
-                else
-                    echo "警告: 无法确定 batman-adv 包目录，无法执行源清理。"
-                fi
-            fi
-            # Remove backup file
-            rm -f "$multicast_file.bak"
-            return 0 # Indicate success
+        echo "修补完成。清理 batman-adv 构建目录..."
+        local build_dir_path
+        build_dir_path=$(echo "$multicast_file" | sed -n 's|\(.*/build_dir/[^/]\+/[^/]\+/[^/]\+\)/.*|\1|p')
+        if [ -n "$build_dir_path" ] && [ -d "$build_dir_path" ]; then
+            echo "正在清理构建目录: $build_dir_path"
+            rm -rf "$build_dir_path" || echo "警告: 删除构建目录 $build_dir_path 失败。"
+            # 触摸 Makefile 以确保重新构建
+            local pkg_makefile
+            pkg_makefile=$(find package feeds -path '*/batman-adv/Makefile' -print -quit)
+            [ -n "$pkg_makefile" ] && touch "$pkg_makefile"
         else
-            echo "修补 $multicast_file 失败，恢复备份文件。"
-            if [ -f "$multicast_file.bak" ]; then mv "$multicast_file.bak" "$multicast_file"; fi
-            return 1 # Indicate failure
+            echo "警告: 无法确定构建目录，尝试清理包源..."
+            local pkg_dir_rel
+            pkg_dir_rel=$(find package feeds -name "batman-adv" -type d -path "*/batman-adv" -print -quit)
+            if [ -n "$pkg_dir_rel" ] && [ -d "$pkg_dir_rel" ]; then
+                echo "尝试清理包源 $pkg_dir_rel..."
+                make "$pkg_dir_rel/clean" DIRCLEAN=1 V=s || echo "警告: 清理 $pkg_dir_rel 失败。"
+            else
+                echo "警告: 无法确定 batman-adv 包目录，跳过清理。"
+            fi
         fi
+        rm -f "$multicast_file.bak"
+        return 0
+    else
+        echo "修补 $multicast_file 失败，恢复备份文件。"
+        [ -f "$multicast_file.bak" ] && mv "$multicast_file.bak" "$multicast_file"
+        return 1
+    fi
 }
 
 
@@ -1191,89 +1179,80 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
             cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
             exit 1
         fi
+        # Batman-adv generic compile error
     elif grep -q "batman-adv.*multicast\.c.*error:" "$LOG_FILE.tmp"; then
         echo "检测到 batman-adv 编译错误..."
-        if [ "$batman_feed_switched" -eq 0 ]; then
+        if [ "$batman_br_ip_patched" -eq 0 ]; then
+            echo "尝试修补 multicast.c 中的 'struct br_ip' 错误..."
+            last_fix_applied="fix_batman_br_ip_dst"
+            if fix_batman_br_ip_dst "$LOG_FILE.tmp"; then
+                fix_applied_this_iteration=1
+                batman_br_ip_patched=1
+            else
+                echo "修补 multicast.c 失败，将尝试切换 feed..."
+                batman_br_ip_patched=1 # 标记已尝试
+            fi
+        elif [ "$batman_feed_switched" -eq 0 ]; then
             echo "尝试切换 routing feed 到兼容 commit..."
+            last_fix_applied="fix_batman_switch_feed"
             if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
                 fix_applied_this_iteration=1
                 batman_feed_switched=1
-                last_fix_applied="切换 batman-adv feed 到 commit $BATMAN_ADV_COMMIT"
             else
                 echo "切换 routing feed 失败。"
+                batman_feed_switched=1 # 标记已尝试
             fi
         elif [ "$batman_werror_disabled" -eq 0 ]; then
             echo "尝试禁用 -Werror..."
+            last_fix_applied="fix_batman_disable_werror"
             if fix_batman_disable_werror; then
                 fix_applied_this_iteration=1
                 batman_werror_disabled=1
-                last_fix_applied="禁用 batman-adv 的 -Werror"
             else
                 echo "禁用 -Werror 失败。"
             fi
         else
-            echo "已尝试所有修复方法，但 batman-adv 错误仍存在，停止重试。"
+            echo "已尝试修补、切换 feed 和禁用 -Werror，但 batman-adv 错误仍存在，停止重试。"
             cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
             exit 1
         fi
-    # Batman-adv C compile error due to -Werror
-    elif grep -q "cc1: some warnings being treated as errors" "$LOG_FILE.tmp" && grep -q -E "struct br_ip.*has no member named|batman-adv.*(multicast\.c|multicast\.o)" "$LOG_FILE.tmp"; then
-        echo "检测到 batman-adv struct 错误和 -Werror 同时存在..."
-        fix_attempt_step="" # Track which step we are trying this iteration
 
-        # Order: Patch -> Switch Feed -> Disable Werror
+    # Batman-adv 'struct br_ip' dst error with -Werror
+    elif grep -q "struct br_ip.*has no member named" "$LOG_FILE.tmp" && grep -q "cc1: some warnings being treated as errors" "$LOG_FILE.tmp" && grep -q -E "batman-adv.*multicast\.c" "$LOG_FILE.tmp"; then
+        echo "检测到 batman-adv 'struct br_ip' 错误且 -Werror 生效..."
         if [ "$batman_br_ip_patched" -eq 0 ]; then
-            echo "步骤 1: 尝试修补 multicast.c..."
-            fix_attempt_step="patch"
-            last_fix_applied="fix_batman_br_ip_dst_werror" # Record attempt
+            echo "尝试修补 multicast.c..."
+            last_fix_applied="fix_batman_br_ip_dst_werror"
             if fix_batman_br_ip_dst "$LOG_FILE.tmp"; then
-                echo "修补 multicast.c 成功。"
                 fix_applied_this_iteration=1
-                batman_br_ip_patched=1 # Mark as done *for now*
+                batman_br_ip_patched=1
             else
                 echo "修补 multicast.c 失败。"
-                batman_br_ip_patched=1 # Mark as *attempted* even on failure, move to next step next time
+                batman_br_ip_patched=1
+            fi
+        elif [ "$batman_werror_disabled" -eq 0 ]; then
+            echo "尝试禁用 -Werror..."
+            last_fix_applied="fix_batman_disable_werror"
+            if fix_batman_disable_werror; then
+                fix_applied_this_iteration=1
+                batman_werror_disabled=1
+            else
+                echo "禁用 -Werror 失败。"
             fi
         elif [ "$batman_feed_switched" -eq 0 ]; then
-            echo "步骤 2: 尝试切换整个 routing feed 到已知良好 commit..."
-            fix_attempt_step="switch"
-            last_fix_applied="fix_batman_switch_feed_werror" # Record attempt
+            echo "尝试切换 routing feed..."
+            last_fix_applied="fix_batman_switch_feed_werror"
             if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
-                echo "切换 routing feed 成功。"
                 fix_applied_this_iteration=1
                 batman_feed_switched=1
-                # Reset dependent flags as source changed drastically
-                batman_br_ip_patched=0
-                batman_tasklet_patched=0
             else
                 echo "切换 routing feed 失败。"
-                batman_feed_switched=1 # Mark as attempted
+                batman_feed_switched=1
             fi
-        # Use a distinct flag/check to see if *disable_werror* was the *very last* fix tried
-        elif [ "$last_fix_applied" != "fix_batman_disable_werror_final_attempt" ]; then
-             echo "步骤 3: 尝试在包 Makefile 中禁用 -Werror..."
-             fix_attempt_step="disable_werror"
-             last_fix_applied="fix_batman_disable_werror_final_attempt" # Use a unique name for this final step check
-             if fix_batman_disable_werror; then
-                 echo "禁用 -Werror 成功。"
-                 fix_applied_this_iteration=1
-             else
-                 echo "无法在 Makefile 中禁用 -Werror。"
-                 # Do not set fix_applied_this_iteration=1; this attempt failed.
-             fi
-        else # All attempts exhausted for this specific error combination
-             echo "已尝试修补、切换 feed、禁用 Werror，但 batman-adv 编译错误仍存在，放弃。"
-             # This block is reached only if the error persists *after* disable_werror was the last attempted fix
-             cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
-             exit 1
-        fi
-
-        # If a fix was applied in this iteration's step, force a retry immediately
-        if [ $fix_applied_this_iteration -eq 1 ]; then
-             echo "已应用修复步骤 '$fix_attempt_step'，将立即重试编译。"
-        # Else: No fix applied this round (e.g., patch failed, switch failed, disable failed).
-        # The loop continues, flags are set, and the *next* step will be tried in the *next* iteration.
-        # The final 'else' block above handles the case where all steps have been tried.
+        else
+            echo "已尝试修补、禁用 -Werror 和切换 feed，但错误仍存在，停止重试。"
+            cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
+            exit 1
         fi
 
     # Batman-adv 'struct br_ip' dst error (WITHOUT -Werror)
