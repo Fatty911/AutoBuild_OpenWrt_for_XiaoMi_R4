@@ -40,7 +40,85 @@ get_relative_path() {
     fi
     realpath --relative-to="$current_pwd" "$path" 2>/dev/null || echo "$path"
 }
+fix_batman_multicast_struct() {
+    local log_file="$1"
+    echo "尝试修补 batman-adv 的 'struct br_ip' 错误..."
 
+    # 尝试从日志中提取 multicast.c 文件路径
+    local multicast_file
+    multicast_file=$(grep -oE 'build_dir/target-[^/]+/linux-[^/]+/(linux-[^/]+|batman-adv-[^/]+)/net/batman-adv/multicast\.c' "$log_file" | head -n 1)
+    if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
+        echo "无法从日志中定位 multicast.c 文件，尝试动态查找..."
+        multicast_file=$(find build_dir -type f \( -path "*/batman-adv-*/net/batman-adv/multicast.c" -o -path "*/linux-*/net/batman-adv/multicast.c" \) -print -quit)
+        if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
+            echo "动态查找 multicast.c 文件失败。"
+            return 1
+        fi
+        echo "动态找到路径: $multicast_file"
+    fi
+
+    echo "正在修补 $multicast_file ..."
+    cp "$multicast_file" "$multicast_file.bak"
+
+    # 替换 struct br_ip 的 dst 为 u
+    sed -i 's/src->dst\.ip4/src->u.ip4/g' "$multicast_file"
+    sed -i 's/src->dst\.ip6/src->u.ip6/g' "$multicast_file"
+    sed -i 's/br_ip_entry->addr\.dst\.ip4/br_ip_entry->u.ip4/g' "$multicast_file"
+    sed -i 's/br_ip_entry->addr\.dst\.ip6/br_ip_entry->u.ip6/g' "$multicast_file"
+    # 替换不兼容的函数
+    sed -i 's/br_multicast_has_router_adjacent/br_multicast_has_querier_adjacent/g' "$multicast_file"
+
+    # 检查修补是否成功
+    if ! grep -q 'src->dst\.ip[4|6]' "$multicast_file" && \
+       ! grep -q 'br_ip_entry->addr\.dst\.ip[4|6]' "$multicast_file" && \
+       ! grep -q 'br_multicast_has_router_adjacent' "$multicast_file"; then
+        echo "成功修补 $multicast_file"
+        # 清理构建目录
+        local build_dir_path
+        build_dir_path=$(echo "$multicast_file" | sed -n 's|\(.*/build_dir/[^/]\+/[^/]\+/[^/]\+\)/.*|\1|p')
+        if [ -n "$build_dir_path" ] && [ -d "$build_dir_path" ]; then
+            echo "正在清理构建目录: $build_dir_path"
+            rm -rf "$build_dir_path" || echo "警告: 删除构建目录 $build_dir_path 失败。"
+        fi
+        rm -f "$multicast_file.bak"
+        return 0
+    else
+        echo "修补 $multicast_file 失败，恢复备份文件。"
+        [ -f "$multicast_file.bak" ] && mv "$multicast_file.bak" "$multicast_file"
+        return 1
+    fi
+}
+fix_routing_feed_config() {
+    local target_commit="$1"  # 指定兼容的 commit
+    local feed_conf_file="feeds.conf.default"
+
+    if [ -f "feeds.conf" ]; then
+        feed_conf_file="feeds.conf"
+        echo "使用 feeds.conf 文件。"
+    fi
+
+    echo "尝试修复 $feed_conf_file 中的 routing feed 配置..."
+
+    # 检查并更新 routing feed
+    if grep -q "^src-git routing" "$feed_conf_file"; then
+        echo "routing feed 已存在，正在更新 commit..."
+        sed -i "s|^src-git routing .*|src-git routing https://github.com/coolsnowwolf/routing.git;${target_commit}|" "$feed_conf_file"
+    else
+        echo "routing feed 不存在，正在添加..."
+        echo "src-git routing https://github.com/coolsnowwolf/routing.git;${target_commit}" >> "$feed_conf_file"
+    fi
+
+    # 验证更改并更新 feeds
+    if grep -q "src-git routing https://github.com/coolsnowwolf/routing.git;${target_commit}" "$feed_conf_file"; then
+        echo "成功更新 $feed_conf_file 中的 routing feed 配置。"
+        ./scripts/feeds update routing || echo "警告: feeds update routing 失败"
+        ./scripts/feeds install -a -p routing || echo "警告: feeds install -a -p routing 失败"
+        return 0
+    else
+        echo "更新 $feed_conf_file 失败。"
+        return 1
+    fi
+}
 # --- Function: Switch to a compatible batman-adv feed commit ---
 fix_batman_switch_feed() {
     local target_commit="$1"
@@ -1182,37 +1260,26 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
         # Batman-adv generic compile error
     elif grep -q "batman-adv.*multicast\.c.*error:" "$LOG_FILE.tmp"; then
         echo "检测到 batman-adv 编译错误..."
-        if [ "$batman_br_ip_patched" -eq 0 ]; then
-            echo "尝试修补 multicast.c 中的 'struct br_ip' 错误..."
-            last_fix_applied="fix_batman_br_ip_dst"
-            if fix_batman_br_ip_dst "$LOG_FILE.tmp"; then
+        if [ "$batman_multicast_patched" -eq 0 ]; then
+            echo "尝试修补 multicast.c..."
+            if fix_batman_multicast_struct "$LOG_FILE.tmp"; then
                 fix_applied_this_iteration=1
-                batman_br_ip_patched=1
+                batman_multicast_patched=1
             else
-                echo "修补 multicast.c 失败，将尝试切换 feed..."
-                batman_br_ip_patched=1 # 标记已尝试
+                echo "修补 multicast.c 失败，将尝试修复 routing feed..."
+                batman_multicast_patched=1  # 标记为已尝试
             fi
-        elif [ "$batman_feed_switched" -eq 0 ]; then
-            echo "尝试切换 routing feed 到兼容 commit..."
-            last_fix_applied="fix_batman_switch_feed"
-            if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
+        elif [ "$batman_feed_fixed" -eq 0 ]; then
+            echo "尝试修复 routing feed 配置..."
+            if fix_routing_feed_config "$BATMAN_ADV_COMMIT"; then
                 fix_applied_this_iteration=1
-                batman_feed_switched=1
+                batman_feed_fixed=1
             else
-                echo "切换 routing feed 失败。"
-                batman_feed_switched=1 # 标记已尝试
-            fi
-        elif [ "$batman_werror_disabled" -eq 0 ]; then
-            echo "尝试禁用 -Werror..."
-            last_fix_applied="fix_batman_disable_werror"
-            if fix_batman_disable_werror; then
-                fix_applied_this_iteration=1
-                batman_werror_disabled=1
-            else
-                echo "禁用 -Werror 失败。"
+                echo "修复 routing feed 配置失败。"
+                batman_feed_fixed=1  # 标记为已尝试
             fi
         else
-            echo "已尝试修补、切换 feed 和禁用 -Werror，但 batman-adv 错误仍存在，停止重试。"
+            echo "已尝试所有修复方法，但 batman-adv 错误仍存在，停止重试。"
             cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
             exit 1
         fi
