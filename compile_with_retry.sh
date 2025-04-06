@@ -707,164 +707,93 @@ fix_symbolic_link_conflict() {
 fix_makefile_separator() {
     local log_file="$1"
     echo "检测到 'missing separator' 错误，尝试修复..."
-    local error_line_info makefile_name_from_err line_num make_level_info context_dir_line context_dir full_makefile_path makefile_path_rel fix_attempted=0 line_content tab sed_exit_code new_line_content pkg_dir
+    local error_line_info makefile_name_from_err line_num context_dir full_makefile_path makefile_path_rel fix_attempted=0 line_content tab pkg_dir
 
-    # Extract the *exact* error line and details
-    # Example: package/libs/toolchain/Makefile:790: *** missing separator. Stop.
-    # Example: Makefile:790: *** missing separator. Stop.
+    # 从日志中提取错误行信息
     error_line_info=$(grep -m 1 'missing separator.*Stop.' "$log_file" | grep -E '^(.+):([0-9]+): \*\*\* missing separator')
     if [[ "$error_line_info" =~ ^([^:]+):([0-9]+): ]]; then
-        makefile_name_from_err="${BASH_REMATCH[1]}" # Could be relative path or just 'Makefile'
+        makefile_name_from_err="${BASH_REMATCH[1]}"
         line_num="${BASH_REMATCH[2]}"
         echo "从错误行提取: 文件名部分='$makefile_name_from_err', 行号='$line_num'"
     else
-         echo "警告: 无法从 'missing separator' 行 '$error_line_info' 直接提取文件名和行号。"
-         return 1
+        echo "警告: 无法提取文件名和行号。"
+        return 1
     fi
 
-    # Extract the make level that reported the error (e.g., make[2]:)
-    # Look immediately before the error line in the raw log
-    make_level_info=$(grep -B 1 "$error_line_info" "$log_file" | grep -Eo '^make(\[[0-9]+\])?:' | tail -n 1)
-    if [ -z "$make_level_info" ]; then
-        echo "警告: 无法确定报告错误的 make 级别。将尝试查找通用 Entering directory。"
-        # Prepare a pattern that matches any make level for the search below
-        make_level_grep_pattern="^make(\[[0-9]+\])?: Entering directory '([^']+)'"
-    else
-        echo "报告错误的 Make 级别: $make_level_info"
-        # Escape for grep: make[2]: -> make\\[2\\]:
-        make_level_grep_pattern="^$(echo "$make_level_info" | sed 's/\[/\\[/g; s/\]/\\]/g') Entering directory '([^']+)'"
-    fi
-
-    # Search backwards in the log *from the error line* for the most recent corresponding "Entering directory" line
-    # Use tac on the log segment and search up from the error line
-    context_dir_line=$(tac "$log_file" | grep -A 50 -m 1 "$error_line_info" | grep -m 1 -E "$make_level_grep_pattern")
-    context_dir=$(echo "$context_dir_line" | sed -n -E "s|${make_level_grep_pattern}|\2|p") # Use \2 because of the outer () in the pattern
-
-    # Determine the actual path to the makefile
+    # 查找最近的 "Entering directory" 以确定上下文目录
+    context_dir=$(tac "$log_file" | grep -A 50 -m 1 "$error_line_info" | grep -m 1 -E "^make\[[0-9]+\]: Entering directory '([^']+)'" | sed -n "s/.*Entering directory '\([^']*\)'/\1/p")
     if [ -n "$context_dir" ]; then
-        echo "找到相关的 'Entering directory': $context_dir"
-        # If the filename from error already looks like a path relative to root, trust it more?
-        # Let's prioritize context dir + filename unless filename is absolute
-        if [[ "$makefile_name_from_err" == /* ]]; then
-            full_makefile_path="$makefile_name_from_err"
-             echo "错误消息中的文件名是绝对路径: $full_makefile_path"
-        elif [[ -f "$context_dir/$makefile_name_from_err" ]]; then
-            # Common case: filename is relative to the context directory
-            full_makefile_path="$context_dir/$makefile_name_from_err"
-            echo "结合目录和文件名: $full_makefile_path"
-        elif [[ "$makefile_name_from_err" == */* ]] && [[ -f "$makefile_name_from_err" ]]; then
-             # If filename has slashes and exists relative to CWD, maybe use that? Less likely.
-             full_makefile_path="$makefile_name_from_err"
-             echo "使用相对于 CWD 的错误文件名: $full_makefile_path"
-        else
-             # Fallback: Assume filename is relative to context, even if not found immediately (might be generated?)
-             full_makefile_path="$context_dir/$makefile_name_from_err"
-             echo "警告: 文件 '$context_dir/$makefile_name_from_err' 未找到，但仍将尝试使用此路径。"
-        fi
-    elif [[ -f "$makefile_name_from_err" ]]; then
-         # If we couldn't find 'Entering directory', but the filename from error exists relative to CWD
-         echo "警告: 无法找到 'Entering directory'，但文件 '$makefile_name_from_err' 存在于当前目录。"
-         full_makefile_path="$makefile_name_from_err"
+        echo "找到上下文目录: $context_dir"
+        full_makefile_path="$context_dir/$makefile_name_from_err"
+    elif [ -f "$makefile_name_from_err" ]; then
+        full_makefile_path="$makefile_name_from_err"
+        echo "使用当前目录中的文件: $full_makefile_path"
     else
-         echo "错误: 无法找到相关的 'Entering directory' 行，并且 '$makefile_name_from_err' 不存在于当前目录。无法定位 Makefile。"
-         return 1
+        # 特殊处理 package/libs/toolchain
+        if grep -q "package/libs/toolchain" "$log_file"; then
+            full_makefile_path="package/libs/toolchain/Makefile"
+            echo "推测为工具链包的 Makefile: $full_makefile_path"
+        else
+            echo "错误: 无法定位 Makefile 文件。"
+            return 1
+        fi
     fi
 
-    # Get relative path from CWD (OpenWrt root)
+    # 获取相对路径
     makefile_path_rel=$(get_relative_path "$full_makefile_path")
-    if [ $? -ne 0 ] || [ -z "$makefile_path_rel" ]; then
-         echo "警告: get_relative_path 失败或返回空，使用原始推测路径 '$full_makefile_path'"
-         # Check if the full_makefile_path is actually usable
-         if [[ "$full_makefile_path" == /* ]] && [ -f "$full_makefile_path" ]; then
-              makefile_path_rel="$full_makefile_path" # Use absolute if valid
-         else
-             # Try relative again, maybe it failed conversion but exists
-             if [ -f "$full_makefile_path" ]; then
-                 makefile_path_rel="$full_makefile_path"
-             else
-                echo "错误: 无法解析或验证 Makefile 路径 '$full_makefile_path'"
-                return 1
-             fi
-         fi
+    if [ $? -ne 0 ] || [ -z "$makefile_path_rel" ] && [ -f "$full_makefile_path" ]; then
+        makefile_path_rel="$full_makefile_path"
+        echo "使用推测路径: $makefile_path_rel"
     fi
 
+    echo "确定出错的 Makefile: $makefile_path_rel, 行号: $line_num"
 
-    echo "推测错误的 Makefile (相对路径或绝对路径): ${makefile_path_rel}, 行号: ${line_num}"
-
-    # Attempt to fix the indentation with sed if we have a valid path and line number
-    # Ensure the file actually exists before trying to read/modify it
-    if [ -f "$makefile_path_rel" ] && [ -n "$line_num" ] && [[ "$line_num" =~ ^[0-9]+$ ]] && [ "$line_num" -gt 0 ]; then
-        echo "检查文件: $makefile_path_rel，第 $line_num 行..."
-        # Check if line exists before trying to read (sed -n p is safe though)
+    # 尝试修复缩进
+    if [ -f "$makefile_path_rel" ] && [ -n "$line_num" ] && [[ "$line_num" =~ ^[0-9]+$ ]]; then
         line_content=$(sed -n "${line_num}p" "$makefile_path_rel")
-        # Check if the line actually starts with spaces (and not already a tab or empty/comment)
-        if [[ "$line_content" =~ ^[[:space:]]+ ]] && ! [[ "$line_content" =~ ^\t ]] && ! [[ "$line_content" =~ ^[[:space:]]*# ]] && [[ -n "$(echo "$line_content" | tr -d '[:space:]')" ]]; then
-            echo "检测到第 $line_num 行可能使用空格缩进，尝试替换为 TAB..."
-            # Create backup in same dir
+        if [[ "$line_content" =~ ^[[:space:]]+ ]] && ! [[ "$line_content" =~ ^\t ]]; then
+            echo "检测到第 $line_num 行使用空格缩进，替换为 TAB..."
             cp "$makefile_path_rel" "$makefile_path_rel.bak"
-            # Replace all leading whitespace with a single tab more safely
-            # Use printf for a literal tab to avoid shell interpretation issues
             printf -v tab '\t'
-            sed -i.sedfix "${line_num}s/^[[:space:]]\+/$tab/" "$makefile_path_rel"
-            sed_exit_code=$?
-            # Verify the change
-            new_line_content=$(sed -n "${line_num}p" "$makefile_path_rel")
-            if [ $sed_exit_code -eq 0 ] && [[ "$new_line_content" =~ ^\t ]]; then
-                 echo "已尝试用 TAB 修复 $makefile_path_rel 第 $line_num 行的缩进。"
-                 rm -f "$makefile_path_rel.bak" "$makefile_path_rel.sedfix" # Clean up backups
-                 fix_attempted=1
-                 # Clean the package/directory associated with this makefile
-                 # Determine package dir from the *correct* makefile_path_rel
-                 pkg_dir=$(dirname "$makefile_path_rel")
-                 # Check if it looks like a plausible package/component directory before cleaning
-                 if [[ "$pkg_dir" =~ ^(package|feeds)/ ]] || [[ "$pkg_dir" == "." ]] || [[ "$pkg_dir" =~ ^tools/ ]] || [[ "$pkg_dir" =~ ^toolchain/ ]] ; then
-                      echo "清理相关目录 $pkg_dir..."
-                      # Use make clean relative to root, not make pkg/clean
-                      if [ "$pkg_dir" != "." ]; then
-                          make "$pkg_dir/clean" DIRCLEAN=1 V=s || echo "警告: 清理 $pkg_dir 失败。"
-                      else
-                          # Don't clean "." (root) automatically
-                          echo "Makefile 是根目录 Makefile，不自动清理。"
-                      fi
-                 else
-                      echo "警告: 目录 '$pkg_dir' 不像是标准的包/组件目录，跳过清理。"
-                 fi
-                 return 0 # Success, retry compile
+            sed -i "${line_num}s/^[[:space:]]\+/$tab/" "$makefile_path_rel"
+            if [ $? -eq 0 ] && sed -n "${line_num}p" "$makefile_path_rel" | grep -q "^\t"; then
+                echo "成功修复缩进。"
+                rm -f "$makefile_path_rel.bak"
+                fix_attempted=1
             else
-                 echo "警告: 尝试用 sed 修复 $makefile_path_rel 失败 (sed exit: $sed_exit_code, line content: '$new_line_content')，恢复备份文件。"
-                 # Ensure backup exists before moving
-                 if [ -f "$makefile_path_rel.bak" ]; then
-                      mv "$makefile_path_rel.bak" "$makefile_path_rel"
-                 fi
-                 rm -f "$makefile_path_rel.sedfix"
+                echo "修复失败，恢复备份。"
+                mv "$makefile_path_rel.bak" "$makefile_path_rel"
             fi
         else
-            echo "第 $line_num 行在 '$makefile_path_rel' 中似乎没有前导空格、已经是 TAB 缩进、是注释或为空，跳过 sed 修复。"
-            # Don't immediately fail, maybe cleaning the dir helps (but only if it's a package dir)
+            echo "第 $line_num 行无需修复（已是 TAB、注释或空行）。"
         fi
     else
-         echo "Makefile 路径 '$makefile_path_rel' 无效或不存在，或行号 '$line_num' 无效，无法尝试 sed 修复。"
+        echo "文件 '$makefile_path_rel' 不存在或行号无效。"
     fi
 
-    # Fallback: Clean the directory if sed fix failed/skipped AND we identified a plausible directory
-    if [ "$fix_attempted" -eq 0 ]; then
-        pkg_dir=$(dirname "$makefile_path_rel")
-        if [ -d "$pkg_dir" ] && ( [[ "$pkg_dir" =~ ^(package|feeds)/ ]] || [[ "$pkg_dir" =~ ^tools/ ]] || [[ "$pkg_dir" =~ ^toolchain/ ]] ) ; then
-            echo "Sed 修复未执行或失败，尝试清理相关目录: $pkg_dir ..."
-            make "$pkg_dir/clean" DIRCLEAN=1 V=s || {
-                echo "警告: 清理 $pkg_dir 失败，但这可能不是致命错误，将继续重试主命令。"
-            }
-            echo "已清理 $pkg_dir，将重试主命令。"
-            fix_attempted=1
-            return 0 # Indicate fix attempt was made (cleaning)
+    # 无论是否修复成功，都尝试清理相关目录
+    pkg_dir=$(dirname "$makefile_path_rel")
+    if [ -d "$pkg_dir" ] && [[ "$pkg_dir" =~ ^(package|feeds|tools|toolchain)/ || "$pkg_dir" == "." ]]; then
+        if [ "$pkg_dir" == "." ]; then
+            echo "错误发生在根目录 Makefile，尝试清理整个构建环境..."
+            make clean V=s || echo "警告: 清理根目录失败。"
         else
-             echo "错误发生在未知、无法访问或非标准的 Makefile 目录 ('$pkg_dir')，不尝试清理。"
-             return 1 # Cannot fix
+            echo "尝试清理目录: $pkg_dir..."
+            make "$pkg_dir/clean" DIRCLEAN=1 V=s || echo "警告: 清理 $pkg_dir 失败。"
         fi
+        fix_attempted=1
+    else
+        echo "目录 '$pkg_dir' 无效或非标准目录，跳过清理。"
     fi
 
-    # Should not reach here if fix was attempted, return 1 otherwise
-    return 1
+    # 特殊处理 package/libs/toolchain
+    if [[ "$makefile_path_rel" =~ package/libs/toolchain ]] && [ $fix_attempted -eq 0 ]; then
+        echo "检测到工具链包错误，强制清理 package/libs/toolchain..."
+        make "package/libs/toolchain/clean" DIRCLEAN=1 V=s || echo "警告: 清理工具链失败。"
+        fix_attempted=1
+    fi
+
+    [ $fix_attempted -eq 1 ] && return 0 || return 1
 }
 
 ### Fix batman-adv functions
@@ -1293,21 +1222,17 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     echo "执行: $MAKE_COMMAND"
     eval "$MAKE_COMMAND" > "$LOG_FILE.tmp" 2>&1
     COMPILE_STATUS=$?
-    cat "$LOG_FILE.tmp" >> "$LOG_FILE" # Append to main log
-    cat "$LOG_FILE.tmp" # Show current attempt's output
+    # 过滤掉 WARNING: Makefile ... 的行
+    grep -v "WARNING: Makefile '.*' has a dependency on '.*', which does not exist" "$LOG_FILE.tmp" >> "$LOG_FILE"
+    cat "$LOG_FILE.tmp" # 显示未过滤的当前输出
 
-    # Check for success more reliably
-    # Check exit code AND common failure patterns in the *current* log segment
-    make_error_pattern="^(make\[[0-9]+\]|make): \*\*\* .* Error [0-9]+$"
-    collected_error_pattern="Collected errors:"
-    pkg_failed_pattern="ERROR: package.* failed to build"
-
+    # 检查编译是否成功
     if [ $COMPILE_STATUS -eq 0 ] && \
-       ! grep -q -E "$make_error_pattern" "$LOG_FILE.tmp" && \
-       ! grep -q -E "$collected_error_pattern" "$LOG_FILE.tmp" && \
-       ! grep -q -E "$pkg_failed_pattern" "$LOG_FILE.tmp"; then
+       ! grep -q -E "^(make\[[0-9]+\]|make): \*\*\* .* Error [0-9]+$" "$LOG_FILE.tmp" && \
+       ! grep -q -E "Collected errors:" "$LOG_FILE.tmp" && \
+       ! grep -q -E "ERROR: package.* failed to build" "$LOG_FILE.tmp"; then
         echo "编译成功！"
-        rm "$LOG_FILE.tmp" # Clean up temp log
+        rm "$LOG_FILE.tmp"
         exit 0
     fi
 
