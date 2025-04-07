@@ -22,23 +22,163 @@ if [ -z "$MAKE_COMMAND" ] || [ -z "$LOG_FILE" ]; then
     exit 1
 fi
 
-# --- Helper Function: Get Relative Path (Revised) ---
+# --- Helper Function: Get Relative Path ---
 get_relative_path() {
     local path="$1"
     local current_pwd
-    current_pwd=$(pwd) # Get PWD inside the function
+    current_pwd=$(pwd)
 
-    # Ensure path is absolute for realpath
     if [[ "$path" != /* ]]; then
-        # Try making it absolute based on PWD
         if [ -e "$current_pwd/$path" ]; then
             path="$current_pwd/$path"
         else
-            echo "$path" # Return as-is if can't resolve
+            echo "$path"
             return
         fi
     fi
     realpath --relative-to="$current_pwd" "$path" 2>/dev/null || echo "$path"
+}
+
+# --- Function: Fix Makefile "missing separator" error (Enhanced with Subfile Check) ---
+fix_makefile_separator() {
+    local log_file="$1"
+    echo "检测到 'missing separator' 错误，尝试修复..."
+    local error_line_info makefile_name_from_err line_num context_dir full_makefile_path makefile_path_rel fix_attempted=0 line_content tab pkg_dir subfile
+
+    # 从日志中提取错误行信息
+    error_line_info=$(grep -m 1 'missing separator.*Stop.' "$log_file" | grep -E '^(.+):([0-9]+): \*\*\* missing separator')
+    if [[ "$error_line_info" =~ ^([^:]+):([0-9]+): ]]; then
+        makefile_name_from_err="${BASH_REMATCH[1]}"
+        line_num="${BASH_REMATCH[2]}"
+        echo "从错误行提取: 文件名部分='$makefile_name_from_err', 行号='$line_num'"
+    else
+        echo "警告: 无法提取文件名和行号。"
+        return 1
+    fi
+
+    # 查找最近的 "Entering directory" 以确定上下文目录
+    context_dir=$(tac "$log_file" | grep -A 50 -m 1 "$error_line_info" | grep -m 1 -E "^make\[[0-9]+\]: Entering directory '([^']+)'" | sed -n "s/.*Entering directory '\([^']*\)'/\1/p")
+    if [ -n "$context_dir" ]; then
+        echo "找到上下文目录: $context_dir"
+        full_makefile_path="$context_dir/$makefile_name_from_err"
+    else
+        if grep -q "package/libs/toolchain" "$log_file"; then
+            full_makefile_path="package/libs/toolchain/Makefile"
+            echo "推测为工具链包的 Makefile: $full_makefile_path"
+        elif [ -f "$makefile_name_from_err" ]; then
+            full_makefile_path="$makefile_name_from_err"
+            echo "使用当前目录中的文件: $full_makefile_path"
+        else
+            echo "错误: 无法定位 Makefile 文件。"
+            return 1
+        fi
+    fi
+
+    # 获取相对路径
+    makefile_path_rel=$(get_relative_path "$full_makefile_path")
+    if [ $? -ne 0 ] || [ -z "$makefile_path_rel" ] && [ -f "$full_makefile_path" ]; then
+        makefile_path_rel="$full_makefile_path"
+        echo "使用推测路径: $makefile_path_rel"
+    fi
+
+    echo "确定出错的 Makefile: $makefile_path_rel, 行号: $line_num"
+
+    # 检查并修复文件（包括子文件）
+    if [ -f "$makefile_path_rel" ] && [ -n "$line_num" ] && [[ "$line_num" =~ ^[0-9]+$ ]]; then
+        line_content=$(sed -n "${line_num}p" "$makefile_path_rel")
+        echo "第 $line_num 行内容: '$line_content'"
+
+        # 检查是否为 include 语句
+        if [[ "$line_content" =~ ^[[:space:]]*include[[:space:]]+(.+) ]]; then
+            subfile=$(echo "$line_content" | sed 's/^[[:space:]]*include[[:space:]]\+//')
+            subfile=$(realpath --relative-to="$(dirname "$makefile_path_rel")" "$(dirname "$makefile_path_rel")/$subfile" 2>/dev/null || echo "$subfile")
+            echo "检测到 include 子文件: $subfile"
+
+            if [ -f "$subfile" ]; then
+                echo "检查子文件 $subfile 是否存在 'missing separator' 问题..."
+                # 检查子文件每一行
+                while IFS= read -r sub_line; do
+                    if [[ "$sub_line" =~ ^[[:space:]]+ ]] && ! [[ "$sub_line" =~ ^\t ]] && ! [[ "$sub_line" =~ ^[[:space:]]*[#] ]] && [ -n "$sub_line" ]; then
+                        echo "子文件 $subfile 中检测到空格缩进，替换为 TAB..."
+                        cp "$subfile" "$subfile.bak"
+                        printf -v tab '\t'
+                        sed -i "s/^[[:space:]]\+/$tab/" "$subfile"
+                        if [ $? -eq 0 ] && grep -q "^\t" "$subfile"; then
+                            echo "成功修复子文件 $subfile 的缩进。"
+                            rm -f "$subfile.bak"
+                            fix_attempted=1
+                        else
+                            echo "修复子文件失败，恢复备份。"
+                            mv "$subfile.bak" "$subfile"
+                        fi
+                    fi
+                done < "$subfile"
+            else
+                echo "警告: 子文件 $subfile 不存在，跳过检查。"
+            fi
+        fi
+
+        # 检查当前行是否需要修复缩进
+        if [[ "$line_content" =~ ^[[:space:]]+ ]] && ! [[ "$line_content" =~ ^\t ]]; then
+            echo "检测到第 $line_num 行使用空格缩进，替换为 TAB..."
+            cp "$makefile_path_rel" "$makefile_path_rel.bak"
+            printf -v tab '\t'
+            sed -i "${line_num}s/^[[:space:]]\+/$tab/" "$makefile_path_rel"
+            if [ $? -eq 0 ] && sed -n "${line_num}p" "$makefile_path_rel" | grep -q "^\t"; then
+                echo "成功修复缩进。"
+                rm -f "$makefile_path_rel.bak"
+                fix_attempted=1
+            else
+                echo "修复失败，恢复备份。"
+                mv "$makefile_path_rel.bak" "$makefile_path_rel"
+            fi
+        elif [ -z "$line_content" ] || [[ "$line_content" =~ ^[[:space:]]*$ ]]; then
+            echo "第 $line_num 行为空行，可能有隐藏字符，尝试规范化..."
+            cp "$makefile_path_rel" "$makefile_path_rel.bak"
+            sed -i "${line_num}s/^[[:space:]]*$//" "$makefile_path_rel"
+            if [ $? -eq 0 ]; then
+                echo "已规范化空行。"
+                rm -f "$makefile_path_rel.bak"
+                fix_attempted=1
+            else
+                echo "规范化失败，恢复备份。"
+                mv "$makefile_path_rel.bak" "$makefile_path_rel"
+            fi
+        else
+            echo "第 $line_num 行无需修复或问题不在缩进（可能是子文件问题）。"
+            echo "请检查 $makefile_path_rel 第 $line_num 行内容: '$line_content'"
+        fi
+    else
+        echo "文件 '$makefile_path_rel' 不存在或行号无效。"
+    fi
+
+    # 清理相关目录
+    pkg_dir=$(dirname "$makefile_path_rel")
+    if [ -d "$pkg_dir" ] && [[ "$pkg_dir" =~ ^(package|feeds|tools|toolchain)/ || "$pkg_dir" == "." ]]; then
+        if [ "$pkg_dir" == "." ]; then
+            echo "错误发生在根目录 Makefile，尝试清理整个构建环境..."
+            make clean V=s || echo "警告: 清理根目录失败。"
+        else
+            echo "尝试清理目录: $pkg_dir..."
+            make "$pkg_dir/clean" DIRCLEAN=1 V=s || echo "警告: 清理 $pkg_dir 失败。"
+        fi
+        fix_attempted=1
+    else
+        echo "目录 '$pkg_dir' 无效或非标准目录，跳过清理。"
+    fi
+
+    # 特殊处理 package/libs/toolchain
+    if [[ "$makefile_path_rel" =~ package/libs/toolchain ]]; then
+        echo "检测到工具链包错误，强制清理 package/libs/toolchain..."
+        make "package/libs/toolchain/clean" DIRCLEAN=1 V=s || echo "警告: 清理工具链失败。"
+        fix_attempted=1
+        if [ $fix_attempted -eq 1 ] && grep -q "missing separator" "$log_file"; then
+            echo "修复尝试后问题仍未解决，请手动检查 $makefile_path_rel 第 $line_num 行及其子文件。"
+            return 1
+        fi
+    fi
+
+    [ $fix_attempted -eq 1 ] && return 0 || return 1
 }
 fix_batman_multicast_struct() {
     local log_file="$1"
@@ -894,101 +1034,6 @@ fix_symbolic_link_conflict() {
     return 0 # Return success because the conflicting item was removed
 }
 
-
-### Fix Makefile "missing separator" error (Revised Path Handling)
-### Fix Makefile "missing separator" error (Revised Path Handling v2)
-fix_makefile_separator() {
-    local log_file="$1"
-    echo "检测到 'missing separator' 错误，尝试修复..."
-    local error_line_info makefile_name_from_err line_num context_dir full_makefile_path makefile_path_rel fix_attempted=0 line_content tab pkg_dir
-
-    # 从日志中提取错误行信息
-    error_line_info=$(grep -m 1 'missing separator.*Stop.' "$log_file" | grep -E '^(.+):([0-9]+): \*\*\* missing separator')
-    if [[ "$error_line_info" =~ ^([^:]+):([0-9]+): ]]; then
-        makefile_name_from_err="${BASH_REMATCH[1]}"
-        line_num="${BASH_REMATCH[2]}"
-        echo "从错误行提取: 文件名部分='$makefile_name_from_err', 行号='$line_num'"
-    else
-        echo "警告: 无法提取文件名和行号。"
-        return 1
-    fi
-
-    # 查找最近的 "Entering directory" 以确定上下文目录
-    context_dir=$(tac "$log_file" | grep -A 50 -m 1 "$error_line_info" | grep -m 1 -E "^make\[[0-9]+\]: Entering directory '([^']+)'" | sed -n "s/.*Entering directory '\([^']*\)'/\1/p")
-    if [ -n "$context_dir" ]; then
-        echo "找到上下文目录: $context_dir"
-        full_makefile_path="$context_dir/$makefile_name_from_err"
-    elif [ -f "$makefile_name_from_err" ]; then
-        full_makefile_path="$makefile_name_from_err"
-        echo "使用当前目录中的文件: $full_makefile_path"
-    else
-        # 特殊处理 package/libs/toolchain
-        if grep -q "package/libs/toolchain" "$log_file"; then
-            full_makefile_path="package/libs/toolchain/Makefile"
-            echo "推测为工具链包的 Makefile: $full_makefile_path"
-        else
-            echo "错误: 无法定位 Makefile 文件。"
-            return 1
-        fi
-    fi
-
-    # 获取相对路径
-    makefile_path_rel=$(get_relative_path "$full_makefile_path")
-    if [ $? -ne 0 ] || [ -z "$makefile_path_rel" ] && [ -f "$full_makefile_path" ]; then
-        makefile_path_rel="$full_makefile_path"
-        echo "使用推测路径: $makefile_path_rel"
-    fi
-
-    echo "确定出错的 Makefile: $makefile_path_rel, 行号: $line_num"
-
-    # 尝试修复缩进
-    if [ -f "$makefile_path_rel" ] && [ -n "$line_num" ] && [[ "$line_num" =~ ^[0-9]+$ ]]; then
-        line_content=$(sed -n "${line_num}p" "$makefile_path_rel")
-        if [[ "$line_content" =~ ^[[:space:]]+ ]] && ! [[ "$line_content" =~ ^\t ]]; then
-            echo "检测到第 $line_num 行使用空格缩进，替换为 TAB..."
-            cp "$makefile_path_rel" "$makefile_path_rel.bak"
-            printf -v tab '\t'
-            sed -i "${line_num}s/^[[:space:]]\+/$tab/" "$makefile_path_rel"
-            if [ $? -eq 0 ] && sed -n "${line_num}p" "$makefile_path_rel" | grep -q "^\t"; then
-                echo "成功修复缩进。"
-                rm -f "$makefile_path_rel.bak"
-                fix_attempted=1
-            else
-                echo "修复失败，恢复备份。"
-                mv "$makefile_path_rel.bak" "$makefile_path_rel"
-            fi
-        else
-            echo "第 $line_num 行无需修复（已是 TAB、注释或空行）。"
-        fi
-    else
-        echo "文件 '$makefile_path_rel' 不存在或行号无效。"
-    fi
-
-    # 无论是否修复成功，都尝试清理相关目录
-    pkg_dir=$(dirname "$makefile_path_rel")
-    if [ -d "$pkg_dir" ] && [[ "$pkg_dir" =~ ^(package|feeds|tools|toolchain)/ || "$pkg_dir" == "." ]]; then
-        if [ "$pkg_dir" == "." ]; then
-            echo "错误发生在根目录 Makefile，尝试清理整个构建环境..."
-            make clean V=s || echo "警告: 清理根目录失败。"
-        else
-            echo "尝试清理目录: $pkg_dir..."
-            make "$pkg_dir/clean" DIRCLEAN=1 V=s || echo "警告: 清理 $pkg_dir 失败。"
-        fi
-        fix_attempted=1
-    else
-        echo "目录 '$pkg_dir' 无效或非标准目录，跳过清理。"
-    fi
-
-    # 特殊处理 package/libs/toolchain
-    if [[ "$makefile_path_rel" =~ package/libs/toolchain ]] && [ $fix_attempted -eq 0 ]; then
-        echo "检测到工具链包错误，强制清理 package/libs/toolchain..."
-        make "package/libs/toolchain/clean" DIRCLEAN=1 V=s || echo "警告: 清理工具链失败。"
-        fix_attempted=1
-    fi
-
-    [ $fix_attempted -eq 1 ] && return 0 || return 1
-}
-
 ### Fix batman-adv functions
 # (Keep existing batman functions: fix_batman_br_ip_dst, fix_batman_disable_werror, fix_batman_patch_tasklet, fix_batman_switch_feed)
 # ... (batman functions omitted for brevity, assume they are correct as before) ...
@@ -1411,18 +1456,14 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
     # Makefile separator error
     elif grep -q "missing separator.*Stop." "$LOG_FILE.tmp"; then
         echo "检测到 'missing separator' 错误..."
-        # Don't stop if it failed once, try again, maybe context changes
-        # if [ "$last_fix_applied" = "fix_makefile_separator" ]; then
-        #      echo "上次已尝试修复 makefile separator，但错误依旧，停止重试。"
-        #      cat "$LOG_FILE.tmp" >> "$LOG_FILE"; rm "$LOG_FILE.tmp"; exit 1
-        # fi
         last_fix_applied="fix_makefile_separator"
-        if fix_makefile_separator "$LOG_FILE.tmp"; then # Pass current log segment
+        if fix_makefile_separator "$LOG_FILE.tmp"; then
             fix_applied_this_iteration=1
             echo "Makefile separator 修复尝试完成，将重试编译。"
         else
-            echo "无法定位或清理导致 'missing separator' 错误的 Makefile，此轮修复失败。"
-            # Don't exit immediately, maybe another error will be fixed next round
+            echo "无法修复 'missing separator' 错误，请检查日志并手动修复。"
+            cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
+            exit 1
         fi
 
     # Filesystem conflicts (mkdir, ln)
