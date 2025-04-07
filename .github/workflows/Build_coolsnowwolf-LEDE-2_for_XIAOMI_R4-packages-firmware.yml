@@ -103,12 +103,12 @@ jobs:
       - name: Compile  Batman-adv
         id: compile_batman_1
         run: |       
-          bash ./fix_batman_adv.sh || {
+          #bash ./fix_batman_adv.sh || {
           cd openwrt 
           cp ../compile_with_retry.sh .
           LOG_FILE="batman-adv.log"
-          bash compile_with_retry.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8
-          }
+          bash compile_with_retry.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 9
+          #}
 
       - name: Compile packages
         id: compile_packages
