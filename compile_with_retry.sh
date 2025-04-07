@@ -49,7 +49,7 @@ fix_batman_multicast_struct() {
     multicast_file=$(grep -oE 'build_dir/target-[^/]+/linux-[^/]+/(linux-[^/]+|batman-adv-[^/]+)/net/batman-adv/multicast\.c' "$log_file" | head -n 1)
     if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
         echo "Could not locate multicast.c from log, trying dynamic search..."
-        multicast_file=$(find build_dir -type f $-path "*/batman-adv-*/net/batman-adv/multicast.c" -o -path "*/linux-*/net/batman-adv/multicast.c"$ -print -quit)
+        multicast_file=$(find build_dir -type f -path "*/batman-adv-*/net/batman-adv/multicast.c" -o -path "*/linux-*/net/batman-adv/multicast.c" -print -quit)
         if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
             echo "Failed to find multicast.c dynamically."
             return 1
@@ -73,14 +73,12 @@ fix_batman_multicast_struct() {
     if ! grep -q 'dst\.ip[4|6]' "$multicast_file" && \
        ! grep -q 'br_multicast_has_router_adjacent' "$multicast_file"; then
         echo "Successfully patched $multicast_file"
-        # Clean build directory
-        local build_dir_path
-        build_dir_path=$(echo "$multicast_file" | sed -n 's|$.*/build_dir/[^/]\+/[^/]\+/[^/]\+$/.*|\1|p')
-        if [ -n "$build_dir_path" ] && [ -d "$build_dir_path" ]; then
-            echo "Cleaning build directory: $build_dir_path"
-            rm -rf "$build_dir_path" || echo "Warning: Failed to delete build directory $build_dir_path."
-        fi
-        # Touch Makefile to ensure rebuild
+
+        # Clean the batman-adv package to ensure the patched source is recompiled
+        echo "清理 batman-adv 包以强制重新编译..."
+        make "package/feeds/routing/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
+
+        # Touch Makefile to reinforce rebuild (optional, kept for robustness)
         local pkg_makefile
         pkg_makefile=$(find package feeds -path '*/batman-adv/Makefile' -print -quit)
         if [ -n "$pkg_makefile" ]; then
@@ -95,6 +93,7 @@ fix_batman_multicast_struct() {
         return 1
     fi
 }
+
 
 
 fix_routing_feed_config() {
