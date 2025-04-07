@@ -42,57 +42,56 @@ get_relative_path() {
 }
 fix_batman_multicast_struct() {
     local log_file="$1"
-    echo "Attempting to patch batman-adv 'struct br_ip' errors..."
+    echo "尝试修补 batman-adv 'struct br_ip' 错误..." >&2
+    echo "日志文件: $log_file" >&2
 
-    # Locate multicast.c
     local multicast_file
     multicast_file=$(grep -oE 'build_dir/target-[^/]+/linux-[^/]+/(linux-[^/]+|batman-adv-[^/]+)/net/batman-adv/multicast\.c' "$log_file" | head -n 1)
     if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
-        echo "Could not locate multicast.c from log, trying dynamic search..."
+        echo "无法从日志定位 multicast.c，尝试动态查找..." >&2
         multicast_file=$(find build_dir -type f -path "*/batman-adv-*/net/batman-adv/multicast.c" -o -path "*/linux-*/net/batman-adv/multicast.c" -print -quit)
         if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
-            echo "Failed to find multicast.c dynamically."
+            echo "动态查找 multicast.c 失败。" >&2
             return 1
         fi
-        echo "Found multicast.c dynamically at: $multicast_file"
+        echo "动态找到 multicast.c: $multicast_file" >&2
+    else
+        echo "从日志找到 multicast.c: $multicast_file" >&2
     fi
 
-    echo "Patching $multicast_file..."
+    echo "正在修补 $multicast_file..." >&2
     cp "$multicast_file" "$multicast_file.bak"
 
-    # Replace all instances of dst with u
     sed -i 's/src->dst\.ip4/src->u.ip4/g' "$multicast_file"
     sed -i 's/src->dst\.ip6/src->u.ip6/g' "$multicast_file"
     sed -i 's/br_ip_entry->addr\.dst\.ip4/br_ip_entry->addr.u.ip4/g' "$multicast_file"
     sed -i 's/br_ip_entry->addr\.dst\.ip6/br_ip_entry->addr.u.ip6/g' "$multicast_file"
     sed -i 's/IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr\.dst\.ip6)/IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr.u.ip6)/g' "$multicast_file"
-    # Replace incompatible function
     sed -i 's/br_multicast_has_router_adjacent/br_multicast_has_querier_adjacent/g' "$multicast_file"
 
-    # Verify patch success
+    echo "检查修补结果..." >&2
     if ! grep -q 'dst\.ip[4|6]' "$multicast_file" && \
        ! grep -q 'br_multicast_has_router_adjacent' "$multicast_file"; then
-        echo "Successfully patched $multicast_file"
-
-        # Clean the batman-adv package to ensure the patched source is recompiled
-        echo "清理 batman-adv 包以强制重新编译..."
-        make "package/feeds/routing/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
-
-        # Touch Makefile to reinforce rebuild (optional, kept for robustness)
+        echo "成功修补 $multicast_file" >&2
+        echo "清理 batman-adv 包以强制重新编译..." >&2
+        make "package/feeds/routing/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。" >&2
         local pkg_makefile
         pkg_makefile=$(find package feeds -path '*/batman-adv/Makefile' -print -quit)
         if [ -n "$pkg_makefile" ]; then
             touch "$pkg_makefile"
-            echo "Touched $pkg_makefile to force rebuild."
+            echo "已触摸 $pkg_makefile 以强制重建。" >&2
         fi
         rm -f "$multicast_file.bak"
         return 0
     else
-        echo "Patching $multicast_file failed, restoring backup."
+        echo "修补 $multicast_file 失败，正在恢复备份。" >&2
+        echo "剩余的 'dst' 模式:" >&2
+        grep 'dst\.ip[4|6]' "$multicast_file" >&2 || echo "无匹配，但检查逻辑失败。" >&2
         [ -f "$multicast_file.bak" ] && mv "$multicast_file.bak" "$multicast_file"
         return 1
     fi
 }
+
 
 
 
@@ -1273,25 +1272,26 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
             if fix_batman_multicast_struct "$LOG_FILE.tmp"; then
                 fix_applied_this_iteration=1
                 batman_multicast_patched=1
+                echo "修补成功，将重试编译..."
             else
                 echo "修补 multicast.c 失败，将尝试修复 routing feed..."
-                batman_multicast_patched=1  # 标记为已尝试
+                batman_multicast_patched=1
             fi
         elif [ "$batman_feed_fixed" -eq 0 ]; then
-            echo "尝试修复 routing feed 配置..."
+            echo "尝试修复 routing feed 配置到 commit $BATMAN_ADV_COMMIT..."
             if fix_routing_feed_config "$BATMAN_ADV_COMMIT"; then
                 fix_applied_this_iteration=1
                 batman_feed_fixed=1
+                echo "Feed 配置已修复，将重试编译..."
             else
                 echo "修复 routing feed 配置失败。"
-                batman_feed_fixed=1  # 标记为已尝试
+                batman_feed_fixed=1
             fi
         else
-            echo "已尝试所有修复方法，但 batman-adv 错误仍存在，停止重试。"
+            echo "已尝试修补 multicast.c 和修复 routing feed，但 batman-adv 错误仍存在，停止重试。"
             cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
             exit 1
         fi
-
     # Batman-adv 'struct br_ip' dst error with -Werror
     elif grep -q "struct br_ip.*has no member named" "$LOG_FILE.tmp" && grep -q "cc1: some warnings being treated as errors" "$LOG_FILE.tmp" && grep -q -E "batman-adv.*multicast\.c" "$LOG_FILE.tmp"; then
         echo "检测到 batman-adv 'struct br_ip' 错误且 -Werror 生效..."
