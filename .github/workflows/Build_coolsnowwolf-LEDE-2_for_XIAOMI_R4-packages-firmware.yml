@@ -103,7 +103,7 @@ jobs:
       - name: Compile  Batman-adv
         id: compile_batman_1
         run: |       
-          bash ./fix_batman_adv.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8
+          bash ./fix_batman_adv.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || bash ./fix_batman_adv.sh "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
           # cd openwrt 
           # cp ../compile_with_retry.sh .
           # LOG_FILE="batman-adv.log"
