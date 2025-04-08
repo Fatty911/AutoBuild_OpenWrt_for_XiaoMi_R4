@@ -7,6 +7,7 @@
 # --- 配置 ---
 BATMAN_ADV_COMMIT="5437d2c91fd9f15e06fbea46677abb529ed3547c" # 已知兼容的 batman-adv/routing feed commit
 FEED_ROUTING_NAME="routing" # feeds.conf[.default] 中的 routing feed 名称
+FEED_ROUTING_URL="https://github.com/coolsnowwolf/routing.git" # routing feed 的 URL
 
 # --- 参数解析 ---
 MAKE_COMMAND="$1"           # 例如 "make -j1 package/feeds/routing/batman-adv/compile V=s"
@@ -19,20 +20,107 @@ if [ -z "$MAKE_COMMAND" ] || [ -z "$LOG_FILE" ]; then
     exit 1
 fi
 
+# 确保日志文件存在
+touch "$LOG_FILE"
+
 # --- 辅助函数: 提取错误块 ---
 extract_error_block() {
     local log_file="$1"
     echo "--- 最近 300 行日志 (${log_file}) ---"
-    tail -n 300 "$log_file"
+    tail -n 300 "$log_file" 2>/dev/null || echo "日志文件为空或不存在"
     echo "--- 日志结束 ---"
+}
+
+# --- 检查函数: 检查 batman-adv 包是否存在 ---
+check_batman_adv_exists() {
+    echo "检查 batman-adv 包是否存在..."
+    
+    # 检查 feeds 目录
+    if [ ! -d "feeds/$FEED_ROUTING_NAME" ]; then
+        echo "feeds/$FEED_ROUTING_NAME 目录不存在，尝试更新 feeds..."
+        return 1
+    fi
+    
+    # 检查 batman-adv 包目录
+    if [ ! -d "feeds/$FEED_ROUTING_NAME/batman-adv" ]; then
+        echo "feeds/$FEED_ROUTING_NAME/batman-adv 目录不存在，尝试更新 feeds..."
+        return 1
+    fi
+    
+    # 检查 package/feeds 目录
+    if [ ! -d "package/feeds/$FEED_ROUTING_NAME" ]; then
+        echo "package/feeds/$FEED_ROUTING_NAME 目录不存在，尝试安装 feeds..."
+        return 1
+    fi
+    
+    # 检查 package/feeds/routing/batman-adv 目录
+    if [ ! -d "package/feeds/$FEED_ROUTING_NAME/batman-adv" ]; then
+        echo "package/feeds/$FEED_ROUTING_NAME/batman-adv 目录不存在，尝试安装 feeds..."
+        return 1
+    fi
+    
+    echo "batman-adv 包存在。"
+    return 0
+}
+
+# --- 修复函数: 更新和安装 feeds ---
+fix_update_feeds() {
+    echo "更新和安装 feeds..."
+    
+    # 检查 feeds.conf 文件
+    local feed_conf_file="feeds.conf.default"
+    if [ -f "feeds.conf" ]; then
+        feed_conf_file="feeds.conf"
+    fi
+    
+    # 检查 routing feed 是否在 feeds.conf 中
+    if ! grep -q "^src-git $FEED_ROUTING_NAME" "$feed_conf_file"; then
+        echo "在 $feed_conf_file 中添加 $FEED_ROUTING_NAME feed..."
+        echo "src-git $FEED_ROUTING_NAME $FEED_ROUTING_URL" >> "$feed_conf_file"
+    fi
+    
+    # 更新 feeds
+    echo "执行 ./scripts/feeds update -a"
+    ./scripts/feeds update -a || {
+        echo "更新 feeds 失败，尝试单独更新 $FEED_ROUTING_NAME..."
+        ./scripts/feeds update "$FEED_ROUTING_NAME" || {
+            echo "更新 $FEED_ROUTING_NAME feed 失败。"
+            return 1
+        }
+    }
+    
+    # 安装 feeds
+    echo "执行 ./scripts/feeds install -a"
+    ./scripts/feeds install -a || {
+        echo "安装 feeds 失败，尝试单独安装 $FEED_ROUTING_NAME..."
+        ./scripts/feeds install -a -p "$FEED_ROUTING_NAME" || {
+            echo "安装 $FEED_ROUTING_NAME feed 失败。"
+            return 1
+        }
+    }
+    
+    # 特别安装 batman-adv
+    echo "特别安装 batman-adv..."
+    ./scripts/feeds install -p "$FEED_ROUTING_NAME" batman-adv || {
+        echo "安装 batman-adv 失败。"
+        return 1
+    }
+    
+    # 检查安装结果
+    if [ -d "package/feeds/$FEED_ROUTING_NAME/batman-adv" ]; then
+        echo "batman-adv 安装成功。"
+        return 0
+    else
+        echo "batman-adv 安装失败，目录不存在。"
+        return 1
+    fi
 }
 
 # --- 修复函数: 修补 batman-adv 的 multicast.c 文件 ---
 fix_batman_multicast_struct() {
     local log_file="$1"
     echo "尝试修补 batman-adv 'struct br_ip' 错误..." >&2
-    echo "日志文件: $log_file" >&2
-
+    
     # 定位源目录中的 multicast.c
     local pkg_dir=$(find feeds -type d -name "batman-adv" -print -quit)
     if [ -z "$pkg_dir" ]; then
@@ -65,7 +153,7 @@ fix_batman_multicast_struct() {
             echo "已触摸 $pkg_makefile 以强制重建。" >&2
         fi
         # 清理构建目录以确保使用修补后的文件
-        make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。" >&2
+        make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" V=s || echo "警告: 清理 batman-adv 失败。" >&2
         rm -f "$multicast_file.bak"
         return 0
     else
@@ -90,16 +178,17 @@ fix_batman_switch_feed() {
 
     echo "尝试切换 $feed_name feed 至 commit $target_commit..."
     if grep -q "^src-git $feed_name" "$feed_conf_file"; then
-        sed -i "s|^src-git $feed_name .*|src-git $feed_name https://github.com/coolsnowwolf/routing.git;${target_commit}|" "$feed_conf_file"
+        sed -i "s|^src-git $feed_name .*|src-git $feed_name $FEED_ROUTING_URL;$target_commit|" "$feed_conf_file"
     else
-        echo "src-git $feed_name https://github.com/coolsnowwolf/routing.git;${target_commit}" >> "$feed_conf_file"
+        echo "src-git $feed_name $FEED_ROUTING_URL;$target_commit" >> "$feed_conf_file"
     fi
 
-    if grep -q "src-git $feed_name https://github.com/coolsnowwolf/routing.git;${target_commit}" "$feed_conf_file"; then
+    if grep -q "src-git $feed_name $FEED_ROUTING_URL;$target_commit" "$feed_conf_file"; then
         echo "成功更新 $feed_conf_file 中的 $feed_name feed 配置。"
         ./scripts/feeds update "$feed_name" || echo "警告: feeds update $feed_name 失败"
         ./scripts/feeds install -a -p "$feed_name" || echo "警告: feeds install -a -p $feed_name 失败"
-        make "package/feeds/$feed_name/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
+        ./scripts/feeds install -p "$feed_name" batman-adv || echo "警告: 安装 batman-adv 失败"
+        make "package/feeds/$feed_name/batman-adv/clean" V=s || echo "警告: 清理 batman-adv 失败。"
         return 0
     else
         echo "更新 $feed_conf_file 失败。"
@@ -128,7 +217,7 @@ fix_batman_disable_werror() {
             if [ $? -eq 0 ] && [ -s "$batman_makefile.tmp" ] && ! cmp -s "$batman_makefile" "$batman_makefile.tmp" ; then
                  mv "$batman_makefile.tmp" "$batman_makefile"
                  echo "已在 $batman_makefile 中添加 CFLAGS 过滤。"
-                 make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
+                 make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" V=s || echo "警告: 清理 batman-adv 失败。"
                  return 0
             else
                  echo "错误: 使用 awk 修改 $batman_makefile 失败或无更改。"
@@ -147,7 +236,6 @@ fix_batman_disable_werror() {
 
 # --- 修复函数: 修复 batman-adv 的 tasklet_setup 错误 ---
 fix_batman_patch_tasklet() {
-    local log_file="$1"
     echo "尝试修补 batman-adv 的 tasklet_setup 错误..."
     
     # 查找 backports 目录
@@ -157,14 +245,13 @@ fix_batman_patch_tasklet() {
         return 1
     fi
     
+    echo "找到 backports 目录: $backports_dir"
+    
     # 查找 compat.h 文件
     local compat_file="$backports_dir/include/linux/compat-2.6.h"
     if [ ! -f "$compat_file" ]; then
-        compat_file="$backports_dir/include/linux/compat.h"
-        if [ ! -f "$compat_file" ]; then
-            echo "无法找到 backports 的 compat.h 文件。"
-            return 1
-        fi
+        echo "未找到 compat-2.6.h 文件。"
+        return 1
     fi
     
     echo "正在修补 $compat_file..."
@@ -189,12 +276,28 @@ static inline void tasklet_setup(struct tasklet_struct *t,
         echo "已添加 tasklet_setup 兼容定义。"
         
         # 清理构建目录
-        make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
+        make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" V=s || echo "警告: 清理 batman-adv 失败。"
         return 0
     else
         echo "$compat_file 中已存在 tasklet_setup 定义。"
         rm -f "$compat_file.bak"
         return 0
+    fi
+}
+
+# --- 修复函数: 修改编译命令 ---
+fix_compile_command() {
+    local original_command="$1"
+    
+    # 检查命令是否包含 package/feeds/routing/batman-adv/compile
+    if [[ "$original_command" == *"package/feeds/routing/batman-adv/compile"* ]]; then
+        # 尝试使用 package/feeds/routing/batman-adv 而不是 package/feeds/routing/batman-adv/compile
+        local new_command="${original_command/package\/feeds\/routing\/batman-adv\/compile/package\/feeds\/routing\/batman-adv}"
+        echo "修改编译命令: $original_command -> $new_command"
+        return 0
+    else
+        echo "编译命令无需修改。"
+        return 1
     fi
 }
 
@@ -204,12 +307,14 @@ echo "开始修复 batman-adv 编译问题..."
 echo "--------------------------------------------------"
 
 # 初始化状态标志
+batman_exists_checked=0
+feeds_updated=0
 batman_multicast_patched=0
 batman_werror_disabled=0
 batman_feed_switched=0
 batman_tasklet_patched=0
+command_fixed=0
 retry_count=0
-last_fix_applied=""
 
 # 主循环
 while [ $retry_count -lt $MAX_RETRY ]; do
@@ -225,7 +330,7 @@ while [ $retry_count -lt $MAX_RETRY ]; do
     if [ $COMPILE_STATUS -eq 0 ] && ! grep -q -E "error:|failed|undefined reference" "$LOG_FILE.tmp"; then
         echo "编译成功！"
         cat "$LOG_FILE.tmp" >> "$LOG_FILE" # 追加成功日志
-        rm "$LOG_FILE.tmp"
+        rm -f "$LOG_FILE.tmp"
         exit 0
     else
         echo "编译失败 (退出码: $COMPILE_STATUS)，检查错误..."
@@ -235,9 +340,39 @@ while [ $retry_count -lt $MAX_RETRY ]; do
     # 错误检测和修复逻辑
     fix_applied=0
 
+    # 检查 "No rule to make target" 错误
+    if grep -q "No rule to make target 'package/feeds/routing/batman-adv/compile'" "$LOG_FILE.tmp"; then
+        echo "检测到 'No rule to make target' 错误..."
+        
+        # 首先检查 batman-adv 包是否存在
+        if [ $batman_exists_checked -eq 0 ]; then
+            batman_exists_checked=1
+            if ! check_batman_adv_exists; then
+                echo "batman-adv 包不存在，尝试更新和安装 feeds..."
+                if fix_update_feeds; then
+                    fix_applied=1
+                    feeds_updated=1
+                    echo "feeds 更新和安装成功，将重试编译..."
+                else
+                    echo "feeds 更新和安装失败。"
+                fi
+            fi
+        fi
+        
+        # 如果包存在但命令有问题，尝试修改命令
+        if [ $command_fixed -eq 0 ] && [ $feeds_updated -eq 1 ]; then
+            command_fixed=1
+            NEW_COMMAND="$MAKE_COMMAND"
+            if [[ "$MAKE_COMMAND" == *"package/feeds/routing/batman-adv/compile"* ]]; then
+                NEW_COMMAND="${MAKE_COMMAND/package\/feeds\/routing\/batman-adv\/compile/package\/feeds\/routing\/batman-adv}"
+                echo "修改编译命令: $MAKE_COMMAND -> $NEW_COMMAND"
+                MAKE_COMMAND="$NEW_COMMAND"
+                fix_applied=1
+            fi
+        fi
     # 检查 struct br_ip 错误
-    if grep -q "struct br_ip.*has no member named.*dst" "$LOG_FILE.tmp" || \
-       grep -q "dst\.ip[4|6]" "$LOG_FILE.tmp" && grep -q "batman-adv.*multicast\.c" "$LOG_FILE.tmp"; then
+    elif grep -q "struct br_ip.*has no member named.*dst" "$LOG_FILE.tmp" || \
+         grep -q "dst\.ip[4|6]" "$LOG_FILE.tmp" && grep -q "batman-adv.*multicast\.c" "$LOG_FILE.tmp"; then
         echo "检测到 batman-adv struct br_ip 'dst' 错误..."
         if [ $batman_multicast_patched -eq 0 ]; then
             if fix_batman_multicast_struct "$LOG_FILE.tmp"; then
@@ -266,7 +401,7 @@ while [ $retry_count -lt $MAX_RETRY ]; do
     elif grep -q 'undefined reference to .*tasklet_setup' "$LOG_FILE.tmp" && grep -q -B 10 -A 10 -E 'batman-adv|backports|compat' "$LOG_FILE.tmp"; then
         echo "检测到 batman-adv 的 'tasklet_setup' 符号错误..."
         if [ $batman_tasklet_patched -eq 0 ]; then
-            if fix_batman_patch_tasklet "$LOG_FILE.tmp"; then
+            if fix_batman_patch_tasklet; then
                 fix_applied=1
                 batman_tasklet_patched=1
                 echo "已添加 tasklet_setup 兼容定义，将重试编译..."
@@ -288,27 +423,30 @@ while [ $retry_count -lt $MAX_RETRY ]; do
         fi
     else
         echo "未检测到已知的 batman-adv 错误模式，但编译失败。"
-        # 如果所有修复都已尝试，则退出
-        if [ $batman_multicast_patched -eq 1 ] && [ $batman_werror_disabled -eq 1 ] && 
-           [ $batman_feed_switched -eq 1 ] && [ $batman_tasklet_patched -eq 1 ]; then
-            echo "所有已知修复方法都已尝试，但问题仍然存在。"
-            cat "$LOG_FILE.tmp" >> "$LOG_FILE"
-            rm "$LOG_FILE.tmp"
-            exit 1
+        
+        # 如果是第一次运行且没有应用任何修复，尝试更新 feeds
+        if [ $retry_count -eq 0 ] && [ $feeds_updated -eq 0 ]; then
+            echo "尝试更新和安装 feeds..."
+            if fix_update_feeds; then
+                fix_applied=1
+                feeds_updated=1
+                echo "feeds 更新和安装成功，将重试编译..."
+            fi
         fi
     fi
 
     # 如果没有应用任何修复但已尝试所有修复方法，则退出
-    if [ $fix_applied -eq 0 ] && [ $batman_multicast_patched -eq 1 ] && 
+    if [ $fix_applied -eq 0 ] && [ $feeds_updated -eq 1 ] && [ $batman_multicast_patched -eq 1 ] && 
        [ $batman_werror_disabled -eq 1 ] && [ $batman_feed_switched -eq 1 ] && 
-       [ $batman_tasklet_patched -eq 1 ]; then
+       [ $batman_tasklet_patched -eq 1 ] && [ $command_fixed -eq 1 ]; then
         echo "所有修复方法都已尝试，但无法解决问题。"
         cat "$LOG_FILE.tmp" >> "$LOG_FILE"
-        rm "$LOG_FILE.tmp"
+        rm -f "$LOG_FILE.tmp"
         exit 1
     fi
 
     # 清理临时日志
+    cat "$LOG_FILE.tmp" >> "$LOG_FILE"  # 追加到主日志文件
     rm -f "$LOG_FILE.tmp"
     
     retry_count=$((retry_count + 1))
