@@ -101,7 +101,7 @@ jobs:
         # set -x
         LOG_FILE="packages.log"
         cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 "error:|failed|undefined reference"  
+        bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
 
 
     - name: Try compiling the firmware
