@@ -200,12 +200,10 @@ fix_batman_multicast_struct() {
     echo "正在修补 $multicast_file..." >&2
     cp "$multicast_file" "$multicast_file.bak"
 
-    # 替换所有 'dst' 为 'u'
-    sed -i 's/src->dst\.ip4/src->u.ip4/g' "$multicast_file"
-    sed -i 's/src->dst\.ip6/src->u.ip6/g' "$multicast_file"
-    sed -i 's/br_ip_entry->addr\.dst\.ip4/br_ip_entry->addr.u.ip4/g' "$multicast_file"
-    sed -i 's/br_ip_entry->addr\.dst\.ip6/br_ip_entry->addr.u.ip6/g' "$multicast_file"
-    sed -i 's/IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr\.dst\.ip6)/IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr.u.ip6)/g' "$multicast_file"
+    # 替换所有 'dst.ip4' 和 'dst.ip6' 为 'u.ip4' 和 'u.ip6'
+    sed -i 's/dst\.ip4/u.ip4/g' "$multicast_file"
+    sed -i 's/dst\.ip6/u.ip6/g' "$multicast_file"
+    # 替换 br_multicast_has_router_adjacent
     sed -i 's/br_multicast_has_router_adjacent/br_multicast_has_querier_adjacent/g' "$multicast_file"
 
     # 检查修补是否成功
@@ -218,6 +216,8 @@ fix_batman_multicast_struct() {
             touch "$pkg_makefile"
             echo "已触摸 $pkg_makefile 以强制重建。" >&2
         fi
+        # 清理构建目录以确保使用修补后的文件
+        make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。" >&2
         rm -f "$multicast_file.bak"
         return 0
     else
@@ -268,83 +268,29 @@ fix_batman_switch_feed() {
     local target_commit="$1"
     local feed_name="$FEED_ROUTING_NAME"
     local feed_conf_file="feeds.conf.default"
-    local feed_conf_line_pattern="src-git $feed_name .*$FEED_ROUTING_URL_PATTERN"
-    local feed_conf_line_prefix="src-git $feed_name "
 
-    echo "尝试切换 $feed_name feed 至 commit $target_commit 通过修改 feeds 配置文件..."
-
-    # Determine which feeds file to use
     if [ -f "feeds.conf" ]; then
         feed_conf_file="feeds.conf"
         echo "使用 feeds.conf 文件。"
-    elif [ -f "feeds.conf.default" ]; then
-        feed_conf_file="feeds.conf.default"
-        echo "使用 feeds.conf.default 文件。"
+    fi
+
+    echo "尝试切换 $feed_name feed 至 commit $target_commit..."
+    if grep -q "^src-git $feed_name" "$feed_conf_file"; then
+        sed -i "s|^src-git $feed_name .*|src-git $feed_name https://github.com/coolsnowwolf/routing.git;${target_commit}|" "$feed_conf_file"
     else
-        echo "错误: 未找到 feeds.conf 或 feeds.conf.default 文件。"
-        return 1
+        echo "src-git $feed_name https://github.com/coolsnowwolf/routing.git;${target_commit}" >> "$feed_conf_file"
     fi
 
-    # Check if the line exists and already has the correct commit
-    local current_line=$(grep "^$feed_conf_line_pattern" "$feed_conf_file" | head -n 1)
-    local current_url=$(echo "$current_line" | awk '{print $3}' | cut -d';' -f1)
-    local new_line="$feed_conf_line_prefix$current_url;$target_commit"
-
-    if [ -z "$current_line" ]; then
-        echo "错误: 未能在 $feed_conf_file 中找到 '$feed_conf_line_pattern' 定义。"
-        echo "请手动检查你的 feeds 配置文件。"
-        return 1
-    fi
-
-    if grep -q "^$(echo "$new_line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$" "$feed_conf_file"; then
-        echo "$feed_name feed 已在 $feed_conf_file 中指向 commit $target_commit。"
-        echo "运行 feeds update/install 以确保一致性..."
-        ./scripts/feeds update "$feed_name" || { echo "错误: feeds update $feed_name 失败"; return 1; }
-        ./scripts/feeds install -a -p "$feed_name" || { echo "错误: feeds install -a -p $feed_name 失败"; return 1; }
+    if grep -q "src-git $feed_name https://github.com/coolsnowwolf/routing.git;${target_commit}" "$feed_conf_file"; then
+        echo "成功更新 $feed_conf_file 中的 $feed_name feed 配置。"
+        ./scripts/feeds update "$feed_name" || echo "警告: feeds update $feed_name 失败"
+        ./scripts/feeds install -a -p "$feed_name" || echo "警告: feeds install -a -p $feed_name 失败"
+        make "package/feeds/$feed_name/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
         return 0
-    fi
-
-    # Modify the line using sed
-    echo "在 $feed_conf_file 中找到 $feed_name feed 定义，正在修改 commit..."
-    cp "$feed_conf_file" "$feed_conf_file.bak"
-    sed -i "s|^$feed_conf_line_pattern.*|$new_line|" "$feed_conf_file"
-
-    # Verify change
-    if grep -q "^$(echo "$new_line" | sed 's/[^^]/[&]/g; s/\^/\\^/g')$" "$feed_conf_file"; then
-        echo "已将 $feed_conf_file 中的 $feed_name 更新为 commit $target_commit"
-        rm "$feed_conf_file.bak"
     else
-        echo "错误: 使用 sed 修改 $feed_conf_file 失败或未生效。"
-        mv "$feed_conf_file.bak" "$feed_conf_file"
+        echo "更新 $feed_conf_file 失败。"
         return 1
     fi
-
-    echo "运行 feeds update 和 install 以应用更改..."
-    ./scripts/feeds update "$feed_name" || { echo "错误: feeds update $feed_name 失败"; return 1; }
-    ./scripts/feeds install -a -p "$feed_name" || { echo "错误: feeds install -a -p $feed_name 失败"; return 1; }
-
-    echo "切换 $feed_name feed 至 commit $target_commit 完成。"
-
-    # Clean the potentially problematic package build dir after switching source
-    echo "清理旧的 batman-adv 构建目录..."
-    local build_dirs_found
-    build_dirs_found=$(find build_dir -type d -name "batman-adv-*" -prune 2>/dev/null)
-    if [ -n "$build_dirs_found" ]; then
-        echo "找到以下 batman-adv 构建目录，将进行清理:"
-        echo "$build_dirs_found"
-        echo "$build_dirs_found" | xargs rm -rf
-        if [ $? -eq 0 ]; then
-            echo "构建目录清理完成。"
-        else
-            echo "警告: 清理 batman-adv 构建目录时可能出错。"
-        fi
-    else
-        echo "未找到 batman-adv 构建目录，可能无需清理或查找失败。"
-    fi
-
-    # Also clean the source package directory
-    make "package/feeds/$feed_name/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理旧 batman-adv 包源文件失败。"
-    return 0
 }
 
 # --- Function: Disable -Werror in batman-adv Makefile ---
@@ -368,7 +314,6 @@ fix_batman_disable_werror() {
             if [ $? -eq 0 ] && [ -s "$batman_makefile.tmp" ] && ! cmp -s "$batman_makefile" "$batman_makefile.tmp" ; then
                  mv "$batman_makefile.tmp" "$batman_makefile"
                  echo "已在 $batman_makefile 中添加 CFLAGS 过滤。"
-                 # Clean the package to ensure new flags are used
                  make "package/feeds/$FEED_ROUTING_NAME/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。"
                  return 0
             else
@@ -1316,12 +1261,22 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
                 batman_multicast_patched=1
                 echo "修补成功，将重试编译..."
             else
-                echo "修补 multicast.c 失败，将尝试修复 routing feed..."
+                echo "修补 multicast.c 失败，将尝试禁用 -Werror..."
                 batman_multicast_patched=1
+            fi
+        elif [ "$batman_werror_disabled" -eq 0 ]; then
+            echo "尝试禁用 -Werror..."
+            if fix_batman_disable_werror; then
+                fix_applied_this_iteration=1
+                batman_werror_disabled=1
+                echo "已禁用 -Werror，将重试编译..."
+            else
+                echo "禁用 -Werror 失败，将尝试修复 routing feed..."
+                batman_werror_disabled=1
             fi
         elif [ "$batman_feed_fixed" -eq 0 ]; then
             echo "尝试修复 routing feed 配置到 commit $BATMAN_ADV_COMMIT..."
-            if fix_routing_feed_config "$BATMAN_ADV_COMMIT"; then
+            if fix_batman_switch_feed "$BATMAN_ADV_COMMIT"; then
                 fix_applied_this_iteration=1
                 batman_feed_fixed=1
                 echo "Feed 配置已修复，将重试编译..."
@@ -1330,8 +1285,8 @@ while [ $retry_count -lt "$MAX_RETRY" ]; do
                 batman_feed_fixed=1
             fi
         else
-            echo "已尝试修补 multicast.c 和修复 routing feed，但 batman-adv 错误仍存在，停止重试。"
-            cat "$LOG_FILE.tmp" >> "$LOG_FILE" && rm "$LOG_FILE.tmp"
+            echo "已尝试修补 multicast.c、禁用 -Werror 和修复 routing feed，但 batman-adv 错误仍存在，停止重试。"
+            rm "$LOG_FILE.tmp"
             exit 1
         fi
     # Batman-adv 'struct br_ip' dst error with -Werror
