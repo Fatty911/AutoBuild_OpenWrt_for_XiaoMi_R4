@@ -185,23 +185,22 @@ fix_batman_multicast_struct() {
     echo "尝试修补 batman-adv 'struct br_ip' 错误..." >&2
     echo "日志文件: $log_file" >&2
 
-    local multicast_file
-    multicast_file=$(grep -oE 'build_dir/target-[^/]+/linux-[^/]+/(linux-[^/]+|batman-adv-[^/]+)/net/batman-adv/multicast\.c' "$log_file" | head -n 1)
-    if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
-        echo "无法从日志定位 multicast.c，尝试动态查找..." >&2
-        multicast_file=$(find build_dir -type f -path "*/batman-adv-*/net/batman-adv/multicast.c" -o -path "*/linux-*/net/batman-adv/multicast.c" -print -quit)
-        if [ -z "$multicast_file" ] || [ ! -f "$multicast_file" ]; then
-            echo "动态查找 multicast.c 失败。" >&2
-            return 1
-        fi
-        echo "动态找到 multicast.c: $multicast_file" >&2
-    else
-        echo "从日志找到 multicast.c: $multicast_file" >&2
+    # 定位源目录中的 multicast.c
+    local pkg_dir=$(find feeds -type d -name "batman-adv" -print -quit)
+    if [ -z "$pkg_dir" ]; then
+        echo "无法找到 batman-adv 包目录。" >&2
+        return 1
+    fi
+    local multicast_file="$pkg_dir/net/batman-adv/multicast.c"
+    if [ ! -f "$multicast_file" ]; then
+        echo "在 $pkg_dir 中未找到 multicast.c 文件。" >&2
+        return 1
     fi
 
     echo "正在修补 $multicast_file..." >&2
     cp "$multicast_file" "$multicast_file.bak"
 
+    # 替换所有 'dst' 为 'u'
     sed -i 's/src->dst\.ip4/src->u.ip4/g' "$multicast_file"
     sed -i 's/src->dst\.ip6/src->u.ip6/g' "$multicast_file"
     sed -i 's/br_ip_entry->addr\.dst\.ip4/br_ip_entry->addr.u.ip4/g' "$multicast_file"
@@ -209,15 +208,13 @@ fix_batman_multicast_struct() {
     sed -i 's/IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr\.dst\.ip6)/IPV6_ADDR_MC_SCOPE(&br_ip_entry->addr.u.ip6)/g' "$multicast_file"
     sed -i 's/br_multicast_has_router_adjacent/br_multicast_has_querier_adjacent/g' "$multicast_file"
 
-    echo "检查修补结果..." >&2
+    # 检查修补是否成功
     if ! grep -q 'dst\.ip[4|6]' "$multicast_file" && \
        ! grep -q 'br_multicast_has_router_adjacent' "$multicast_file"; then
         echo "成功修补 $multicast_file" >&2
-        echo "清理 batman-adv 包以强制重新编译..." >&2
-        make "package/feeds/routing/batman-adv/clean" DIRCLEAN=1 V=s || echo "警告: 清理 batman-adv 失败。" >&2
-        local pkg_makefile
-        pkg_makefile=$(find package feeds -path '*/batman-adv/Makefile' -print -quit)
-        if [ -n "$pkg_makefile" ]; then
+        # 触摸 Makefile 以触发重新编译
+        local pkg_makefile="$pkg_dir/Makefile"
+        if [ -f "$pkg_makefile" ]; then
             touch "$pkg_makefile"
             echo "已触摸 $pkg_makefile 以强制重建。" >&2
         fi
