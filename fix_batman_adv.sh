@@ -31,6 +31,34 @@ extract_error_block() {
     echo "--- 日志结束 ---"
 }
 
+# --- 检查函数: 检查当前目录是否为 OpenWrt 根目录 ---
+check_openwrt_root() {
+    # 检查常见的 OpenWrt 目录和文件
+    if [ ! -d "package" ] || [ ! -d "target" ] || [ ! -f "Makefile" ] || [ ! -d "scripts" ]; then
+        echo "当前目录不是 OpenWrt 根目录，尝试查找..."
+        
+        # 尝试查找 OpenWrt 根目录
+        local openwrt_dir=""
+        for dir in . .. ../.. ../../.. ../../../..; do
+            if [ -d "$dir/package" ] && [ -d "$dir/target" ] && [ -f "$dir/Makefile" ] && [ -d "$dir/scripts" ]; then
+                openwrt_dir="$dir"
+                break
+            fi
+        done
+        
+        if [ -n "$openwrt_dir" ]; then
+            echo "找到 OpenWrt 根目录: $openwrt_dir"
+            cd "$openwrt_dir"
+            return 0
+        else
+            echo "错误: 无法找到 OpenWrt 根目录。"
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
 # --- 检查函数: 检查 batman-adv 包是否存在 ---
 check_batman_adv_exists() {
     echo "检查 batman-adv 包是否存在..."
@@ -73,10 +101,34 @@ fix_update_feeds() {
         feed_conf_file="feeds.conf"
     fi
     
+    # 如果 feeds.conf.default 不存在，尝试创建
+    if [ ! -f "$feed_conf_file" ]; then
+        echo "未找到 $feed_conf_file，尝试创建..."
+        if [ -f "feeds.conf.default.bak" ]; then
+            cp "feeds.conf.default.bak" "$feed_conf_file"
+        elif [ -f "feeds.conf.bak" ]; then
+            cp "feeds.conf.bak" "$feed_conf_file"
+        else
+            # 创建一个基本的 feeds.conf 文件
+            echo "创建基本的 $feed_conf_file 文件..."
+            cat > "$feed_conf_file" << EOF
+src-git packages https://github.com/coolsnowwolf/packages
+src-git luci https://github.com/coolsnowwolf/luci
+src-git $FEED_ROUTING_NAME $FEED_ROUTING_URL
+EOF
+        fi
+    fi
+    
     # 检查 routing feed 是否在 feeds.conf 中
     if ! grep -q "^src-git $FEED_ROUTING_NAME" "$feed_conf_file"; then
         echo "在 $feed_conf_file 中添加 $FEED_ROUTING_NAME feed..."
         echo "src-git $FEED_ROUTING_NAME $FEED_ROUTING_URL" >> "$feed_conf_file"
+    fi
+    
+    # 检查 scripts/feeds 是否存在
+    if [ ! -f "scripts/feeds" ]; then
+        echo "错误: scripts/feeds 不存在，可能不是 OpenWrt 根目录。"
+        return 1
     fi
     
     # 更新 feeds
@@ -301,10 +353,37 @@ fix_compile_command() {
     fi
 }
 
+# --- 修复函数: 尝试直接安装 batman-adv 包 ---
+fix_install_batman_directly() {
+    echo "尝试直接安装 batman-adv 包..."
+    
+    # 检查是否有 batman-adv 包可用
+    if ! make menuconfig -j1 | grep -q "batman-adv"; then
+        echo "在 menuconfig 中未找到 batman-adv 包。"
+        return 1
+    fi
+    
+    # 尝试直接编译 batman-adv
+    echo "尝试直接编译 batman-adv..."
+    make package/batman-adv/compile V=s || {
+        echo "直接编译 batman-adv 失败。"
+        return 1
+    }
+    
+    echo "batman-adv 直接编译成功。"
+    return 0
+}
+
 # --- 主循环 ---
 echo "--------------------------------------------------"
 echo "开始修复 batman-adv 编译问题..."
 echo "--------------------------------------------------"
+
+# 检查并切换到 OpenWrt 根目录
+if ! check_openwrt_root; then
+    echo "错误: 无法找到 OpenWrt 根目录，脚本将退出。"
+    exit 1
+fi
 
 # 初始化状态标志
 batman_exists_checked=0
@@ -314,6 +393,7 @@ batman_werror_disabled=0
 batman_feed_switched=0
 batman_tasklet_patched=0
 command_fixed=0
+direct_install_tried=0
 retry_count=0
 
 # 主循环
@@ -363,11 +443,22 @@ while [ $retry_count -lt $MAX_RETRY ]; do
         if [ $command_fixed -eq 0 ] && [ $feeds_updated -eq 1 ]; then
             command_fixed=1
             NEW_COMMAND="$MAKE_COMMAND"
-            if [[ "$MAKE_COMMAND" == *"package/feeds/routing/batman-adv/compile"* ]]; then
+            if fix_compile_command "$MAKE_COMMAND"; then
                 NEW_COMMAND="${MAKE_COMMAND/package\/feeds\/routing\/batman-adv\/compile/package\/feeds\/routing\/batman-adv}"
                 echo "修改编译命令: $MAKE_COMMAND -> $NEW_COMMAND"
                 MAKE_COMMAND="$NEW_COMMAND"
                 fix_applied=1
+            fi
+        fi
+        
+        # 尝试直接安装 batman-adv
+        if [ $direct_install_tried -eq 0 ] && [ $fix_applied -eq 0 ]; then
+            direct_install_tried=1
+            if fix_install_batman_directly; then
+                fix_applied=1
+                echo "直接安装 batman-adv 成功，将重试编译..."
+            else
+                echo "直接安装 batman-adv 失败。"
             fi
         fi
     # 检查 struct br_ip 错误
@@ -438,7 +529,7 @@ while [ $retry_count -lt $MAX_RETRY ]; do
     # 如果没有应用任何修复但已尝试所有修复方法，则退出
     if [ $fix_applied -eq 0 ] && [ $feeds_updated -eq 1 ] && [ $batman_multicast_patched -eq 1 ] && 
        [ $batman_werror_disabled -eq 1 ] && [ $batman_feed_switched -eq 1 ] && 
-       [ $batman_tasklet_patched -eq 1 ] && [ $command_fixed -eq 1 ]; then
+       [ $batman_tasklet_patched -eq 1 ] && [ $command_fixed -eq 1 ] && [ $direct_install_tried -eq 1 ]; then
         echo "所有修复方法都已尝试，但无法解决问题。"
         cat "$LOG_FILE.tmp" >> "$LOG_FILE"
         rm -f "$LOG_FILE.tmp"
