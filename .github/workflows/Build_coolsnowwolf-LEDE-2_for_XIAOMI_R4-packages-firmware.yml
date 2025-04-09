@@ -104,6 +104,7 @@ jobs:
         id: compile_batman_1
         run: |   
           cd openwrt
+          cp ../fix_batman_adv.sh .
           bash ./fix_batman_adv.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || bash ./fix_batman_adv.sh "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
           
 
