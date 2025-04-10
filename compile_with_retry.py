@@ -555,12 +555,14 @@ def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 V=s"')
     parser.add_argument('log_file', help='日志文件路径，例如 "compile.log"')
-    parser.add_argument('--max-retry', type=int, default=8, help='最大重试次数 (默认: 8)')
-    parser.add_argument('--error-pattern', default='cc1: some warnings being treated as errors|error:|failed|undefined reference|invalid|File exists|missing separator|cannot find dependency|No rule to make target',
+    parser.add_argument('max_retry', nargs='?', type=int, default=8, help='最大重试次数 (默认: 8)')
+    parser.add_argument('error_pattern', nargs='?', 
+                        default='cc1: some warnings being treated as errors|error:|failed|undefined reference|invalid|File exists|missing separator|cannot find dependency|No rule to make target',
                         help='错误模式正则表达式')
     
     global args
     args = parser.parse_args()
+
     
     # 参数检查
     if not args.make_command or not args.log_file:
