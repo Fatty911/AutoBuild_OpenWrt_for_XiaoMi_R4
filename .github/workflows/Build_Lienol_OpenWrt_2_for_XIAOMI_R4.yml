@@ -100,8 +100,8 @@ jobs:
         cd openwrt
         # set -x
         LOG_FILE="packages.log"
-        cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
+        # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
+        cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8 
 
 
     - name: Try compiling the firmware
@@ -111,8 +111,9 @@ jobs:
         echo "开始执行修复后重试编译..."
         # set -o pipefail
         LOG_FILE="compile.log"
-        cp ../compile_with_retry.sh .
-        bash compile_with_retry.sh "make -j1 V=s" "compile.log" 5 "error:|failed|undefined reference" 
+        # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "compile.log" 7
+        cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "compile.log" 7
+        
         
         
     - name: Check for .bin file after initial compilation
@@ -124,6 +125,7 @@ jobs:
         else
           echo "BIN_EXISTS=false" >> $GITHUB_ENV
         fi
+        
     - name: Perform manual porting for Xiaomi Mi Router 4
       id: transplant
       if: env.BIN_EXISTS == 'false'
