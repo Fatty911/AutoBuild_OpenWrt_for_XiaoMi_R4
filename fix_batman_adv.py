@@ -35,20 +35,26 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='修复 batman-adv 相关编译错误的脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 package/feeds/routing/batman-adv/compile V=s"')
     parser.add_argument('log_file', help='日志文件路径，例如 "batman-adv.log"')
-    parser.add_argument('max_retry', nargs='?', type=int, default=8, help='最大重试次数 (默认: 8)')
+    parser.add_argument('max_retry', nargs='?', type=int, default=5, help='最大重试次数 (默认: 5)')
+    parser.add_argument('--fallback', help='编译失败后的备选命令', default="")
     return parser.parse_args()
 
-def run_command(cmd, capture_output=True, shell=True):
-    """运行shell命令并返回结果"""
+def run_command(cmd, capture_output=True, shell=True, timeout=7200):
+    """运行shell命令并返回结果，添加超时参数"""
     try:
+        logger.info(f"执行命令: {cmd}")
         result = subprocess.run(
             cmd, 
             shell=shell, 
             capture_output=capture_output, 
             text=True, 
-            check=False
+            check=False,
+            timeout=timeout  # 添加2小时超时
         )
         return result.returncode, result.stdout, result.stderr
+    except subprocess.TimeoutExpired:
+        logger.error(f"命令执行超时: {cmd}")
+        return 124, "", "Command timed out"
     except Exception as e:
         logger.error(f"执行命令失败: {cmd}, 错误: {e}")
         return 1, "", str(e)
@@ -113,6 +119,21 @@ def check_batman_adv_exists():
     
     logger.info("batman-adv 包存在。")
     return True
+
+def check_missing_dependencies(log_content):
+    """检查并修复缺失的依赖项"""
+    missing_deps = re.findall(r"has a dependency on '([^']+)', which does not exist", log_content)
+    if missing_deps:
+        logger.info(f"检测到缺失的依赖项: {', '.join(set(missing_deps))}")
+        for dep in set(missing_deps):
+            logger.info(f"尝试安装依赖项: {dep}")
+            ret_code, _, _ = run_command(f"./scripts/feeds install {dep}")
+            if ret_code != 0:
+                logger.warning(f"安装依赖项 {dep} 失败，尝试更新feeds后再安装")
+                run_command("./scripts/feeds update -a")
+                run_command(f"./scripts/feeds install {dep}")
+        return True
+    return False
 
 def fix_update_feeds():
     """更新和安装 feeds"""
@@ -416,12 +437,21 @@ static inline void tasklet_setup(struct tasklet_struct *t,
 
 def fix_compile_command(original_command):
     """修改编译命令"""
-    # 检查命令是否包含 package/feeds/routing/batman-adv/compile
+    # 检查命令是否包含 package/feeds/routing/
     if "package/feeds/routing/batman-adv/compile" in original_command:
         # 尝试使用 package/feeds/routing/batman-adv 而不是 package/feeds/routing/batman-adv/compile
         new_command = original_command.replace(
             "package/feeds/routing/batman-adv/compile", 
             "package/feeds/routing/batman-adv"
+        )
+        logger.info(f"修改编译命令: {original_command} -> {new_command}")
+        return new_command
+    # 检查luci-base路径
+    elif "package/luci/modules/luci-base/compile" in original_command:
+        # 尝试修正luci-base路径
+        new_command = original_command.replace(
+            "package/luci/modules/luci-base/compile", 
+            "package/feeds/luci/luci-base"
         )
         logger.info(f"修改编译命令: {original_command} -> {new_command}")
         return new_command
@@ -433,21 +463,32 @@ def fix_install_batman_directly():
     """尝试直接安装 batman-adv 包"""
     logger.info("尝试直接安装 batman-adv 包...")
     
-    # 检查是否有 batman-adv 包可用
-    ret_code, stdout, _ = run_command("make menuconfig -j1", capture_output=True)
-    if ret_code != 0 or "batman-adv" not in stdout:
-        logger.error("在 menuconfig 中未找到 batman-adv 包。")
-        return False
-    
     # 尝试直接编译 batman-adv
     logger.info("尝试直接编译 batman-adv...")
-    ret_code, _, _ = run_command("make package/batman-adv/compile V=s")
+    ret_code, _, _ = run_command("make package/feeds/routing/batman-adv/{clean,compile} V=s")
     if ret_code != 0:
-        logger.error("直接编译 batman-adv 失败。")
-        return False
+        logger.error("直接编译 batman-adv 失败，尝试另一种方式...")
+        ret_code, _, _ = run_command("make package/batman-adv/compile V=s")
+        if ret_code != 0:
+            logger.error("直接编译 batman-adv 失败。")
+            return False
     
     logger.info("batman-adv 直接编译成功。")
     return True
+
+def check_build_interrupted(log_content):
+    """检查编译是否被中断"""
+    # 检查是否有明显的编译中断迹象
+    if "Killed" in log_content or "Terminated" in log_content:
+        logger.info("检测到编译被中断，可能是内存不足导致。")
+        return True
+    
+    # 检查是否有补丁应用但没有完成编译
+    if "Applying ./patches/" in log_content and "Compiled" not in log_content:
+        logger.info("检测到编译过程中断，可能是在应用补丁后停止。")
+        return True
+    
+    return False
 
 def main():
     """主函数"""
@@ -455,6 +496,7 @@ def main():
     make_command = args.make_command
     log_file = args.log_file
     max_retry = args.max_retry
+    fallback_command = args.fallback or "make -j1 package/feeds/luci/luci-base V=s"
     
     logger.info("--------------------------------------------------")
     logger.info("开始修复 batman-adv 编译问题...")
@@ -477,6 +519,7 @@ def main():
     batman_tasklet_patched = False
     command_fixed = False
     direct_install_tried = False
+    missing_deps_fixed = False
     
     # 主循环
     for retry_count in range(max_retry):
@@ -486,17 +529,23 @@ def main():
         
         # 运行编译命令并捕获输出到临时日志文件
         tmp_log_file = f"{log_file}.tmp"
-        with open(tmp_log_file, 'w') as f:
-            ret_code = subprocess.call(make_command, shell=True, stdout=f, stderr=subprocess.STDOUT)
+        try:
+            with open(tmp_log_file, 'w') as f:
+                ret_code = subprocess.call(make_command, shell=True, stdout=f, stderr=subprocess.STDOUT, timeout=7200)
+        except subprocess.TimeoutExpired:
+            logger.error("编译命令超时，可能是系统资源不足或编译卡住")
+            ret_code = 124
+            with open(tmp_log_file, 'a') as f:
+                f.write("\n\n### COMMAND TIMED OUT AFTER 2 HOURS ###\n")
         
         # 检查编译是否成功
-        with open(tmp_log_file, 'r') as f:
+        with open(tmp_log_file, 'r', errors='replace') as f:
             log_content = f.read()
             compile_success = (ret_code == 0 and not re.search(r"error:|failed|undefined reference", log_content))
         
         if compile_success:
             logger.info("编译成功！")
-            with open(log_file, 'a') as main_log, open(tmp_log_file, 'r') as tmp_log:
+            with open(log_file, 'a') as main_log, open(tmp_log_file, 'r', errors='replace') as tmp_log:
                 main_log.write(tmp_log.read())
             if os.path.isfile(tmp_log_file):
                 os.remove(tmp_log_file)
@@ -508,8 +557,22 @@ def main():
         # 错误检测和修复逻辑
         fix_applied = False
         
+        # 检查编译是否被中断
+        if check_build_interrupted(log_content):
+            logger.info("尝试清理并重新编译...")
+            run_command("make clean")
+            fix_applied = True
+            continue
+        
+        # 检查缺失的依赖项
+        if not missing_deps_fixed and check_missing_dependencies(log_content):
+            missing_deps_fixed = True
+            fix_applied = True
+            logger.info("已尝试修复缺失的依赖项，将重试编译...")
+            continue
+        
         # 检查 "No rule to make target" 错误
-        if "No rule to make target 'package/feeds/routing/batman-adv/compile'" in log_content:
+        if "No rule to make target" in log_content:
             logger.info("检测到 'No rule to make target' 错误...")
             
             # 首先检查 batman-adv 包是否存在
@@ -525,12 +588,13 @@ def main():
                         logger.error("feeds 更新和安装失败。")
             
             # 如果包存在但命令有问题，尝试修改命令
-            if not command_fixed and feeds_updated:
+            if not command_fixed:
                 command_fixed = True
                 new_command = fix_compile_command(make_command)
                 if new_command != make_command:
                     make_command = new_command
                     fix_applied = True
+                    logger.info(f"已修改编译命令为: {make_command}")
             
             # 尝试直接安装 batman-adv
             if not direct_install_tried and not fix_applied:
@@ -601,19 +665,26 @@ def main():
                     feeds_updated = True
                     logger.info("feeds 更新和安装成功，将重试编译...")
         
-        # 如果没有应用任何修复但已尝试所有修复方法，则退出
+        # 如果没有应用任何修复但已尝试所有修复方法，尝试备选命令
         if not fix_applied and feeds_updated and batman_multicast_patched and \
            batman_werror_disabled and batman_feed_switched and \
            batman_tasklet_patched and command_fixed and direct_install_tried:
-            logger.info("所有修复方法都已尝试，但无法解决问题。")
-            with open(log_file, 'a') as main_log, open(tmp_log_file, 'r') as tmp_log:
-                main_log.write(tmp_log.read())
-            if os.path.isfile(tmp_log_file):
-                os.remove(tmp_log_file)
-            sys.exit(1)
+            
+            if fallback_command and fallback_command != make_command:
+                logger.info(f"所有修复方法都已尝试，切换到备选命令: {fallback_command}")
+                make_command = fallback_command
+                fallback_command = ""  # 避免再次使用相同的备选命令
+                fix_applied = True
+            else:
+                logger.info("所有修复方法都已尝试，但无法解决问题。")
+                with open(log_file, 'a') as main_log, open(tmp_log_file, 'r', errors='replace') as tmp_log:
+                    main_log.write(tmp_log.read())
+                if os.path.isfile(tmp_log_file):
+                    os.remove(tmp_log_file)
+                sys.exit(1)
         
         # 清理临时日志
-        with open(log_file, 'a') as main_log, open(tmp_log_file, 'r') as tmp_log:
+        with open(log_file, 'a') as main_log, open(tmp_log_file, 'r', errors='replace') as tmp_log:
             main_log.write(tmp_log.read())
         if os.path.isfile(tmp_log_file):
             os.remove(tmp_log_file)
