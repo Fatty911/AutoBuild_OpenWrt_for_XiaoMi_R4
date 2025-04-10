@@ -91,6 +91,7 @@ jobs:
           echo "开始尝试编译packages" 
           # bash compile_with_retry.sh "make package/feeds/small8/trojan-plus/compile V=s" "trojanplus.log" 8 
           # bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
+          cp ../compile_with_retry.py .
           python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8 
 
       
@@ -101,6 +102,7 @@ jobs:
           cp ../compile_with_retry.sh .
           LOG_FILE="image.log"
           # bash compile_with_retry.sh "make -j1 V=s" "image.log" 7
+          cp ../compile_with_retry.py .
           python compile_with_retry.py "make -j1 V=s" "image.log" 8
           
       - name: Check for .bin file after initial compilation
@@ -176,6 +178,7 @@ jobs:
             cp compile_with_retry.sh openwrt/ 
             cd openwrt
             # bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 &&  echo "status=success" >> $GITHUB_OUTPUT
+            cp compile_with_retry.py openwrt/ 
             python compile_with_retry.py "make -j1 V=s" "compile.log" 7 &&  echo "status=success" >> $GITHUB_OUTPUT
 
           
