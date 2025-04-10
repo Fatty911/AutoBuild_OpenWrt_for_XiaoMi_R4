@@ -85,9 +85,9 @@ jobs:
         id: compile_packages
         run: |
           cd openwrt
-          cp ../compile_with_retry.sh .
           echo "开始尝试编译packages" 
-          bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
+          # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
+          cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8 
 
 
       
@@ -95,9 +95,9 @@ jobs:
         id: build_image
         run: |
           cd openwrt
-          cp ../compile_with_retry.sh .
-          LOG_FILE="image.log"
-          bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
+                    LOG_FILE="image.log"
+          # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
+          cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 7 
 
           
           
