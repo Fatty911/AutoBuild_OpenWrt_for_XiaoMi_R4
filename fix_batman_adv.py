@@ -35,7 +35,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='修复 batman-adv 相关编译错误的脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 package/feeds/routing/batman-adv/compile V=s"')
     parser.add_argument('log_file', help='日志文件路径，例如 "batman-adv.log"')
-    parser.add_argument('max_retry', nargs='?', type=int, default=5, help='最大重试次数 (默认: 5)')
+    parser.add_argument('max_retry', nargs='?', type=int, default=8, help='最大重试次数 (默认: 8)')
     return parser.parse_args()
 
 def run_command(cmd, capture_output=True, shell=True):
