@@ -77,11 +77,8 @@ jobs:
       
       - name: 解压文件
         run: |
-          echo "解压前执行pwd && ls看看"
-          pwd && ls
-          tar -xzvf ${{ env.SOURCE }}.tar.gz
-          echo "解压后执行pwd && ls看看"
-          pwd && ls
+          tar -xzf ${{ env.SOURCE }}.tar.gz
+
           
       # - name: Compile packages
       #   id: compile_packages
