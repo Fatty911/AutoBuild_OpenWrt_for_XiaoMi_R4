@@ -19,7 +19,162 @@ import hashlib
 import tempfile
 from pathlib import Path
 
+def get_latest_github_release(repo):
+    """从 GitHub API 获取最新版本"""
+    api_url = f"https://api.github.com/repos/{repo}/releases/latest"
+    try:
+        response = requests.get(api_url)
+        if response.status_code == 200:
+            return response.json().get('tag_name')
+        else:
+            print(f"从 GitHub API 获取版本信息失败, 状态码: {response.status_code}")
+            # 如果 API 限制，可以尝试直接解析 HTML
+            html_url = f"https://github.com/{repo}/releases"
+            html_response = requests.get(html_url)
+            if html_response.status_code == 200:
+                # 简单解析，寻找版本标签
+                release_match = re.search(r'href="/[^/]+/[^/]+/releases/tag/([^"]+)"', html_response.text)
+                if release_match:
+                    return release_match.group(1)
+    except Exception as e:
+        print(f"获取版本信息时出错: {e}")
+    return None
 
+def fix_lua_neturl():
+    """修复 lua-neturl 包的下载问题"""
+    print("尝试修复 lua-neturl 下载问题...")
+    
+    # 查找 Makefile 路径
+    makefile_path = None
+    for path in ["feeds/small8/lua-neturl/Makefile", "package/feeds/small8/lua-neturl/Makefile"]:
+        if os.path.isfile(path):
+            makefile_path = path
+            break
+    
+    if not makefile_path:
+        print("错误: 无法找到 lua-neturl 的 Makefile")
+        return False
+    
+    print(f"找到 Makefile: {makefile_path}")
+    
+    # 读取当前 Makefile
+    with open(makefile_path, 'r', errors='replace') as f:
+        makefile_content = f.read()
+    
+    # 获取当前版本
+    version_match = re.search(r'^PKG_VERSION:=(.*)$', makefile_content, re.MULTILINE)
+    if not version_match:
+        print("错误: 无法从 Makefile 中提取 PKG_VERSION")
+        return False
+    
+    current_version = version_match.group(1).strip()
+    print(f"当前版本: {current_version}")
+    
+    # 获取 PKG_SOURCE_URL 以提取 GitHub 仓库
+    source_url_match = re.search(r'^PKG_SOURCE_URL:=(.*)$', makefile_content, re.MULTILINE)
+    repo = "golgote/neturl"  # 默认仓库
+    if source_url_match:
+        url = source_url_match.group(1).strip()
+        github_match = re.search(r'github\.com/([^/]+/[^/]+)', url)
+        if github_match:
+            repo = github_match.group(1)
+            print(f"从 PKG_SOURCE_URL 提取的仓库: {repo}")
+        else:
+            print(f"使用默认仓库: {repo}")
+    
+    # 动态获取最新版本
+    latest_tag = get_latest_github_release(repo)
+    if not latest_tag:
+        print("警告: 无法获取最新版本，尝试使用 v1.2-1")
+        latest_tag = "v1.2-1"
+    
+    # 从标签中提取版本号 (去掉前缀 v)
+    new_version = latest_tag.lstrip('v')
+    print(f"获取到最新版本: {new_version}")
+    
+    if current_version == new_version:
+        print(f"当前版本 {current_version} 已经是最新的，检查是否需要修复其他问题")
+    
+    # 获取新版本的 tarball
+    download_url = f"https://github.com/{repo}/archive/refs/tags/{latest_tag}.tar.gz"
+    print(f"尝试下载: {download_url}")
+    
+    try:
+        response = requests.get(download_url, stream=True)
+        if response.status_code != 200:
+            print(f"下载失败，状态码: {response.status_code}")
+            return False
+        
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            for chunk in response.iter_content(chunk_size=8192):
+                tmp_file.write(chunk)
+            tarball_path = tmp_file.name
+    except Exception as e:
+        print(f"下载文件时出错: {e}")
+        return False
+    
+    # 计算新版本的哈希值
+    with open(tarball_path, 'rb') as f:
+        new_hash = hashlib.sha256(f.read()).hexdigest()
+    print(f"新哈希值: {new_hash}")
+    
+    # 更新 Makefile
+    new_content = re.sub(
+        r'^PKG_VERSION:=.*$',
+        f'PKG_VERSION:={new_version}',
+        makefile_content,
+        flags=re.MULTILINE
+    )
+    
+    new_content = re.sub(
+        r'^PKG_HASH:=.*$',
+        f'PKG_HASH:={new_hash}',
+        new_content,
+        flags=re.MULTILINE
+    )
+    
+    # 提取包名前缀
+    pkg_name_match = re.search(r'^PKG_SOURCE:=(.*)-\$\(PKG_VERSION\)\.tar\.gz$', new_content, re.MULTILINE)
+    pkg_name = "neturl"  # 默认包名
+    if pkg_name_match:
+        pkg_name = pkg_name_match.group(1)
+    
+    # 更新 PKG_SOURCE 和 PKG_SOURCE_URL 如果必要
+    if re.search(r'^PKG_SOURCE:=', new_content, re.MULTILINE):
+        new_content = re.sub(
+            r'^PKG_SOURCE:=.*$',
+            f'PKG_SOURCE:={pkg_name}-$(PKG_VERSION).tar.gz',
+            new_content,
+            flags=re.MULTILINE
+        )
+    
+    # 修复GitHub URL末尾的问号（如果存在）
+    if re.search(r'^PKG_SOURCE_URL:=.*github\.com.*\?$', new_content, re.MULTILINE):
+        new_content = re.sub(
+            r'^(PKG_SOURCE_URL:=.*github\.com.*)\?$',
+            r'\1',
+            new_content,
+            flags=re.MULTILINE
+        )
+    
+    # 保存修改
+    with open(makefile_path, 'w') as f:
+        f.write(new_content)
+    
+    # 清理
+    os.remove(tarball_path)
+    
+    print(f"已更新 {makefile_path}，版本从 {current_version} 更新到 {new_version}")
+    
+    # 尝试清理包目录以便重新编译
+    pkg_dir = os.path.dirname(makefile_path)
+    print(f"尝试清理目录: {pkg_dir}...")
+    try:
+        subprocess.run(["make", f"{pkg_dir}/clean", "V=s"], check=False)
+    except Exception as e:
+        print(f"清理目录时出错: {e}")
+    
+    return True
 def get_relative_path(path):
     """获取相对路径"""
     current_pwd = os.getcwd()
@@ -572,8 +727,8 @@ def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 V=s"')
     parser.add_argument('log_file', help='日志文件路径，例如 "compile.log"')
-    parser.add_argument('max_retry', nargs='?', type=int, default=8, help='最大重试次数 (默认: 8)')
-    parser.add_argument('error_pattern', nargs='?', 
+    parser.add_argument('--max-retry', type=int, default=8, help='最大重试次数 (默认: 8)')
+    parser.add_argument('--error-pattern', 
                         default='cc1: some warnings being treated as errors|error:|failed|undefined reference|invalid|File exists|missing separator|cannot find dependency|No rule to make target',
                         help='错误模式正则表达式')
     
@@ -660,6 +815,28 @@ def main():
             last_fix_applied = "fix_makefile_separator"
             if fix_makefile_separator(log_tmp):
                 fix_applied_this_iteration = 1
+                
+        # 新增：检测 lua-neturl 下载失败
+        elif "Download failed" in log_content and "neturl" in log_content:
+            print("检测到 lua-neturl 下载失败错误...")
+            if last_fix_applied == "fix_lua_neturl":
+                print("上次已尝试修复 lua-neturl 下载，但错误依旧，停止重试。")
+                with open(args.log_file, 'a') as main_log:
+                    with open(log_tmp, 'r', errors='replace') as tmp_log:
+                        main_log.write(tmp_log.read())
+                os.remove(log_tmp)
+                return 1
+            last_fix_applied = "fix_lua_neturl"
+            if fix_lua_neturl():  # 调用新增的函数
+                fix_applied_this_iteration = 1
+                print("修复已应用，准备下一次编译尝试。")
+            else:
+                print("修复 lua-neturl 下载失败错误失败，停止重试。")
+                with open(args.log_file, 'a') as main_log:
+                    with open(log_tmp, 'r', errors='replace') as tmp_log:
+                        main_log.write(tmp_log.read())
+                os.remove(log_tmp)
+                return 1
         
         elif "Download failed." in log_content:
             print("检测到下载失败错误...")
