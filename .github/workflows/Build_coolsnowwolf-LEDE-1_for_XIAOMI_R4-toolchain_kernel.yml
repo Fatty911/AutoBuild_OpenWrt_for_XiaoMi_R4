@@ -151,10 +151,21 @@ jobs:
             echo "$LOG_TAIL"
             exit 1
           }
-          
+      - name: 编译Luci-base
+        run: |
+          cd openwrt
+          make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
+      - name: Compile  Batman-adv
+        id: compile_batman_1
+        run: |   
+          cd openwrt
+          # cp ../fix_batman_adv.sh . && bash ./fix_batman_adv.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || bash ./fix_batman_adv.sh "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
+          cp ../fix_batman_adv.py . && python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || python ./fix_batman_adv.py "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
+              
       - name: 归档
         run: |
-          tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
+          # tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
+          tar -zcf ${{ env.SOURCE }}.tar.gz openwrt
 
       - name: Upload to MEGA
         env:
