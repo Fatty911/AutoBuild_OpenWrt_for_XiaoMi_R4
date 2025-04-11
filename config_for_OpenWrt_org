@@ -3243,7 +3243,7 @@ CONFIG_LUA_ECO_MBEDTLS=y
 # CONFIG_PACKAGE_lua-md5 is not set
 # CONFIG_PACKAGE_lua-mobdebug is not set
 # CONFIG_PACKAGE_lua-mosquitto is not set
-CONFIG_PACKAGE_lua-neturl=y
+#CONFIG_PACKAGE_lua-neturl=y
 # CONFIG_PACKAGE_lua-openssl is not set
 # CONFIG_PACKAGE_lua-penlight is not set
 # CONFIG_PACKAGE_lua-rings is not set
