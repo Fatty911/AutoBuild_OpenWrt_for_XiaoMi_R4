@@ -550,7 +550,198 @@ def fix_metadata_errors():
     
     return True
 
-
+def fix_lua_neturl_download(log_file):
+    """修复 lua-neturl 下载错误"""
+    print("检测到 lua-neturl 下载错误，尝试修复...")
+    
+    # 从日志中提取错误信息和上下文
+    with open(log_file, 'r', errors='replace') as f:
+        log_content = f.read()
+    
+    # 检查是否确实是 lua-neturl 的问题
+    if not ("lua-neturl" in log_content and "Error 2" in log_content and "No more mirrors to try" in log_content):
+        print("似乎不是 lua-neturl 下载问题或格式与预期不符")
+        return False
+    
+    # 尝试使用 GitHub API 获取 neturl 的最新版本
+    try:
+        print("尝试通过 GitHub API 获取 golgote/neturl 的最新版本...")
+        repo_info = requests.get("https://api.github.com/repos/golgote/neturl/releases", timeout=10)
+        if repo_info.status_code != 200:
+            print(f"获取仓库信息失败: 状态码 {repo_info.status_code}")
+            return False
+        
+        releases = repo_info.json()
+        if not releases:
+            print("获取仓库 releases 失败或无 releases")
+            # 尝试获取 tags
+            tags_info = requests.get("https://api.github.com/repos/golgote/neturl/tags", timeout=10)
+            if tags_info.status_code != 200:
+                print(f"获取仓库 tags 失败: 状态码 {tags_info.status_code}")
+                return False
+            
+            tags = tags_info.json()
+            if not tags:
+                print("无法获取仓库 tags 或仓库无 tags")
+                return False
+            
+            latest_version = tags[0]['name']  # 假设第一个就是最新的
+        else:
+            latest_version = releases[0]['tag_name']  # 最新发布版本
+        
+        # 去掉版本前的 'v' (如果有)
+        if latest_version.startswith('v'):
+            latest_version_clean = latest_version[1:]
+        else:
+            latest_version_clean = latest_version
+            
+        print(f"获取到最新版本: {latest_version} (清理后: {latest_version_clean})")
+    except Exception as e:
+        print(f"获取最新版本时出错: {e}")
+        return False
+    
+    # 查找 lua-neturl 的 Makefile
+    try:
+        neturl_makefiles = []
+        for root, dirs, files in os.walk('.'):
+            # 跳过不必要的目录
+            if 'build_dir' in root or 'staging_dir' in root or '.git' in root:
+                continue
+            
+            for file in files:
+                if file == 'Makefile':
+                    makefile_path = os.path.join(root, file)
+                    with open(makefile_path, 'r', errors='replace') as f:
+                        content = f.read()
+                    
+                    # 检查是否是 lua-neturl 的 Makefile
+                    if 'lua-neturl' in content and 'golgote/neturl' in content:
+                        neturl_makefiles.append(makefile_path)
+        
+        if not neturl_makefiles:
+            print("未找到 lua-neturl 的 Makefile")
+            # 尝试在 feeds 子目录中搜索
+            feeds_dir = os.path.join('.', 'feeds')
+            if os.path.isdir(feeds_dir):
+                for feed in os.listdir(feeds_dir):
+                    feed_path = os.path.join(feeds_dir, feed)
+                    lua_neturl_dir = os.path.join(feed_path, 'lua-neturl')
+                    makefile_path = os.path.join(lua_neturl_dir, 'Makefile')
+                    if os.path.isfile(makefile_path):
+                        with open(makefile_path, 'r', errors='replace') as f:
+                            content = f.read()
+                        if 'golgote/neturl' in content:
+                            neturl_makefiles.append(makefile_path)
+            
+            if not neturl_makefiles:
+                # 再次尝试用 find 命令查找
+                try:
+                    result = subprocess.check_output(
+                        ["find", ".", "-name", "Makefile", "-type", "f", "-exec", "grep", "-l", "golgote/neturl", "{}", ";"],
+                        text=True, stderr=subprocess.STDOUT
+                    )
+                    if result:
+                        neturl_makefiles = result.strip().split('\n')
+                except subprocess.SubprocessError:
+                    pass
+            
+            if not neturl_makefiles:
+                print("仍未找到 lua-neturl 的 Makefile")
+                return False
+        
+        print(f"找到 {len(neturl_makefiles)} 个 lua-neturl 相关的 Makefile")
+        
+        # 修改所有找到的 Makefile
+        for makefile_path in neturl_makefiles:
+            print(f"正在修改 {makefile_path}")
+            
+            # 备份原文件
+            shutil.copy2(makefile_path, f"{makefile_path}.bak")
+            
+            with open(makefile_path, 'r', errors='replace') as f:
+                makefile_lines = f.readlines()
+            
+            # 修改版本和 URL
+            version_modified = False
+            hash_commented = False
+            new_lines = []
+            
+            for line in makefile_lines:
+                if line.startswith('PKG_VERSION:='):
+                    new_lines.append(f'PKG_VERSION:={latest_version_clean}\n')
+                    version_modified = True
+                elif line.startswith('PKG_HASH:='):
+                    # 注释掉哈希行 - 让 OpenWrt 构建系统在下次下载时重新计算
+                    new_lines.append(f'# 自动注释: 版本已更新，哈希需要重新计算\n# {line}')
+                    hash_commented = True
+                elif ('https://codeload.github.com/golgote/neturl/tar.gz/' in line or 
+                      'https://github.com/golgote/neturl/archive/' in line):
+                    # 修改下载 URL
+                    if 'codeload' in line:
+                        new_url = f'https://codeload.github.com/golgote/neturl/tar.gz/{latest_version}'
+                    else:
+                        new_url = f'https://github.com/golgote/neturl/archive/{latest_version}.tar.gz'
+                    
+                    # 保留行前缀和行后缀
+                    prefix = line.split('https://')[0]
+                    suffix = line.split('.tar.gz')[-1]
+                    new_lines.append(f'{prefix}{new_url}.tar.gz{suffix}')
+                else:
+                    new_lines.append(line)
+            
+            # 写入修改后的文件
+            with open(makefile_path, 'w') as f:
+                f.writelines(new_lines)
+            
+            if version_modified or hash_commented:
+                print(f"已成功更新 {makefile_path} 中的版本为 {latest_version_clean}")
+                
+                # 清理该包的构建缓存
+                package_dir = os.path.dirname(makefile_path)
+                
+                # 尝试提取包名以使用 make package/xxx/clean
+                try:
+                    with open(makefile_path, 'r') as f:
+                        makefile_content = f.read()
+                    pkg_name_match = re.search(r'PKG_NAME:=([a-zA-Z0-9_-]+)', makefile_content)
+                    if pkg_name_match:
+                        pkg_name = pkg_name_match.group(1)
+                        
+                        # 对于 feeds 中的包，可能需要使用特定格式
+                        if 'feeds' in package_dir:
+                            feed_match = re.search(r'feeds/([^/]+)', package_dir)
+                            if feed_match:
+                                feed_name = feed_match.group(1)
+                                clean_target = f"package/feeds/{feed_name}/{pkg_name}/clean"
+                            else:
+                                clean_target = f"{package_dir}/clean"
+                        else:
+                            clean_target = f"{package_dir}/clean"
+                        
+                        print(f"尝试清理: make {clean_target}")
+                        try:
+                            subprocess.run(["make", clean_target, "DIRCLEAN=1", "V=s"], check=False)
+                        except:
+                            print(f"警告: 清理 {clean_target} 失败")
+                    else:
+                        print(f"无法从 Makefile 提取包名，使用目录路径清理")
+                        subprocess.run(["make", f"{package_dir}/clean", "DIRCLEAN=1", "V=s"], check=False)
+                except:
+                    print(f"警告: 清理 {package_dir} 失败")
+                
+                # 删除备份，因为已成功修改
+                os.remove(f"{makefile_path}.bak")
+                return True
+            else:
+                print(f"未能修改 {makefile_path} 的版本或哈希")
+                # 恢复备份
+                shutil.move(f"{makefile_path}.bak", makefile_path)
+    
+    except Exception as e:
+        print(f"修复 lua-neturl 下载错误时遇到异常: {e}")
+        return False
+    
+    return False
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 V=s"')
@@ -626,14 +817,31 @@ def main():
             os.remove(log_tmp)
             return 0
         else:
-            print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)，检查错误...")
-            extract_error_block(log_tmp)
+            print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
+            # extract_error_block(log_tmp)
         
         # --- 错误检测和修复逻辑 (顺序很重要!) ---
         
         # 1. 特定错误检测和修复
+        # 新增: 检测 lua-neturl 下载错误
+        if 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
+            print("检测到 lua-neturl 下载错误...")
+            if last_fix_applied == "fix_lua_neturl":
+                print("上次已尝试修复 lua-neturl，但错误依旧，停止重试。")
+                with open(args.log_file, 'a') as main_log:
+                    with open(log_tmp, 'r', errors='replace') as tmp_log:
+                        main_log.write(tmp_log.read())
+                os.remove(log_tmp)
+                return 1
+            
+            last_fix_applied = "fix_lua_neturl"
+            if fix_lua_neturl_download(log_tmp):
+                fix_applied_this_iteration = 1
+            else:
+                print("修复 lua-neturl 下载错误失败，尝试继续其他修复...")
+                # 不立即退出，让程序尝试其他修复
         # Trojan-plus buffer_cast 错误
-        if 'trojan-plus' in log_content and 'service.cpp' in log_content and 'buffer_cast' in log_content and 'boost::asio' in log_content:
+        elif 'trojan-plus' in log_content and 'service.cpp' in log_content and 'buffer_cast' in log_content and 'boost::asio' in log_content:
             print("检测到 'trojan-plus boost::asio::buffer_cast' 错误...")
             if last_fix_applied == "fix_trojan_plus":
                 print("上次已尝试修复 trojan-plus，但错误依旧，停止重试。")
