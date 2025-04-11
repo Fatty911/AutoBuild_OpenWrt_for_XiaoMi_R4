@@ -72,14 +72,13 @@ jobs:
               sudo apt-get -y install lib32gcc-s1
               echo "非Ubuntu20.04或22.04系统，安装lib32gcc可能失败，如果失败请检查对应系统安装libgcc32的命令"
           fi
-          sudo -E apt-get -qq autoremove --purge
-          sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
-          sudo apt-get -y install python3-pip
+          sudo apt-get -y install python3-pip jq
           pip install mega.py || pip3 install mega.py || python -m pip install mega.py || exit 1
+          pip install requests || pip3 install requests
 
       - name: Download from MEGA
         env:
@@ -192,7 +191,7 @@ jobs:
 
       - name: Generate release tag
         id: generate_release_tag
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled() && steps.check_bin.conclusion == 'success'
+        if: steps.check_bin.conclusion == 'success'
         run: |
           echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           echo "release_tag_status=success" >> $GITHUB_OUTPUT
@@ -200,7 +199,7 @@ jobs:
       - name: Upload firmware to release
         id: up-release
         uses: softprops/action-gh-release@master
-        if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.UPLOAD_RELEASE == 'true'
+        if: steps.generate_release_tag.outputs.release_tag_status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         with:
@@ -231,7 +230,7 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           repository: ${{ github.repository }}
-          retain_days: 1
+          retain_days: 0
           keep_minimum_runs: 2
 
       - name: Delete Older Releases
