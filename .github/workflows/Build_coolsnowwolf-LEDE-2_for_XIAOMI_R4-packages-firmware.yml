@@ -108,20 +108,20 @@ jobs:
           cp ../fix_batman_adv.py . && python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || python ./fix_batman_adv.py "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
           
 
-      - name: Compile packages
-        id: compile_packages
-        run: |
-          cd openwrt
-          LOG_FILE="packages.log"
-          # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8
-          cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8
+      # - name: Compile packages
+      #   id: compile_packages
+      #   run: |
+      #     cd openwrt
+      #     LOG_FILE="packages.log"
+      #     # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8
+      #     cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8
 
       - name: Compile the firmware
         id: compile
         run: |
-          cd openwrt
+          cd openwrt && cp ../compile_with_retry.py .
           echo -e "先尝试$(nproc)线程编译"
-          make -j$(nproc) V=s || make -j1 V=s
+          make -j$(nproc) V=s || python compile_with_retry.py "make -j1 V=s" "compile.log" 8
           echo "status=success" >> $GITHUB_OUTPUT
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
