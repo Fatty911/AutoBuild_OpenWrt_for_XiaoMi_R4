@@ -90,8 +90,7 @@ jobs:
     
     - name: 解压文件
       run: |
-        tar -xzvf ${{ env.SOURCE }}.tar.gz
-        cat openwrt/feeds/packages/lang/python/python3-version.mk
+        tar -xzf ${{ env.SOURCE }}.tar.gz
         
     - name: Compile Remaining packages
       id: compile_remaining
