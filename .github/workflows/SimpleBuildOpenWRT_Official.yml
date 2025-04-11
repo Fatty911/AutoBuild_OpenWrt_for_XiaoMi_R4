@@ -85,9 +85,12 @@ jobs:
         id: compile_packages
         run: |
           cd openwrt
-          echo "开始尝试编译packages" 
+          echo "先尝试编译容易失败的lua-neturl"
+          cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 feeds/small8/lua-neturl/compile V=s" "packages.log" 8
+          echo "开始尝试编译所有packages" 
           # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
-          cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8 
+          # cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8 
+          python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8 
 
 
       
@@ -95,7 +98,7 @@ jobs:
         id: build_image
         run: |
           cd openwrt
-                    LOG_FILE="image.log"
+          LOG_FILE="image.log"
           # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
           cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 7 
 
