@@ -235,7 +235,8 @@ jobs:
      
       - name: 归档
         run: |
-          tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
+          # tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
+          tar -czf ${{ env.SOURCE }}.tar.gz openwrt 
           
 
       - name: Upload to MEGA
