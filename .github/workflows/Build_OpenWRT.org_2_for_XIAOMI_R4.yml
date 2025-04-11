@@ -102,7 +102,7 @@ jobs:
           cd openwrt
           LOG_FILE="image.log"
           #cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7
-          cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 8
+          make -j1 V=s || { cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 8;}
           
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
