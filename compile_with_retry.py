@@ -557,182 +557,136 @@ def fix_metadata_errors():
 
 
 def fix_lua_neturl_download(log_file):
-    """修复 lua-neturl 下载错误"""
-    print("检测到 lua-neturl 下载错误，尝试修复...")
-    
-    # 从日志中提取错误信息和上下文
-    with open(log_file, 'r', errors='replace') as f:
-        log_content = f.read()
-    
-    # 检查是否确实是 lua-neturl 的问题
-    if not ("lua-neturl" in log_content and "Error 2" in log_content and "No more mirrors to try" in log_content):
-        print("似乎不是 lua-neturl 下载问题或格式与预期不符")
+    """修复lua-neturl下载问题"""
+    if "neturl" not in open(log_file, 'r').read():
         return False
     
-    # 尝试使用 urllib 获取 neturl 的最新版本（不依赖 requests 模块）
-    try:
-        print("尝试获取 golgote/neturl 的最新版本...")
-        req = urllib.request.Request(
-            "https://api.github.com/repos/golgote/neturl/tags",
-            headers={'User-Agent': 'Mozilla/5.0'}
-        )
-        with urllib.request.urlopen(req, timeout=10) as response:
-            tags = json.loads(response.read().decode('utf-8'))
-            
-        if not tags:
-            print("获取仓库 tags 失败或无 tags")
-            return False
-        
-        latest_version = tags[0]['name']  # 假设第一个就是最新的
-        print(f"获取到最新版本: {latest_version}")
-        
-        # 去掉版本前的 'v' (如果有)
-        if latest_version.startswith('v'):
-            latest_version_clean = latest_version[1:]
-        else:
-            latest_version_clean = latest_version
-    except Exception as e:
-        print(f"获取最新版本时出错: {e}")
-        # 如果无法获取最新版本，使用一个已知可用的版本
-        latest_version = "v1.1-1"
-        latest_version_clean = "1.1-1"
-        print(f"使用备选版本: {latest_version}")
+    print("检测到 lua-neturl 下载错误...")
     
-    # 查找 lua-neturl 的 Makefile
-    try:
-        # 直接尝试定位 feeds/small8/lua-neturl/Makefile
-        makefile_path = os.path.join('.', 'feeds', 'small8', 'lua-neturl', 'Makefile')
-        if not os.path.isfile(makefile_path):
-            # 如果找不到特定路径，则搜索整个项目
-            neturl_makefiles = []
-            for root, dirs, files in os.walk('.'):
-                # 跳过不必要的目录
-                if 'build_dir' in root or 'staging_dir' in root or '.git' in root:
-                    continue
-                
-                for file in files:
-                    if file == 'Makefile':
-                        file_path = os.path.join(root, file)
-                        with open(file_path, 'r', errors='replace') as f:
-                            content = f.read()
-                        
-                        # 检查是否是 lua-neturl 的 Makefile
-                        if 'lua-neturl' in content and 'golgote/neturl' in content:
-                            neturl_makefiles.append(file_path)
-            
-            if not neturl_makefiles:
-                print("未找到 lua-neturl 的 Makefile")
-                return False
-            
-            makefile_path = neturl_makefiles[0]
-        
-        print(f"找到 lua-neturl 的 Makefile: {makefile_path}")
-        
-        # 备份原文件
-        shutil.copy2(makefile_path, f"{makefile_path}.bak")
-        
-        # 读取原文件内容
-        with open(makefile_path, 'r', errors='replace') as f:
-            makefile_content = f.read()
-        
-        # 提取原始 PKG_NAME 和 PKG_SOURCE
-        pkg_name_match = re.search(r'PKG_NAME:=([^\n]+)', makefile_content)
-        pkg_name = pkg_name_match.group(1).strip() if pkg_name_match else "lua-neturl"
-        
-        pkg_source_match = re.search(r'PKG_SOURCE:=([^\n]+)', makefile_content)
-        pkg_source = pkg_source_match.group(1).strip() if pkg_source_match else "neturl-$(PKG_VERSION).tar.gz"
-        
-        # 修改 Makefile 内容
-        # 1. 更新版本号
-        modified_content = re.sub(
-            r'PKG_VERSION:=.*',
-            f'PKG_VERSION:={latest_version_clean}',
-            makefile_content
-        )
-        
-        # 2. 注释掉哈希值
-        modified_content = re.sub(
-            r'(PKG_HASH:=.*)',
-            r'# \1',
-            modified_content
-        )
-        
-        # 3. 修改或添加下载 URL
-        # 首先检查是否有 PKG_SOURCE_URL 行
-        if 'PKG_SOURCE_URL:=' in modified_content:
-            # 替换现有的 URL
-            modified_content = re.sub(
-                r'PKG_SOURCE_URL:=.*',
-                f'PKG_SOURCE_URL:=https://github.com/golgote/neturl/archive/refs/tags/{latest_version}.tar.gz',
-                modified_content
-            )
-        else:
-            # 在 PKG_VERSION 行后添加新的 URL
-            modified_content = re.sub(
-                r'(PKG_VERSION:=.*)',
-                r'\1\nPKG_SOURCE_URL:=https://github.com/golgote/neturl/archive/refs/tags/' + latest_version + '.tar.gz',
-                modified_content
-            )
-        
-        # 4. 确保 PKG_SOURCE 设置正确
-        if 'PKG_SOURCE:=' not in modified_content:
-            modified_content = re.sub(
-                r'(PKG_VERSION:=.*)',
-                r'\1\nPKG_SOURCE:=neturl-$(PKG_VERSION).tar.gz',
-                modified_content
-            )
-        
-        # 5. 添加 PKG_SOURCE_VERSION 如果需要
-        if 'PKG_SOURCE_VERSION:=' not in modified_content:
-            modified_content = re.sub(
-                r'(PKG_VERSION:=.*)',
-                r'\1\nPKG_SOURCE_VERSION:=' + latest_version,
-                modified_content
-            )
-        
-        # 写入修改后的文件
-        with open(makefile_path, 'w') as f:
-            f.write(modified_content)
-        
-        print(f"已更新 {makefile_path} 中的版本为 {latest_version_clean}")
-        
-        # 清理该包的构建缓存
-        package_dir = os.path.dirname(makefile_path)
-        print(f"尝试清理: {package_dir}")
-        try:
-            subprocess.run(["make", "package/feeds/small8/lua-neturl/clean", "V=s"], check=False)
-            subprocess.run(["rm", "-rf", "dl/neturl-*"], shell=True, check=False)
-        except Exception as e:
-            print(f"警告: 清理缓存失败: {e}")
-        
-        # 手动下载文件
-        try:
-            dl_dir = os.path.join('.', 'dl')
-            os.makedirs(dl_dir, exist_ok=True)
-            download_url = f"https://github.com/golgote/neturl/archive/refs/tags/{latest_version}.tar.gz"
-            target_file = os.path.join(dl_dir, f"neturl-{latest_version_clean}.tar.gz")
-            
-            print(f"尝试手动下载 {download_url} 到 {target_file}")
-            
-            # 使用 wget 或 curl 下载
-            try:
-                subprocess.run(["wget", "-O", target_file, download_url], check=True)
-            except:
-                try:
-                    subprocess.run(["curl", "-L", "-o", target_file, download_url], check=True)
-                except:
-                    print("手动下载失败，但已修改 Makefile，构建系统将尝试重新下载")
-        except Exception as e:
-            print(f"手动下载文件时出错: {e}")
-        
-        return True
+    # 尝试修复下载问题
+    print("检测到 lua-neturl 下载错误,尝试修复...")
     
+    # 1. 获取最新版本
+    print("尝试获取 golgote/neturl 的最新版本...")
+    try:
+        import requests
+        response = requests.get("https://api.github.com/repos/golgote/neturl/tags")
+        if response.status_code == 200:
+            tags = response.json()
+            if tags:
+                latest_tag = tags[0]['name']
+                print(f"获取到最新版本: {latest_tag}")
+            else:
+                latest_tag = "v1.1"  # 回退到已知可用版本
+                print(f"未找到版本标签，使用默认版本: {latest_tag}")
+        else:
+            latest_tag = "v1.1"  # 回退到已知可用版本
+            print(f"API请求失败，使用默认版本: {latest_tag}")
     except Exception as e:
-        print(f"修复 lua-neturl 下载错误时遇到异常: {e}")
-        # 尝试恢复备份
-        if os.path.exists(f"{makefile_path}.bak"):
-            shutil.move(f"{makefile_path}.bak", makefile_path)
+        latest_tag = "v1.1"  # 回退到已知可用版本
+        print(f"获取版本信息时出错: {e}，使用默认版本: {latest_tag}")
+    
+    # 移除版本号前缀 'v'
+    version = latest_tag.lstrip('v')
+    
+    # 2. 找到Makefile并更新
+    import os
+    import re
+    import subprocess
+    
+    makefile_path = None
+    for root, dirs, files in os.walk("./feeds"):
+        for file in files:
+            if file == "Makefile" and "lua-neturl" in root:
+                makefile_path = os.path.join(root, file)
+                break
+        if makefile_path:
+            break
+    
+    if not makefile_path:
+        print("无法找到 lua-neturl 的 Makefile")
         return False
+    
+    print(f"找到 lua-neturl 的 Makefile: {makefile_path}")
+    
+    # 3. 更新Makefile中的版本号和哈希值
+    with open(makefile_path, 'r') as f:
+        content = f.read()
+    
+    # 提取纯版本号，去除任何后缀
+    pure_version = re.match(r'(\d+\.\d+)', version).group(1) if re.match(r'(\d+\.\d+)', version) else "1.1"
+    
+    # 更新版本号和发布号
+    content = re.sub(r'PKG_VERSION:=.*', f'PKG_VERSION:={pure_version}', content)
+    content = re.sub(r'PKG_RELEASE:=.*', f'PKG_RELEASE:=1', content)
+    
+    # 更新源URL
+    github_url = f"https://github.com/golgote/neturl/archive/refs/tags/v{pure_version}.tar.gz"
+    content = re.sub(r'PKG_SOURCE_URL:=.*', f'PKG_SOURCE_URL:={github_url}?', content)
+    
+    # 计算哈希值
+    try:
+        # 先下载文件
+        dl_dir = "./dl"
+        os.makedirs(dl_dir, exist_ok=True)
+        tarball_path = f"{dl_dir}/neturl-{pure_version}.tar.gz"
+        
+        # 使用wget下载文件
+        download_cmd = f"wget -q -O {tarball_path} {github_url}"
+        subprocess.run(download_cmd, shell=True, check=True)
+        
+        # 计算SHA256哈希值
+        hash_cmd = f"sha256sum {tarball_path}"
+        hash_result = subprocess.run(hash_cmd, shell=True, capture_output=True, text=True, check=True)
+        sha256_hash = hash_result.stdout.split()[0]
+        
+        # 更新哈希值
+        content = re.sub(r'PKG_HASH:=.*', f'PKG_HASH:={sha256_hash}', content)
+        print(f"已更新哈希值: {sha256_hash}")
+    except Exception as e:
+        print(f"计算哈希值时出错: {e}")
+        # 如果无法计算哈希值，使用skip-hash选项
+        content = re.sub(r'PKG_HASH:=.*', 'PKG_HASH:=skip', content)
+        print("已设置哈希值为skip")
+    
+    # 写回文件
+    with open(makefile_path, 'w') as f:
+        f.write(content)
+    
+    print(f"已更新 {makefile_path} 中的版本为 {pure_version}")
+    
+    # 4. 清理旧的构建文件
+    print("尝试清理: " + os.path.dirname(makefile_path))
+    clean_cmd = f"make package/feeds/small8/lua-neturl/clean V=s"
+    subprocess.run(clean_cmd, shell=True)
+    
+    # 5. 删除可能存在的旧文件
+    old_tarball = f"./dl/neturl-{version}.tar.gz"
+    if os.path.exists(old_tarball):
+        os.remove(old_tarball)
+        print(f"已删除旧文件: {old_tarball}")
+    
+    # 6. 手动下载并放置文件
+    try:
+        download_url = f"https://github.com/golgote/neturl/archive/refs/tags/v{pure_version}.tar.gz"
+        target_file = f"./dl/neturl-{pure_version}.tar.gz"
+        download_cmd = f"wget -O {target_file} {download_url}"
+        print(f"尝试手动下载 {download_url} 到 {target_file}")
+        subprocess.run(download_cmd, shell=True, check=True)
+        
+        # 更新索引
+        print("更新 feeds 索引...")
+        subprocess.run("./scripts/feeds update -i", shell=True)
+    except Exception as e:
+        print(f"手动下载时出错: {e}")
+    
+    # 等待一段时间再重试
+    import time
+    print("等待 3 秒后重试...")
+    time.sleep(3)
+    
+    return True
+
 
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
