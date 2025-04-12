@@ -557,8 +557,8 @@ def fix_metadata_errors():
 
 
 def fix_lua_neturl_download(log_file):
-    """修复lua-neturl下载问题"""
-    if "neturl" not in open(log_file, 'r').read():
+    """修复 lua-neturl 下载问题"""
+    if "neturl" not in open(log_file, 'r', errors='replace').read():
         return False
     
     print("检测到 lua-neturl 下载错误...")
@@ -571,7 +571,7 @@ def fix_lua_neturl_download(log_file):
     import requests
     from bs4 import BeautifulSoup
     
-    # 1. 找到Makefile
+    # 1. 找到 Makefile
     makefile_path = None
     for root, dirs, files in os.walk("./feeds"):
         for file in files:
@@ -587,23 +587,25 @@ def fix_lua_neturl_download(log_file):
     
     print(f"找到 lua-neturl 的 Makefile: {makefile_path}")
     
-    # 2. 获取最新版本
+    # 2. 获取最新版本（从 GitHub 检查可用标签）
     try:
         response = requests.get("https://github.com/golgote/neturl/tags")
         soup = BeautifulSoup(response.text, 'html.parser')
-        latest_version = soup.find('h2', text=re.compile(r'Latest')).find_next('a').text.strip()
+        tags = [tag.text.strip() for tag in soup.find_all('a', href=re.compile(r'/golgote/neturl/releases/tag/'))]
+        latest_version = next((tag for tag in tags if tag.startswith('v')), "v1.2-1")  # 默认 v1.2-1
         print(f"获取到最新版本: {latest_version}")
     except Exception as e:
         print(f"获取最新版本失败: {e}")
         latest_version = "v1.2-1"  # 如果获取失败，使用默认版本
     
-    version = latest_version.lstrip('v')
+    version = latest_version.lstrip('v')  # 去掉 'v' 前缀，例如 "1.2-1"
     github_url = f"https://github.com/golgote/neturl/archive/refs/tags/{latest_version}.tar.gz"
+    pkg_source = f"neturl-{version}.tar.gz"  # 确保与下载文件名一致
     
     # 3. 下载文件并计算哈希值
     dl_dir = "./dl"
     os.makedirs(dl_dir, exist_ok=True)
-    tarball_path = f"{dl_dir}/neturl-{version}.tar.gz"
+    tarball_path = os.path.join(dl_dir, pkg_source)
     
     # 删除可能存在的旧文件
     if os.path.exists(tarball_path):
@@ -618,16 +620,15 @@ def fix_lua_neturl_download(log_file):
         print("下载成功")
     except Exception as e:
         print(f"下载失败: {e}")
-        # 如果下载失败，尝试使用curl
         try:
             download_cmd = f"curl -s -L -o {tarball_path} {github_url}"
             subprocess.run(download_cmd, shell=True, check=True)
-            print("使用curl下载成功")
+            print("使用 curl 下载成功")
         except Exception as e:
-            print(f"使用curl下载也失败: {e}")
+            print(f"使用 curl 下载也失败: {e}")
             return False
     
-    # 计算SHA256哈希值
+    # 计算 SHA256 哈希值
     if os.path.exists(tarball_path):
         try:
             sha256_hash = hashlib.sha256()
@@ -635,48 +636,32 @@ def fix_lua_neturl_download(log_file):
                 for byte_block in iter(lambda: f.read(4096), b""):
                     sha256_hash.update(byte_block)
             sha256_hex = sha256_hash.hexdigest()
-            print(f"计算的SHA256哈希值: {sha256_hex}")
+            print(f"计算的 SHA256 哈希值: {sha256_hex}")
         except Exception as e:
             print(f"计算哈希值失败: {e}")
-            try:
-                hash_cmd = f"sha256sum {tarball_path}"
-                hash_result = subprocess.run(hash_cmd, shell=True, capture_output=True, text=True, check=True)
-                sha256_hex = hash_result.stdout.split()[0]
-                print(f"使用sha256sum计算的哈希值: {sha256_hex}")
-            except Exception as e:
-                print(f"使用sha256sum计算哈希值也失败: {e}")
-                sha256_hex = "skip"
+            sha256_hex = "skip"
     else:
         print(f"文件不存在: {tarball_path}")
-        sha256_hex = "skip"
+        return False
     
-    # 4. 更新Makefile
+    # 4. 更新 Makefile
     with open(makefile_path, 'r') as f:
         content = f.read()
     
+    # 确保 PKG_VERSION 和 PKG_SOURCE 匹配下载的版本
     content = re.sub(r'PKG_VERSION:=.*', f'PKG_VERSION:={version}', content)
-    content = re.sub(r'PKG_RELEASE:=.*', f'PKG_RELEASE:=1', content)
-    content = re.sub(r'PKG_SOURCE:=.*', f'PKG_SOURCE:=neturl-$(PKG_VERSION).tar.gz', content)
-    content = re.sub(r'PKG_SOURCE_URL:=.*', f'PKG_SOURCE_URL:=https://github.com/golgote/neturl/archive/refs/tags/v$(PKG_VERSION).tar.gz', content)
-    
-    if sha256_hex != "skip":
-        content = re.sub(r'PKG_HASH:=.*', f'PKG_HASH:={sha256_hex}', content)
-    else:
-        content = re.sub(r'PKG_HASH:=.*', f'PKG_HASH:=skip', content)
+    content = re.sub(r'PKG_RELEASE:=.*', 'PKG_RELEASE:=1', content)
+    content = re.sub(r'PKG_SOURCE:=.*', f'PKG_SOURCE:={pkg_source}', content)
+    content = re.sub(r'PKG_SOURCE_URL:=.*', f'PKG_SOURCE_URL:={github_url}', content)
+    content = re.sub(r'PKG_HASH:=.*', f'PKG_HASH:={sha256_hex}', content)
     
     with open(makefile_path, 'w') as f:
         f.write(content)
     
     print(f"已更新 {makefile_path}")
+    print(f"PKG_SOURCE 设置为: {pkg_source}")
     
-    # 5. 确保文件在正确位置
-    final_tarball_path = f"{dl_dir}/neturl-{version}.tar.gz"
-    if not os.path.exists(final_tarball_path) and os.path.exists(tarball_path):
-        import shutil
-        shutil.copy(tarball_path, final_tarball_path)
-        print(f"已复制文件到 {final_tarball_path}")
-    
-    # 6. 清理并重新安装
+    # 5. 清理并重新安装
     print("清理旧的构建文件...")
     clean_cmd = f"make package/feeds/small8/lua-neturl/clean V=s"
     subprocess.run(clean_cmd, shell=True)
@@ -685,11 +670,12 @@ def fix_lua_neturl_download(log_file):
     subprocess.run("./scripts/feeds update -i", shell=True)
     subprocess.run("./scripts/feeds install -a", shell=True)
     
-    # 7. 等待一段时间再重试
+    # 6. 等待一段时间再重试
     print("等待 3 秒后重试...")
     time.sleep(3)
     
     return True
+
 
 
 
