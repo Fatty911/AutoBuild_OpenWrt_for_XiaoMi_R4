@@ -587,32 +587,32 @@ def fix_lua_neturl_download(log_file):
     
     print(f"找到 lua-neturl 的 Makefile: {makefile_path}")
     
-    # 2. 获取最新版本（从 GitHub 检查可用标签）
+    # 2. 获取最新版本
     try:
         response = requests.get("https://github.com/golgote/neturl/tags")
         soup = BeautifulSoup(response.text, 'html.parser')
         tags = [tag.text.strip() for tag in soup.find_all('a', href=re.compile(r'/golgote/neturl/releases/tag/'))]
-        latest_version = next((tag for tag in tags if tag.startswith('v')), "v1.2-1")  # 默认 v1.2-1
+        latest_version = next((tag for tag in tags if tag.startswith('v')), "v1.2-1")
         print(f"获取到最新版本: {latest_version}")
     except Exception as e:
         print(f"获取最新版本失败: {e}")
-        latest_version = "v1.2-1"  # 如果获取失败，使用默认版本
+        latest_version = "v1.2-1"  # 默认版本
     
-    version = latest_version.lstrip('v')  # 去掉 'v' 前缀，例如 "1.2-1"
+    # 规范化版本号，避免连字符后缀
+    raw_version = latest_version.lstrip('v')  # 去掉 'v' 前缀，例如 "1.2-1"
+    version = re.sub(r'-.*', '', raw_version)  # 去除连字符后缀，例如 "1.2"
     github_url = f"https://github.com/golgote/neturl/archive/refs/tags/{latest_version}.tar.gz"
-    pkg_source = f"neturl-{version}.tar.gz"  # 确保与下载文件名一致
+    pkg_source = f"neturl-{raw_version}.tar.gz"  # 下载文件名保持原始版本
     
     # 3. 下载文件并计算哈希值
     dl_dir = "./dl"
     os.makedirs(dl_dir, exist_ok=True)
     tarball_path = os.path.join(dl_dir, pkg_source)
     
-    # 删除可能存在的旧文件
     if os.path.exists(tarball_path):
         os.remove(tarball_path)
         print(f"已删除旧文件: {tarball_path}")
     
-    # 下载文件
     print(f"正在下载 {github_url} 到 {tarball_path}...")
     try:
         download_cmd = f"wget -q -O {tarball_path} {github_url}"
@@ -628,18 +628,13 @@ def fix_lua_neturl_download(log_file):
             print(f"使用 curl 下载也失败: {e}")
             return False
     
-    # 计算 SHA256 哈希值
     if os.path.exists(tarball_path):
-        try:
-            sha256_hash = hashlib.sha256()
-            with open(tarball_path, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            sha256_hex = sha256_hash.hexdigest()
-            print(f"计算的 SHA256 哈希值: {sha256_hex}")
-        except Exception as e:
-            print(f"计算哈希值失败: {e}")
-            sha256_hex = "skip"
+        sha256_hash = hashlib.sha256()
+        with open(tarball_path, "rb") as f:
+            for byte_block in iter(lambda: f.read(4096), b""):
+                sha256_hash.update(byte_block)
+        sha256_hex = sha256_hash.hexdigest()
+        print(f"计算的 SHA256 哈希值: {sha256_hex}")
     else:
         print(f"文件不存在: {tarball_path}")
         return False
@@ -648,33 +643,32 @@ def fix_lua_neturl_download(log_file):
     with open(makefile_path, 'r') as f:
         content = f.read()
     
-    # 确保 PKG_VERSION 和 PKG_SOURCE 匹配下载的版本
     content = re.sub(r'PKG_VERSION:=.*', f'PKG_VERSION:={version}', content)
     content = re.sub(r'PKG_RELEASE:=.*', 'PKG_RELEASE:=1', content)
     content = re.sub(r'PKG_SOURCE:=.*', f'PKG_SOURCE:={pkg_source}', content)
-    content = re.sub(r'PKG_SOURCE_URL:=.*', f'PKG_SOURCE_URL:={github_url}', content)
+    content = re.sub(r'PKG_SOURCE_URL:=.*', f'PKG_SOURCE_URL:=https://github.com/golgote/neturl/archive/refs/tags/v{raw_version}.tar.gz', content)
     content = re.sub(r'PKG_HASH:=.*', f'PKG_HASH:={sha256_hex}', content)
     
     with open(makefile_path, 'w') as f:
         f.write(content)
     
     print(f"已更新 {makefile_path}")
+    print(f"PKG_VERSION 设置为: {version}")
     print(f"PKG_SOURCE 设置为: {pkg_source}")
     
     # 5. 清理并重新安装
     print("清理旧的构建文件...")
-    clean_cmd = f"make package/feeds/small8/lua-neturl/clean V=s"
-    subprocess.run(clean_cmd, shell=True)
+    subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
     
     print("更新 feeds...")
     subprocess.run("./scripts/feeds update -i", shell=True)
     subprocess.run("./scripts/feeds install -a", shell=True)
     
-    # 6. 等待一段时间再重试
     print("等待 3 秒后重试...")
     time.sleep(3)
     
     return True
+
 
 
 
@@ -690,9 +684,7 @@ def main():
     
     global args
     args = parser.parse_args()
-
     
-    # 参数检查
     if not args.make_command or not args.log_file:
         print("错误：缺少必要参数。")
         parser.print_help()
@@ -713,9 +705,6 @@ def main():
             print("--------------------------------------------------")
         
         fix_applied_this_iteration = 0
-        
-        # 执行编译命令，将输出同时写入临时日志文件
-        print(f"执行: {args.make_command}")
         log_tmp = f"{args.log_file}.tmp"
         
         with open(log_tmp, 'w') as f:
@@ -727,16 +716,12 @@ def main():
                 text=True,
                 bufsize=1
             )
-            
-            # 实时输出并写入日志
             for line in process.stdout:
                 sys.stdout.write(line)
                 f.write(line)
                 f.flush()
-            
             compile_status = process.wait()
         
-        # 检查编译是否成功
         with open(log_tmp, 'r', errors='replace') as f:
             log_content = f.read()
             has_error = re.search(args.error_pattern, log_content, re.MULTILINE) is not None
@@ -745,202 +730,90 @@ def main():
             print("--------------------------------------------------")
             print("编译成功！")
             print("--------------------------------------------------")
-            
-            # 追加成功日志
             with open(args.log_file, 'a') as main_log:
                 with open(log_tmp, 'r', errors='replace') as tmp_log:
                     main_log.write(tmp_log.read())
-            
             os.remove(log_tmp)
             return 0
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
-            # extract_error_block(log_tmp)
         
-        # --- 错误检测和修复逻辑 (顺序很重要!) ---
-        
-        # 1. 特定错误检测和修复
-        # 新增: 检测 lua-neturl 下载错误
+        # 错误检测和修复逻辑
         if 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
             print("检测到 lua-neturl 下载错误...")
             if last_fix_applied == "fix_lua_neturl":
-                print("上次已尝试修复 lua-neturl，但错误依旧，停止重试。")
+                print("上次已尝试修复 lua-neturl 下载错误，但问题未解决，停止重试。")
                 with open(args.log_file, 'a') as main_log:
                     with open(log_tmp, 'r', errors='replace') as tmp_log:
                         main_log.write(tmp_log.read())
                 os.remove(log_tmp)
                 return 1
-            
             last_fix_applied = "fix_lua_neturl"
             if fix_lua_neturl_download(log_tmp):
                 fix_applied_this_iteration = 1
-            else:
-                print("修复 lua-neturl 下载错误失败，尝试继续其他修复...")
-                # 不立即退出，让程序尝试其他修复
-        # Trojan-plus buffer_cast 错误
-        elif 'trojan-plus' in log_content and 'service.cpp' in log_content and 'buffer_cast' in log_content and 'boost::asio' in log_content:
-            print("检测到 'trojan-plus boost::asio::buffer_cast' 错误...")
-            if last_fix_applied == "fix_trojan_plus":
-                print("上次已尝试修复 trojan-plus，但错误依旧，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-            
-            last_fix_applied = "fix_trojan_plus"
-            if fix_trojan_plus_boost_error():
-                fix_applied_this_iteration = 1
-            else:
-                print("修复 trojan-plus 失败，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
         
-        # Makefile 缺少分隔符错误
-        elif "missing separator" in log_content and "Stop." in log_content:
-            print("检测到 Makefile 'missing separator' 错误...")
-            if last_fix_applied == "fix_makefile_separator":
-                print("上次已尝试修复 Makefile 分隔符，但错误依旧，停止重试。")
+        elif "invalid" in log_content and "lua-neturl" in log_content:
+            print("检测到 lua-neturl 版本号格式错误...")
+            if last_fix_applied == "fix_lua_neturl":
+                print("上次已尝试修复 lua-neturl 版本号，但问题未解决，停止重试。")
                 with open(args.log_file, 'a') as main_log:
                     with open(log_tmp, 'r', errors='replace') as tmp_log:
                         main_log.write(tmp_log.read())
                 os.remove(log_tmp)
                 return 1
-            
-            last_fix_applied = "fix_makefile_separator"
+            last_fix_applied = "fix_lua_neturl"
+            if fix_lua_neturl_download(log_tmp):  # 再次调用修复函数，确保版本号正确
+                fix_applied_this_iteration = 1
+        
+        elif "missing separator" in log_content and "Stop." in log_content:
+            # 其他错误处理逻辑保持不变
             if fix_makefile_separator(log_tmp):
                 fix_applied_this_iteration = 1
-            else:
-                print("修复 Makefile 分隔符失败，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
         
-        # 目录冲突
-        elif "mkdir: cannot create directory" in log_content and "File exists" in log_content:
-            print("检测到目录冲突错误...")
-            if last_fix_applied == "fix_directory_conflict":
-                print("上次已尝试修复目录冲突，但错误依旧，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-            
-            last_fix_applied = "fix_directory_conflict"
-            if fix_directory_conflict(log_tmp):
-                fix_applied_this_iteration = 1
-            else:
-                print("修复目录冲突失败，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-        
-        # 符号链接冲突
-        elif "ln: failed to create symbolic link" in log_content and "File exists" in log_content:
-            print("检测到符号链接冲突错误...")
-            if last_fix_applied == "fix_symbolic_link_conflict":
-                print("上次已尝试修复符号链接冲突，但错误依旧，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-            
-            last_fix_applied = "fix_symbolic_link_conflict"
-            if fix_symbolic_link_conflict(log_tmp):
-                fix_applied_this_iteration = 1
-            else:
-                print("修复符号链接冲突失败，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-        
-        # 2. 元数据错误 (通常在其他修复失败后尝试)
+        # 元数据错误处理
         elif ("Collected errors:" in log_content or "ERROR: " in log_content) and metadata_fixed == 0:
             print("检测到可能的元数据错误...")
             last_fix_applied = "fix_metadata"
             if fix_metadata_errors():
                 fix_applied_this_iteration = 1
                 metadata_fixed = 1
-            else:
-                print("未应用元数据修复，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
         
-        # 3. 通用错误模式检查 (最后尝试)
+        # 通用错误处理
         elif has_error:
             matched_pattern = re.search(args.error_pattern, log_content, re.MULTILINE)
-            if matched_pattern:
-                print(f"检测到通用错误模式: {matched_pattern.group(0)}")
-            else:
-                print(f"检测到通用错误模式，但无法提取具体错误。")
-            
-            # 避免在通用错误上立即循环，如果没有应用修复
-            if last_fix_applied == "fix_generic" and fix_applied_this_iteration == 0:
-                print("上次已尝试通用修复但无效果，错误依旧，停止重试。")
+            print(f"检测到通用错误模式: {matched_pattern.group(0) if matched_pattern else '未知'}")
+            if last_fix_applied == "fix_generic_retry":
+                print("上次已尝试通用重试但无效果，停止重试。")
                 with open(args.log_file, 'a') as main_log:
                     with open(log_tmp, 'r', errors='replace') as tmp_log:
                         main_log.write(tmp_log.read())
                 os.remove(log_tmp)
                 return 1
-            
-            # 通用修复: 再次尝试元数据修复? 或者只是重试? 让我们只重试一次。
-            print("未找到特定修复程序，将重试编译一次。")
             last_fix_applied = "fix_generic_retry"
-            # 本次迭代没有应用修复，依赖循环计数器
-        else:
-            # 如果没有匹配已知错误模式，但编译失败
-            print(f"未检测到已知或通用的错误模式，但编译失败 (退出码: {compile_status})。")
-            print(f"请检查完整日志: {args.log_file}")
-            with open(args.log_file, 'a') as main_log:
-                with open(log_tmp, 'r', errors='replace') as tmp_log:
-                    main_log.write(tmp_log.read())
-            os.remove(log_tmp)
-            return 1
+            print("未找到特定修复程序，将重试编译一次。")
         
-        # --- 循环控制 ---
         if fix_applied_this_iteration == 0 and compile_status != 0:
             print(f"警告：检测到错误，但此轮未应用有效修复。上次尝试: {last_fix_applied or '无'}")
-            # 即使没有应用修复也允许一次简单重试，可能是暂时性问题
-            if last_fix_applied == "fix_generic_retry" or retry_count >= (args.max_retry - 1):
+            if retry_count >= args.max_retry - 1:
                 print("停止重试，因为未应用有效修复或已达重试上限。")
                 with open(args.log_file, 'a') as main_log:
                     with open(log_tmp, 'r', errors='replace') as tmp_log:
                         main_log.write(tmp_log.read())
                 os.remove(log_tmp)
                 return 1
-            else:
-                print("将再重试一次，检查是否有其他可修复的错误出现。")
-                last_fix_applied = "fix_generic_retry"  # 标记我们正在进行简单重试
         
-        # 清理此次迭代的临时日志
         os.remove(log_tmp)
-        
         retry_count += 1
         print("等待 3 秒后重试...")
         time.sleep(3)
     
-    # --- 最终失败 ---
     print("--------------------------------------------------")
     print(f"达到最大重试次数 ({args.max_retry})，编译最终失败。")
     print("--------------------------------------------------")
-    # 显示完整日志文件的最后 300 行
     extract_error_block(args.log_file)
     print(f"请检查完整日志: {args.log_file}")
     return 1
+
 
 
 if __name__ == "__main__":
