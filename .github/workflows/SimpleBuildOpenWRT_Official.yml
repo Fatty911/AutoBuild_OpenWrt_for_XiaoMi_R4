@@ -39,7 +39,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y build-essential musl-tools libncurses5-dev libncursesw5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync ruby unzip libpam0g-dev libcurl4-openssl-dev libdeflate-dev
-          
+          pip install requests json || pip3 install requests json
       - name: Update feeds
         run: |
           cd openwrt
