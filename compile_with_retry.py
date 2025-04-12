@@ -33,7 +33,67 @@ def get_relative_path(path):
         return os.path.relpath(path, current_pwd)
     except:
         return path
-
+def fix_patch_application(log_file):
+    """修复补丁应用失败的问题"""
+    print("检测到补丁应用失败，尝试修复...")
+    with open(log_file, 'r', errors='replace') as f:
+        log_content = f.read()
+    
+    if "Patch failed" in log_content:
+        # 提取补丁文件路径
+        patch_file_match = re.search(r'Applying (.+) using plaintext:', log_content)
+        if not patch_file_match:
+            print("无法提取补丁文件路径，跳过修复。")
+            return False
+        
+        patch_file = patch_file_match.group(1)
+        print(f"补丁文件: {patch_file}")
+        
+        # 检查源码解压目录
+        dl_dir = "./dl"
+        build_dir = "./build_dir/target-mipsel_24kc_musl"
+        pkg_name = "neturl-1.2"  # 根据 Makefile 中的 PKG_VERSION 推导
+        src_dir = os.path.join(build_dir, pkg_name)
+        
+        if not os.path.isdir(src_dir):
+            print(f"源码目录 {src_dir} 不存在，尝试解压...")
+            tarball = os.path.join(dl_dir, "neturl-1.2-1.tar.gz")
+            if os.path.exists(tarball):
+                subprocess.run(f"tar -xzf {tarball} -C {build_dir}/..", shell=True)
+            else:
+                print(f"源码文件 {tarball} 不存在，无法修复。")
+                return False
+        
+        # 检查实际文件路径
+        expected_file = "lib/net/url.lua"
+        actual_file = os.path.join(src_dir, "neturl-1.2-1", expected_file)
+        if os.path.exists(actual_file):
+            print(f"找到文件 {actual_file}，调整补丁路径...")
+            # 备份补丁文件
+            shutil.copy2(patch_file, f"{patch_file}.bak")
+            
+            # 读取补丁内容并修改路径
+            with open(patch_file, 'r') as f:
+                patch_content = f.read()
+            new_patch_content = patch_content.replace(
+                f"--- a/{expected_file}",
+                f"--- a/neturl-1.2-1/{expected_file}"
+            ).replace(
+                f"+++ b/{expected_file}",
+                f"+++ b/neturl-1.2-1/{expected_file}"
+            )
+            
+            # 写入修改后的补丁
+            with open(patch_file, 'w') as f:
+                f.write(new_patch_content)
+            
+            print(f"已更新补丁文件 {patch_file}")
+            return True
+        else:
+            print(f"未找到预期文件 {actual_file}，无法修复补丁。")
+            return False
+    
+    return False
 
 def fix_makefile_separator(log_file):
     """修复 Makefile "missing separator" 错误"""
@@ -563,15 +623,9 @@ def fix_lua_neturl_download(log_file):
     
     print("检测到 lua-neturl 下载错误...")
     
-    import os
-    import re
-    import subprocess
-    import time
     import hashlib
-    import requests
     from bs4 import BeautifulSoup
     
-    # 1. 找到 Makefile
     makefile_path = None
     for root, dirs, files in os.walk("./feeds"):
         for file in files:
@@ -587,7 +641,6 @@ def fix_lua_neturl_download(log_file):
     
     print(f"找到 lua-neturl 的 Makefile: {makefile_path}")
     
-    # 2. 获取最新版本
     try:
         response = requests.get("https://github.com/golgote/neturl/tags")
         soup = BeautifulSoup(response.text, 'html.parser')
@@ -596,15 +649,13 @@ def fix_lua_neturl_download(log_file):
         print(f"获取到最新版本: {latest_version}")
     except Exception as e:
         print(f"获取最新版本失败: {e}")
-        latest_version = "v1.2-1"  # 默认版本
+        latest_version = "v1.2-1"
     
-    # 规范化版本号，避免连字符后缀
-    raw_version = latest_version.lstrip('v')  # 去掉 'v' 前缀，例如 "1.2-1"
-    version = re.sub(r'-.*', '', raw_version)  # 去除连字符后缀，例如 "1.2"
+    raw_version = latest_version.lstrip('v')
+    version = re.sub(r'-.*', '', raw_version)
     github_url = f"https://github.com/golgote/neturl/archive/refs/tags/{latest_version}.tar.gz"
-    pkg_source = f"neturl-{raw_version}.tar.gz"  # 下载文件名保持原始版本
+    pkg_source = f"neturl-{raw_version}.tar.gz"
     
-    # 3. 下载文件并计算哈希值
     dl_dir = "./dl"
     os.makedirs(dl_dir, exist_ok=True)
     tarball_path = os.path.join(dl_dir, pkg_source)
@@ -639,7 +690,6 @@ def fix_lua_neturl_download(log_file):
         print(f"文件不存在: {tarball_path}")
         return False
     
-    # 4. 更新 Makefile
     with open(makefile_path, 'r') as f:
         content = f.read()
     
@@ -656,7 +706,6 @@ def fix_lua_neturl_download(log_file):
     print(f"PKG_VERSION 设置为: {version}")
     print(f"PKG_SOURCE 设置为: {pkg_source}")
     
-    # 5. 清理并重新安装
     print("清理旧的构建文件...")
     subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
     
@@ -762,13 +811,28 @@ def main():
                 os.remove(log_tmp)
                 return 1
             last_fix_applied = "fix_lua_neturl"
-            if fix_lua_neturl_download(log_tmp):  # 再次调用修复函数，确保版本号正确
+            if fix_lua_neturl_download(log_tmp):
                 fix_applied_this_iteration = 1
         
         elif "missing separator" in log_content and "Stop." in log_content:
-            # 其他错误处理逻辑保持不变
             if fix_makefile_separator(log_tmp):
                 fix_applied_this_iteration = 1
+        
+        # 处理补丁应用失败
+        elif "Patch failed" in log_content:
+            print("检测到补丁应用失败...")
+            if last_fix_applied == "fix_patch_application":
+                print("上次已尝试修复补丁应用失败，但问题未解决，停止重试。")
+                with open(args.log_file, 'a') as main_log:
+                    with open(log_tmp, 'r', errors='replace') as tmp_log:
+                        main_log.write(tmp_log.read())
+                os.remove(log_tmp)
+                return 1
+            last_fix_applied = "fix_patch_application"
+            if fix_patch_application(log_tmp):
+                fix_applied_this_iteration = 1
+                # 清理构建目录以应用更改
+                subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
         
         # 元数据错误处理
         elif ("Collected errors:" in log_content or "ERROR: " in log_content) and metadata_fixed == 0:
