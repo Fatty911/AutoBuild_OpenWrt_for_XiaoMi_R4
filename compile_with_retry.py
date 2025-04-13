@@ -78,51 +78,18 @@ def fix_patch_application(log_file):
     actual_file_in_subdir = os.path.join(src_subdir, expected_file)
     actual_file_in_src = os.path.join(src_dir, expected_file)
     
-    if os.path.exists(actual_file_in_subdir) and not os.path.exists(actual_file_in_src):
-        print(f"找到文件 {actual_file_in_subdir}，但 {actual_file_in_src} 不存在，复制文件...")
+    # 复制文件
+    if not os.path.exists(actual_file_in_src):
+        print(f"复制文件 {actual_file_in_subdir} 到 {actual_file_in_src}")
         os.makedirs(os.path.dirname(actual_file_in_src), exist_ok=True)
         shutil.copy2(actual_file_in_subdir, actual_file_in_src)
-        print(f"已复制文件到 {actual_file_in_src}")
-    
-    if not os.path.exists(actual_file_in_src):
-        print(f"目标文件 {actual_file_in_src} 仍不存在，无法修复。")
-        return False
-    
-    # 测试补丁应用
+    # 应用补丁
     try:
-        result = subprocess.run(
-            f"patch --dry-run -p1 < {patch_file}",
-            shell=True,
-            cwd=src_dir,
-            capture_output=True,
-            text=True
-        )
-        if result.returncode == 0:
-            print("补丁可以应用（dry-run 成功）")
-        else:
-            print(f"补丁仍无法应用，错误信息:\n{result.stderr}")
-            # 尝试调整剥离级别
-            result = subprocess.run(
-                f"patch --dry-run -p0 < {patch_file}",
-                shell=True,
-                cwd=src_dir,
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0:
-                print("使用 -p0 可以应用补丁，调整应用方式")
-                subprocess.run(f"patch -p0 < {patch_file}", shell=True, cwd=src_dir)
-                print("补丁已成功应用")
-            else:
-                print(f"使用 -p0 也失败，错误信息:\n{result.stderr}")
-                return False
-    except subprocess.SubprocessError as e:
-        print(f"测试补丁应用失败: {e}")
+        subprocess.run(f"patch -p1 < {patch_file}", shell=True, cwd=src_dir, check=True)
+        print("补丁成功应用")
+    except subprocess.SubprocessError:
+        print("补丁应用失败")
         return False
-    
-    # 清理构建目录以重新编译
-    print("清理 lua-neturl 构建目录...")
-    subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
     return True
 
 
