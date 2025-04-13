@@ -874,7 +874,7 @@ def main():
                     print("上次已尝试修复 trojan-plus 错误，但问题未解决，停止重试。")
                     # ...
                 last_fix_applied = "fix_trojan_plus_boost_error"
-                if fix_trojan_plus_boost_error(log_content):
+                if fix_trojan_plus_boost_error():
                     fix_applied_this_iteration = 1
                     # 清理 trojan-plus 构建目录以应用更改
                     print("清理 trojan-plus 构建目录以应用更改...")
