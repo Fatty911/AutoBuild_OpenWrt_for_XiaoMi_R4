@@ -55,14 +55,11 @@ def fix_backup_patch_paths(patch_file):
     print(f"已调整备份补丁文件 {backup_patch_file} 中的路径")
     return True
 
-import re
-import os
 
 def fix_lua_neturl_directory():
-    """修复 lua-neturl 的 Makefile 和备份补丁，动态设置 PKG_BUILD_DIR 并调整补丁路径"""
+    """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并排除备份补丁"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
     patch_dir = "feeds/small8/lua-neturl/patches"
-    backup_patch = os.path.join(patch_dir, "010-userinfo-regex.patch.bak")
     
     if not os.path.exists(makefile_path):
         print("无法找到 lua-neturl 的 Makefile")
@@ -104,30 +101,22 @@ def fix_lua_neturl_directory():
         print(f"动态设置 PKG_BUILD_DIR 为 $(BUILD_DIR)/{subdir}")
         modified = True
     else:
-        print("Makefile 已有 PKG_BUILD_DIR 定义，检查备份补丁")
+        print("Makefile 已有 PKG_BUILD_DIR 定义，继续检查补丁")
     
     # 保存修改后的 Makefile
     if modified:
         with open(makefile_path, 'w') as f:
             f.write(content)
     
-    # 检查并修复备份补丁
-    if os.path.exists(backup_patch):
-        with open(backup_patch, 'r') as f:
-            patch_content = f.read()
-        
-        # 检查路径是否包含多余目录层级
-        incorrect_path = f"{subdir}/lib/net/url.lua"
-        if incorrect_path in patch_content:
-            # 修正路径，去除多余的 subdir 前缀
-            corrected_content = patch_content.replace(f"a/{subdir}/lib/net/url.lua", "a/lib/net/url.lua") \
-                                            .replace(f"b/{subdir}/lib/net/url.lua", "b/lib/net/url.lua")
-            with open(backup_patch, 'w') as f:
-                f.write(corrected_content)
-            print(f"已修复备份补丁 {backup_patch}，修正路径为 lib/net/url.lua")
-            modified = True
-        else:
-            print(f"备份补丁 {backup_patch} 已正确，无需调整")
+    # 排除备份补丁
+    if os.path.exists(patch_dir):
+        for patch_file in os.listdir(patch_dir):
+            if patch_file.endswith('.bak'):
+                original_path = os.path.join(patch_dir, patch_file)
+                new_path = original_path + '.excluded'
+                shutil.move(original_path, new_path)
+                print(f"已排除备份补丁 {original_path}，重命名为 {new_path}")
+                modified = True
     
     if modified:
         print("已完成 lua-neturl 的 Makefile 和补丁修复")
@@ -135,6 +124,7 @@ def fix_lua_neturl_directory():
     else:
         print("无需进一步修复，Makefile 和补丁已正确配置")
         return False
+
 
 
 
