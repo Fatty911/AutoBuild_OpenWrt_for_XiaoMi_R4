@@ -413,42 +413,32 @@ def fix_trojan_plus_boost_error():
     with open(found_path, 'r', errors='replace') as f:
         content = f.read()
     
-    # 打印错误行附近的内容以调试
-    lines = content.splitlines()
-    error_line_num = 549  # 第 550 行（从 0 开始计数为 549）
-    context_lines = 5
-    print("错误行附近的内容：")
-    for i in range(max(0, error_line_num - context_lines), min(len(lines), error_line_num + context_lines + 1)):
-        print(f"行 {i + 1}: {lines[i]}")
+    # 应用更简单的正则表达式修复
+    pattern = r'boost::asio::buffer_cast<char\*>$([^)]*)$'
+    replacement = r'static_cast<char*>(\1.data())'
+    modified_content, num_replacements = re.subn(pattern, replacement, content)
+    print(f"进行了 {num_replacements} 次替换")
     
-    # 应用更灵活的正则表达式修复
-    modified_content = re.sub(
-        r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*(udp_read_buf\s*\.\s*prepare\s*\([^)]*$)\s*\)',
-        r'static_cast<char*>(\1.data())',
-        content,
-        flags=re.DOTALL  # 允许匹配跨行
-    )
-    
-    # 写入修改后的内容
-    with open(found_path, 'w') as f:
-        f.write(modified_content)
-    
-    # 验证修复并打印修改后内容
-    with open(found_path, 'r') as f:
-        modified_lines = f.read().splitlines()
-        print("修改后错误行附近的内容：")
-        for i in range(max(0, error_line_num - context_lines), min(len(modified_lines), error_line_num + context_lines + 1)):
-            print(f"行 {i + 1}: {modified_lines[i]}")
+    if num_replacements > 0:
+        # 写入修改后的内容
+        with open(found_path, 'w') as f:
+            f.write(modified_content)
         
-        f.seek(0)
-        if 'static_cast<char*>' in f.read():
-            print(f"已成功修改 {found_path}")
-            os.remove(f"{found_path}.bak")
-            return True
-        else:
-            print(f"尝试修改 {found_path} 失败，恢复备份文件。")
-            shutil.move(f"{found_path}.bak", found_path)
-            return False
+        # 验证修复
+        with open(found_path, 'r') as f:
+            if 'static_cast<char*>' in f.read():
+                print(f"已成功修改 {found_path}")
+                os.remove(f"{found_path}.bak")
+                return True
+            else:
+                print(f"替换后文件中未找到 'static_cast<char*>'，可能替换不正确，恢复备份文件。")
+                shutil.move(f"{found_path}.bak", found_path)
+                return False
+    else:
+        print("未找到需要替换的模式，恢复备份文件。")
+        shutil.move(f"{found_path}.bak", found_path)
+        return False
+
 
 
 
