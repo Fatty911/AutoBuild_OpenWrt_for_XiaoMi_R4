@@ -48,8 +48,8 @@ def fix_lua_neturl_directory():
         print("Makefile 已经包含正确的目录修复")
         return False
     
-    # 添加新的 Build/Prepare 步骤
-    prepare_section = """
+    # 定义所需的 Build/Prepare 内容
+    required_prepare = """
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	$(TAR) -xzf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)/..
@@ -58,18 +58,31 @@ define Build/Prepare
 	$(call Build/Patch)
 endef
 """
-    # 如果已有 Build/Prepare，提示手动检查
-    if "define Build/Prepare" in content:
-        print("Makefile 已有 Build/Prepare 部分，请手动检查并合并修复")
-        return False
+    # 检查是否已有 Build/Prepare
+    prepare_start = content.find("define Build/Prepare")
+    if prepare_start != -1:
+        prepare_end = content.find("endef", prepare_start) + len("endef")
+        existing_prepare = content[prepare_start:prepare_end]
+        
+        # 如果已有正确的修复逻辑，无需修改
+        if "mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/" in existing_prepare and "$(call Build/Patch)" in existing_prepare:
+            print("现有 Build/Prepare 已包含正确修复")
+            return False
+        
+        # 替换现有的 Build/Prepare
+        print("替换现有的 Build/Prepare 以修复目录结构")
+        content = content[:prepare_start] + required_prepare + content[prepare_end:]
     else:
-        content += prepare_section
+        # 如果没有 Build/Prepare，直接添加
+        print("添加新的 Build/Prepare 以修复目录结构")
+        content += required_prepare
     
     with open(makefile_path, 'w') as f:
         f.write(content)
     
     print("已修复 lua-neturl 的 Makefile")
     return True
+
 
 
 def fix_patch_application(log_file):
