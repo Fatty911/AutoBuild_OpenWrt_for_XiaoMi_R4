@@ -54,43 +54,172 @@ def fix_patch_application(log_file):
     # 检查补丁文件内容
     with open(patch_file, 'r') as f:
         patch_content = f.read()
-    print(f"补丁文件内容:\n{patch_content}")
     
-    # 检查源码解压目录
-    dl_dir = "./dl"
-    build_dir = "./build_dir/target-mipsel_24kc_musl"
-    pkg_name = "neturl-1.2"
-    src_dir = os.path.join(build_dir, pkg_name)
-    src_subdir = os.path.join(build_dir, "neturl-1.2-1")
+    # 尝试提取目标文件路径
+    target_file_match = re.search(r'--- a/([^\n]+)', patch_content)
+    if not target_file_match:
+        print("无法从补丁中提取目标文件路径，跳过修复。")
+        return False
+    
+    target_file_path = target_file_match.group(1)
+    print(f"补丁目标文件: {target_file_path}")
+    
+    # 提取包名和解压后的目录
+    pkg_dir_match = re.search(r'build_dir/[^/]+/([^/]+)', log_content)
+    if not pkg_dir_match:
+        print("无法提取包目录，跳过修复。")
+        return False
+    
+    pkg_name = pkg_dir_match.group(1)
+    src_dir = os.path.join("./build_dir", "target-mipsel_24kc_musl", pkg_name)
+    print(f"包名: {pkg_name}")
+    print(f"源码目录: {src_dir}")
     
     if not os.path.isdir(src_dir):
-        print(f"源码目录 {src_dir} 不存在，尝试解压...")
-        tarball = os.path.join(dl_dir, "neturl-1.2-1.tar.gz")
-        if os.path.exists(tarball):
-            subprocess.run(f"tar -xzf {tarball} -C {build_dir}", shell=True)
-            print(f"已解压 {tarball} 到 {build_dir}")
-        else:
-            print(f"源码文件 {tarball} 不存在，无法修复。")
+        print(f"源码目录 {src_dir} 不存在，尝试查找实际目录...")
+        # 尝试通过 find 命令查找实际目录
+        try:
+            find_result = subprocess.check_output(
+                ["find", "./build_dir", "-type", "d", "-name", pkg_name, "-o", "-name", f"{pkg_name}-*"],
+                text=True
+            ).strip()
+            if find_result:
+                src_dir = find_result.split("\n")[0]
+                print(f"找到实际源码目录: {src_dir}")
+        except subprocess.SubprocessError:
+            print("查找源码目录失败")
+    
+    # 查找基本目录结构
+    actual_file_path = None
+    
+    # 1. 尝试直接查找文件
+    expected_file = os.path.join(src_dir, target_file_path)
+    if os.path.isfile(expected_file):
+        actual_file_path = expected_file
+        print(f"找到目标文件: {actual_file_path}")
+    
+    # 2. 尝试在解压目录中查找同名文件
+    if not actual_file_path:
+        target_filename = os.path.basename(target_file_path)
+        try:
+            find_result = subprocess.check_output(
+                ["find", src_dir, "-type", "f", "-name", target_filename],
+                text=True
+            ).strip()
+            if find_result:
+                actual_file_path = find_result.split("\n")[0]
+                print(f"找到同名文件: {actual_file_path}")
+        except subprocess.SubprocessError:
+            print(f"在 {src_dir} 中查找 {target_filename} 失败")
+    
+    # 3. 尝试查找任何 .lua 文件作为备选
+    if not actual_file_path and target_file_path.endswith('.lua'):
+        try:
+            find_result = subprocess.check_output(
+                ["find", src_dir, "-type", "f", "-name", "*.lua"],
+                text=True
+            ).strip()
+            if find_result:
+                lua_files = find_result.split("\n")
+                print(f"找到可能的 Lua 文件: {lua_files[0]}")
+                # 如果只有一个 Lua 文件，就用它
+                if len(lua_files) == 1:
+                    actual_file_path = lua_files[0]
+                    print(f"使用唯一的 Lua 文件: {actual_file_path}")
+        except subprocess.SubprocessError:
+            print(f"在 {src_dir} 中查找 .lua 文件失败")
+    
+    # 如果找到了实际文件路径，则创建预期的目录结构
+    if actual_file_path:
+        # 创建符合补丁预期的目录结构
+        expected_file_dir = os.path.dirname(expected_file)
+        if not os.path.isdir(expected_file_dir):
+            print(f"创建预期目录结构: {expected_file_dir}")
+            os.makedirs(expected_file_dir, exist_ok=True)
+        
+        # 复制文件到预期位置
+        if actual_file_path != expected_file:
+            print(f"复制文件 {actual_file_path} 到 {expected_file}")
+            shutil.copy2(actual_file_path, expected_file)
+        
+        # 应用补丁
+        try:
+            print(f"尝试在 {src_dir} 应用补丁...")
+            subprocess.run(f"patch -p1 < {patch_file}", shell=True, cwd=src_dir, check=True)
+            print("补丁成功应用")
+            
+            # 如果原始文件和预期文件位置不同，再复制回去
+            if actual_file_path != expected_file:
+                print(f"复制修改后文件 {expected_file} 回到 {actual_file_path}")
+                shutil.copy2(expected_file, actual_file_path)
+            
+            return True
+        except subprocess.SubprocessError:
+            print("补丁应用失败")
             return False
     
-    # 检查文件位置并调整
-    expected_file = "lib/net/url.lua"
-    actual_file_in_subdir = os.path.join(src_subdir, expected_file)
-    actual_file_in_src = os.path.join(src_dir, expected_file)
+    # 特殊处理 neturl 包
+    if "neturl" in pkg_name.lower():
+        print("检测到 neturl 包，尝试特殊处理...")
+        
+        # 查找实际解压的目录中的结构
+        try:
+            find_result = subprocess.check_output(["find", src_dir, "-type", "f", "-not", "-path", "*/\\.*"], text=True).strip()
+            if find_result:
+                print("neturl 包中的文件:")
+                for line in find_result.split("\n"):
+                    print(f"  {line}")
+        except:
+            pass
+        
+        # 创建 lib/net 目录
+        lib_net_dir = os.path.join(src_dir, "lib", "net")
+        os.makedirs(lib_net_dir, exist_ok=True)
+        
+        # 尝试查找任何 .lua 文件并复制到 lib/net/url.lua
+        lua_file = None
+        try:
+            find_result = subprocess.check_output(["find", src_dir, "-name", "*.lua"], text=True).strip()
+            if find_result:
+                lua_files = find_result.split("\n")
+                lua_file = lua_files[0]
+                print(f"找到 lua 文件: {lua_file}")
+        except:
+            pass
+        
+        # 对于 neturl，其主文件可能是 neturl.lua 或其他名称
+        if not lua_file:
+            possible_files = [
+                os.path.join(src_dir, "neturl.lua"),
+                os.path.join(src_dir, "url.lua"),
+                os.path.join(src_dir, "src", "neturl.lua"),
+                os.path.join(src_dir, "src", "url.lua")
+            ]
+            
+            for file in possible_files:
+                if os.path.isfile(file):
+                    lua_file = file
+                    print(f"找到 lua 文件: {lua_file}")
+                    break
+        
+        if lua_file:
+            # 复制到目标位置
+            dest_file = os.path.join(lib_net_dir, "url.lua")
+            print(f"复制 {lua_file} 到 {dest_file}")
+            shutil.copy2(lua_file, dest_file)
+            
+            # 应用补丁
+            try:
+                subprocess.run(f"patch -p1 < {patch_file}", shell=True, cwd=src_dir, check=True)
+                print("补丁成功应用")
+                return True
+            except subprocess.SubprocessError:
+                print("补丁应用失败")
+                return False
     
-    # 复制文件
-    if not os.path.exists(actual_file_in_src):
-        print(f"复制文件 {actual_file_in_subdir} 到 {actual_file_in_src}")
-        os.makedirs(os.path.dirname(actual_file_in_src), exist_ok=True)
-        shutil.copy2(actual_file_in_subdir, actual_file_in_src)
-    # 应用补丁
-    try:
-        subprocess.run(f"patch -p1 < {patch_file}", shell=True, cwd=src_dir, check=True)
-        print("补丁成功应用")
-    except subprocess.SubprocessError:
-        print("补丁应用失败")
-        return False
-    return True
+    print("无法找到匹配的文件或正确处理补丁，修复失败。")
+    return False
+
 
 
 
