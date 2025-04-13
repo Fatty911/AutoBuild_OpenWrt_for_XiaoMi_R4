@@ -360,7 +360,6 @@ def fix_makefile_separator(log_file):
 
 
 def fix_trojan_plus_boost_error():
-    """修复 trojan-plus 中的 boost::asio::buffer_cast 错误"""
     print("修复 trojan-plus 中的 boost::asio::buffer_cast 错误...")
     found_path = ""
     trojan_pkg_dir = ""
@@ -377,23 +376,18 @@ def fix_trojan_plus_boost_error():
             service_cpp = os.path.join(trojan_src_dir, "service.cpp")
             if os.path.isfile(service_cpp):
                 found_path = service_cpp
-                # 尝试确定包目录
                 match = re.search(r'build_dir/[^/]*/([^/]*)/src/core', trojan_src_dir)
                 if match:
                     trojan_pkg_dir = match.group(1)
                 print(f"找到 trojan-plus 源码: {found_path} (包构建目录推测: {trojan_pkg_dir})")
-            else:
-                print(f"在找到的目录 {trojan_src_dir} 中未找到 service.cpp")
     except subprocess.SubprocessError:
         print("在 build_dir 中搜索 trojan-plus 源码时出错")
     
-    # 如果未找到，尝试从日志猜测
     if not found_path:
         print("未能在 build_dir 中动态找到 trojan-plus 源码路径，尝试基于日志猜测路径...")
         try:
             with open(args.log_file, 'r', errors='replace') as f:
                 log_content = f.read()
-            
             target_build_dir_match = re.search(r'(/[^ ]+)?build_dir/target-[^/]+/trojan-plus-[^/]+', log_content)
             if target_build_dir_match:
                 target_build_dir = target_build_dir_match.group(0)
@@ -412,54 +406,23 @@ def fix_trojan_plus_boost_error():
     
     print(f"尝试修复 {found_path} ...")
     
-    # 备份原文件
     shutil.copy2(found_path, f"{found_path}.bak")
-    
-    # 读取文件内容
     with open(found_path, 'r', errors='replace') as f:
         content = f.read()
     
-    # 应用修复
     modified_content = re.sub(
         r'boost::asio::buffer_cast<char\*>\((udp_read_buf\.prepare\([^)]*\))\)',
         r'static_cast<char*>(\1.data())',
         content
     )
     
-    # 写入修改后的内容
     with open(found_path, 'w') as f:
         f.write(modified_content)
     
-    # 验证修复
     with open(found_path, 'r') as f:
         if 'static_cast<char*>' in f.read():
             print(f"已成功修改 {found_path}")
             os.remove(f"{found_path}.bak")
-            
-            # 尝试找到包源目录并清理
-            pkg_src_path = ""
-            if trojan_pkg_dir:
-                try:
-                    pkg_name = re.sub(r'-[0-9].*', '', trojan_pkg_dir)
-                    pkg_src_paths = subprocess.check_output(
-                        ["find", "package", "feeds", "-name", pkg_name, "-type", "d", "-print", "-quit"],
-                        text=True
-                    ).strip()
-                    
-                    if pkg_src_paths:
-                        pkg_src_path = pkg_src_paths.split("\n")[0]
-                except:
-                    pass
-            
-            if pkg_src_path and os.path.isdir(pkg_src_path):
-                print(f"尝试清理包 {pkg_src_path} 以应用更改...")
-                try:
-                    subprocess.run(["make", f"{pkg_src_path}/clean", "DIRCLEAN=1", "V=s"], check=False)
-                except:
-                    print(f"警告: 清理包 {pkg_src_path} 失败。")
-            else:
-                print("警告: 未找到 trojan-plus 的源包目录，无法执行清理。可能需要手动清理。")
-            
             return True
         else:
             print(f"尝试修改 {found_path} 失败，恢复备份文件。")
@@ -874,74 +837,86 @@ def main():
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
         
-        # 错误检测和修复逻辑
-        if 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
-            print("检测到 lua-neturl 下载错误...")
-            if last_fix_applied == "fix_lua_neturl":
-                print("上次已尝试修复 lua-neturl 下载错误，但问题未解决，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-            last_fix_applied = "fix_lua_neturl"
-            if fix_lua_neturl_download(log_tmp):
-                fix_applied_this_iteration = 1
-        
-        elif "invalid" in log_content and "lua-neturl" in log_content:
-            print("检测到 lua-neturl 版本号格式错误...")
-            if last_fix_applied == "fix_lua_neturl":
-                print("上次已尝试修复 lua-neturl 版本号，但问题未解决，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-            last_fix_applied = "fix_lua_neturl"
-            if fix_lua_neturl_download(log_tmp):
-                fix_applied_this_iteration = 1
-        
-        elif "missing separator" in log_content and "Stop." in log_content:
-            if fix_makefile_separator(log_tmp):
-                fix_applied_this_iteration = 1
-        
-        # 处理补丁应用失败
-        elif "Patch failed" in log_content:
-            print("检测到补丁应用失败...")
-            if last_fix_applied == "fix_patch_application":
-                print("上次已尝试修复补丁应用失败，但问题未解决，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-            last_fix_applied = "fix_patch_application"
-            if fix_patch_application(log_tmp):
-                fix_applied_this_iteration = 1
-                # 清理构建目录以应用更改
-                subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
-        
-        # 元数据错误处理
-        elif ("Collected errors:" in log_content or "ERROR: " in log_content) and metadata_fixed == 0:
-            print("检测到可能的元数据错误...")
-            last_fix_applied = "fix_metadata"
-            if fix_metadata_errors():
-                fix_applied_this_iteration = 1
-                metadata_fixed = 1
-        
-        # 通用错误处理
-        elif has_error:
-            matched_pattern = re.search(args.error_pattern, log_content, re.MULTILINE)
-            print(f"检测到通用错误模式: {matched_pattern.group(0) if matched_pattern else '未知'}")
-            if last_fix_applied == "fix_generic_retry":
-                print("上次已尝试通用重试但无效果，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-            last_fix_applied = "fix_generic_retry"
-            print("未找到特定修复程序，将重试编译一次。")
+            # 错误检测和修复逻辑
+            if "buffer_cast" in log_content and "boost::asio" in log_content:
+                print("检测到 trojan-plus 中的 boost::asio::buffer_cast 错误...")
+                if last_fix_applied == "fix_trojan_plus_boost_error":
+                    print("上次已尝试修复 trojan-plus 错误，但问题未解决，停止重试。")
+                    with open(args.log_file, 'a') as main_log:
+                        with open(log_tmp, 'r', errors='replace') as tmp_log:
+                            main_log.write(tmp_log.read())
+                    os.remove(log_tmp)
+                    return 1
+                last_fix_applied = "fix_trojan_plus_boost_error"
+                if fix_trojan_plus_boost_error():
+                    fix_applied_this_iteration = 1
+                    # 清理 trojan-plus 构建目录以应用更改
+                    print("清理 trojan-plus 构建目录以应用更改...")
+                    subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
+            
+            elif 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
+                print("检测到 lua-neturl 下载错误...")
+                if last_fix_applied == "fix_lua_neturl":
+                    print("上次已尝试修复 lua-neturl 下载错误，但问题未解决，停止重试。")
+                    with open(args.log_file, 'a') as main_log:
+                        with open(log_tmp, 'r', errors='replace') as tmp_log:
+                            main_log.write(tmp_log.read())
+                    os.remove(log_tmp)
+                    return 1
+                last_fix_applied = "fix_lua_neturl"
+                if fix_lua_neturl_download(log_tmp):
+                    fix_applied_this_iteration = 1
+            
+            elif "invalid" in log_content and "lua-neturl" in log_content:
+                print("检测到 lua-neturl 版本号格式错误...")
+                if last_fix_applied == "fix_lua_neturl":
+                    print("上次已尝试修复 lua-neturl 版本号，但问题未解决，停止重试。")
+                    with open(args.log_file, 'a') as main_log:
+                        with open(log_tmp, 'r', errors='replace') as tmp_log:
+                            main_log.write(tmp_log.read())
+                    os.remove(log_tmp)
+                    return 1
+                last_fix_applied = "fix_lua_neturl"
+                if fix_lua_neturl_download(log_tmp):
+                    fix_applied_this_iteration = 1
+            
+            elif "missing separator" in log_content and "Stop." in log_content:
+                if fix_makefile_separator(log_tmp):
+                    fix_applied_this_iteration = 1
+            
+            elif "Patch failed" in log_content:
+                print("检测到补丁应用失败...")
+                if last_fix_applied == "fix_patch_application":
+                    print("上次已尝试修复补丁应用失败，但问题未解决，停止重试。")
+                    with open(args.log_file, 'a') as main_log:
+                        with open(log_tmp, 'r', errors='replace') as tmp_log:
+                            main_log.write(tmp_log.read())
+                    os.remove(log_tmp)
+                    return 1
+                last_fix_applied = "fix_patch_application"
+                if fix_patch_application(log_tmp):
+                    fix_applied_this_iteration = 1
+                    subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
+            
+            elif ("Collected errors:" in log_content or "ERROR: " in log_content) and metadata_fixed == 0:
+                print("检测到可能的元数据错误...")
+                last_fix_applied = "fix_metadata"
+                if fix_metadata_errors():
+                    fix_applied_this_iteration = 1
+                    metadata_fixed = 1
+            
+            elif has_error:
+                matched_pattern = re.search(args.error_pattern, log_content, re.MULTILINE)
+                print(f"检测到通用错误模式: {matched_pattern.group(0) if matched_pattern else '未知'}")
+                if last_fix_applied == "fix_generic_retry":
+                    print("上次已尝试通用重试但无效果，停止重试。")
+                    with open(args.log_file, 'a') as main_log:
+                        with open(log_tmp, 'r', errors='replace') as tmp_log:
+                            main_log.write(tmp_log.read())
+                    os.remove(log_tmp)
+                    return 1
+                last_fix_applied = "fix_generic_retry"
+                print("未找到特定修复程序，将重试编译一次。")
         
         if fix_applied_this_iteration == 0 and compile_status != 0:
             print(f"警告：检测到错误，但此轮未应用有效修复。上次尝试: {last_fix_applied or '无'}")
@@ -964,8 +939,3 @@ def main():
     extract_error_block(args.log_file)
     print(f"请检查完整日志: {args.log_file}")
     return 1
-
-
-
-if __name__ == "__main__":
-    sys.exit(main())
