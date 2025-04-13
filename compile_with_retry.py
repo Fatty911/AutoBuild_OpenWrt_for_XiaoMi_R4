@@ -43,20 +43,22 @@ def fix_lua_neturl_directory():
     with open(makefile_path, 'r') as f:
         content = f.read()
     
-    # 检查是否已经包含修复
-    if "mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/" in content:
-        print("Makefile 已经包含目录修复")
+    # 检查是否已包含正确的修复
+    if "mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/" in content and "$(call Build/Patch)" in content:
+        print("Makefile 已经包含正确的目录修复")
         return False
     
-    # 添加修复逻辑
+    # 添加新的 Build/Prepare 步骤
     prepare_section = """
 define Build/Prepare
-	$(call Build/Prepare/Default)
+	mkdir -p $(PKG_BUILD_DIR)
+	$(TAR) -xzf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)/..
 	mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/
 	rmdir $(PKG_BUILD_DIR)/../neturl-1.2-1
+	$(call Build/Patch)
 endef
 """
-    # 检查是否已有 Build/Prepare 定义
+    # 如果已有 Build/Prepare，提示手动检查
     if "define Build/Prepare" in content:
         print("Makefile 已有 Build/Prepare 部分，请手动检查并合并修复")
         return False
@@ -68,6 +70,7 @@ endef
     
     print("已修复 lua-neturl 的 Makefile")
     return True
+
 
 def fix_patch_application(log_file):
     """修复补丁应用失败的问题"""
