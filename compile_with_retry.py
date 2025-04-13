@@ -360,9 +360,9 @@ def fix_makefile_separator(log_file):
 
 
 def fix_trojan_plus_boost_error():
+    """修复 trojan-plus 中的 boost::asio::buffer_cast 错误"""
     print("修复 trojan-plus 中的 boost::asio::buffer_cast 错误...")
     found_path = ""
-    trojan_pkg_dir = ""
     
     # 查找 trojan-plus 源码目录
     try:
@@ -376,18 +376,19 @@ def fix_trojan_plus_boost_error():
             service_cpp = os.path.join(trojan_src_dir, "service.cpp")
             if os.path.isfile(service_cpp):
                 found_path = service_cpp
-                match = re.search(r'build_dir/[^/]*/([^/]*)/src/core', trojan_src_dir)
-                if match:
-                    trojan_pkg_dir = match.group(1)
-                print(f"找到 trojan-plus 源码: {found_path} (包构建目录推测: {trojan_pkg_dir})")
+                print(f"找到 trojan-plus 源码: {found_path}")
+            else:
+                print(f"在找到的目录 {trojan_src_dir} 中未找到 service.cpp")
     except subprocess.SubprocessError:
         print("在 build_dir 中搜索 trojan-plus 源码时出错")
     
+    # 如果未找到，尝试从日志猜测
     if not found_path:
         print("未能在 build_dir 中动态找到 trojan-plus 源码路径，尝试基于日志猜测路径...")
         try:
             with open(args.log_file, 'r', errors='replace') as f:
                 log_content = f.read()
+            
             target_build_dir_match = re.search(r'(/[^ ]+)?build_dir/target-[^/]+/trojan-plus-[^/]+', log_content)
             if target_build_dir_match:
                 target_build_dir = target_build_dir_match.group(0)
@@ -395,8 +396,7 @@ def fix_trojan_plus_boost_error():
                     service_cpp = os.path.join(target_build_dir, "src/core/service.cpp")
                     if os.path.isfile(service_cpp):
                         found_path = service_cpp
-                        trojan_pkg_dir = os.path.basename(target_build_dir)
-                        print(f"根据日志猜测找到 trojan-plus 源码: {found_path} (包构建目录推测: {trojan_pkg_dir})")
+                        print(f"根据日志猜测找到 trojan-plus 源码: {found_path}")
         except:
             pass
     
@@ -406,28 +406,36 @@ def fix_trojan_plus_boost_error():
     
     print(f"尝试修复 {found_path} ...")
     
+    # 备份原文件
     shutil.copy2(found_path, f"{found_path}.bak")
+    
+    # 读取文件内容
     with open(found_path, 'r', errors='replace') as f:
         content = f.read()
     
+    # 应用修复
     modified_content = re.sub(
-        r'boost::asio::buffer_cast<char\*>\((udp_read_buf\.prepare\([^)]*\))\)',
+        r'boost::asio::buffer_cast<char\*>$(udp_read_buf\.prepare\([^)]*$)\)',
         r'static_cast<char*>(\1.data())',
         content
     )
     
+    # 写入修改后的内容
     with open(found_path, 'w') as f:
         f.write(modified_content)
     
+    # 验证修复
     with open(found_path, 'r') as f:
         if 'static_cast<char*>' in f.read():
             print(f"已成功修改 {found_path}")
             os.remove(f"{found_path}.bak")
+            # 不清理构建目录，直接返回以重试编译
             return True
         else:
             print(f"尝试修改 {found_path} 失败，恢复备份文件。")
             shutil.move(f"{found_path}.bak", found_path)
             return False
+
 
 
 def fix_directory_conflict(log_file):
