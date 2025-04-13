@@ -35,31 +35,12 @@ def get_relative_path(path):
         return path
 
 
-def fix_backup_patch_paths(patch_file):
-    """动态调整备份补丁文件中的路径"""
-    backup_patch_file = patch_file + ".bak"
-    if not os.path.exists(backup_patch_file):
-        print(f"备份补丁文件 {backup_patch_file} 不存在，跳过修复。")
-        return False
-    
-    with open(backup_patch_file, 'r') as f:
-        content = f.read()
-    
-    # 调整补丁路径，移除多余的目录层级
-    corrected_content = re.sub(r'--- a/[^/]+/', '--- a/', content)
-    corrected_content = re.sub(r'\+\+\+ b/[^/]+/', '+++ b/', corrected_content)
-    
-    with open(backup_patch_file, 'w') as f:
-        f.write(corrected_content)
-    
-    print(f"已调整备份补丁文件 {backup_patch_file} 中的路径")
-    return True
-
 
 def fix_lua_neturl_directory():
-    """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并排除备份补丁"""
+    """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并隔离备份补丁"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
     patch_dir = "feeds/small8/lua-neturl/patches"
+    excluded_dir = os.path.join(patch_dir, "excluded")
     
     if not os.path.exists(makefile_path):
         print("无法找到 lua-neturl 的 Makefile")
@@ -108,14 +89,16 @@ def fix_lua_neturl_directory():
         with open(makefile_path, 'w') as f:
             f.write(content)
     
-    # 排除备份补丁
+    # 隔离备份补丁
     if os.path.exists(patch_dir):
+        # 创建 excluded 子目录
+        os.makedirs(excluded_dir, exist_ok=True)
         for patch_file in os.listdir(patch_dir):
-            if patch_file.endswith('.bak'):
+            if patch_file.endswith('.bak') or patch_file.endswith('.bak.excluded'):
                 original_path = os.path.join(patch_dir, patch_file)
-                new_path = original_path + '.excluded'
+                new_path = os.path.join(excluded_dir, patch_file)
                 shutil.move(original_path, new_path)
-                print(f"已排除备份补丁 {original_path}，重命名为 {new_path}")
+                print(f"已隔离备份补丁 {original_path}，移至 {new_path}")
                 modified = True
     
     if modified:
@@ -124,6 +107,7 @@ def fix_lua_neturl_directory():
     else:
         print("无需进一步修复，Makefile 和补丁已正确配置")
         return False
+
 
 
 
