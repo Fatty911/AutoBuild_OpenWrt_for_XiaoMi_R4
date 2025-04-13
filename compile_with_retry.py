@@ -33,8 +33,10 @@ def get_relative_path(path):
         return os.path.relpath(path, current_pwd)
     except:
         return path
+
+
 def fix_lua_neturl_directory():
-    """修复 lua-neturl 的 Makefile 以设置 PKG_SOURCE_SUBDIR"""
+    """修复 lua-neturl 的 Makefile，动态设置 PKG_BUILD_DIR"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
     if not os.path.exists(makefile_path):
         print("无法找到 lua-neturl 的 Makefile")
@@ -43,24 +45,49 @@ def fix_lua_neturl_directory():
     with open(makefile_path, 'r') as f:
         content = f.read()
     
-    # 检查是否已包含 PKG_SOURCE_SUBDIR
-    if "PKG_SOURCE_SUBDIR:=" in content:
-        print("Makefile 已有 PKG_SOURCE_SUBDIR，请手动检查")
+    # 检查是否已包含 PKG_BUILD_DIR
+    if "PKG_BUILD_DIR:=" in content:
+        print("Makefile 已有 PKG_BUILD_DIR 定义，请手动检查")
         return False
     
-    # 添加 PKG_SOURCE_SUBDIR
+    # 提取 PKG_SOURCE
+    pkg_source_match = re.search(r'PKG_SOURCE:=([^\n]+)', content)
+    if not pkg_source_match:
+        print("无法找到 PKG_SOURCE 定义，无法动态设置 PKG_BUILD_DIR")
+        return False
+    
+    pkg_source = pkg_source_match.group(1).strip()
+    
+    # 动态确定解压目录名，移除常见的压缩扩展名
+    archive_extensions = ['.tar.gz', '.tar.bz2', '.tar.xz', '.zip']
+    subdir = pkg_source
+    for ext in archive_extensions:
+        if subdir.endswith(ext):
+            subdir = subdir[:-len(ext)]
+            break
+    
+    # 检查解压目录是否合理
+    if not subdir or subdir == pkg_source:
+        print(f"无法从 PKG_SOURCE '{pkg_source}' 解析有效的解压目录名")
+        return False
+    
+    # 设置 PKG_BUILD_DIR
+    build_dir_line = f"PKG_BUILD_DIR:=$(BUILD_DIR)/{subdir}\n"
+    
+    # 插入到 PKG_VERSION 后
     insert_pos = content.find("PKG_VERSION:=")
     if insert_pos != -1:
         insert_pos = content.find('\n', insert_pos) + 1
-        content = content[:insert_pos] + "PKG_SOURCE_SUBDIR:=neturl-1.2-1\n" + content[insert_pos:]
+        content = content[:insert_pos] + build_dir_line + content[insert_pos:]
     else:
-        content += "\nPKG_SOURCE_SUBDIR:=neturl-1.2-1\n"
+        content += "\n" + build_dir_line
     
     with open(makefile_path, 'w') as f:
         f.write(content)
     
-    print("已修复 lua-neturl 的 Makefile，设置 PKG_SOURCE_SUBDIR")
+    print(f"已修复 lua-neturl 的 Makefile，动态设置 PKG_BUILD_DIR 为 $(BUILD_DIR)/{subdir}")
     return True
+
 
 
 
