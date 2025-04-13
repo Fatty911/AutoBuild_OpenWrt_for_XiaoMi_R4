@@ -51,6 +51,11 @@ def fix_patch_application(log_file):
     patch_file = patch_file_match.group(1)
     print(f"补丁文件: {patch_file}")
     
+    # 检查补丁文件内容
+    with open(patch_file, 'r') as f:
+        patch_content = f.read()
+    print(f"补丁文件内容:\n{patch_content}")
+    
     # 检查源码解压目录
     dl_dir = "./dl"
     build_dir = "./build_dir/target-mipsel_24kc_musl"
@@ -62,7 +67,8 @@ def fix_patch_application(log_file):
         print(f"源码目录 {src_dir} 不存在，尝试解压...")
         tarball = os.path.join(dl_dir, "neturl-1.2-1.tar.gz")
         if os.path.exists(tarball):
-            subprocess.run(f"tar -xzf {tarball} -C {build_dir}/..", shell=True)
+            subprocess.run(f"tar -xzf {tarball} -C {build_dir}", shell=True)
+            print(f"已解压 {tarball} 到 {build_dir}")
         else:
             print(f"源码文件 {tarball} 不存在，无法修复。")
             return False
@@ -73,33 +79,52 @@ def fix_patch_application(log_file):
     actual_file_in_src = os.path.join(src_dir, expected_file)
     
     if os.path.exists(actual_file_in_subdir) and not os.path.exists(actual_file_in_src):
-        print(f"找到文件 {actual_file_in_subdir}，但 {src_dir} 为空，复制文件到 {src_dir}...")
-        # 将 neturl-1.2-1 的内容复制到 neturl-1.2
-        subprocess.run(f"cp -r {src_subdir}/* {src_dir}/", shell=True)
-        print(f"已复制文件到 {src_dir}")
-        
-        # 恢复补丁文件到原始路径（如果被修改）
-        with open(patch_file, 'r') as f:
-            patch_content = f.read()
-        if "neturl-1.2-1" in patch_content:
-            original_patch_content = patch_content.replace(
-                f"--- a/neturl-1.2-1/{expected_file}",
-                f"--- a/{expected_file}"
-            ).replace(
-                f"+++ b/neturl-1.2-1/{expected_file}",
-                f"+++ b/{expected_file}"
-            )
-            with open(patch_file, 'w') as f:
-                f.write(original_patch_content)
-            print(f"已恢复补丁文件 {patch_file} 到原始路径")
-        
-        # 清理构建目录以重新应用补丁
-        print("清理 lua-neturl 构建目录...")
-        subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
-        return True
-    else:
-        print(f"文件 {actual_file_in_subdir} 不存在或 {actual_file_in_src} 已存在，跳过修复。")
+        print(f"找到文件 {actual_file_in_subdir}，但 {actual_file_in_src} 不存在，复制文件...")
+        os.makedirs(os.path.dirname(actual_file_in_src), exist_ok=True)
+        shutil.copy2(actual_file_in_subdir, actual_file_in_src)
+        print(f"已复制文件到 {actual_file_in_src}")
+    
+    if not os.path.exists(actual_file_in_src):
+        print(f"目标文件 {actual_file_in_src} 仍不存在，无法修复。")
         return False
+    
+    # 测试补丁应用
+    try:
+        result = subprocess.run(
+            f"patch --dry-run -p1 < {patch_file}",
+            shell=True,
+            cwd=src_dir,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            print("补丁可以应用（dry-run 成功）")
+        else:
+            print(f"补丁仍无法应用，错误信息:\n{result.stderr}")
+            # 尝试调整剥离级别
+            result = subprocess.run(
+                f"patch --dry-run -p0 < {patch_file}",
+                shell=True,
+                cwd=src_dir,
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                print("使用 -p0 可以应用补丁，调整应用方式")
+                subprocess.run(f"patch -p0 < {patch_file}", shell=True, cwd=src_dir)
+                print("补丁已成功应用")
+            else:
+                print(f"使用 -p0 也失败，错误信息:\n{result.stderr}")
+                return False
+    except subprocess.SubprocessError as e:
+        print(f"测试补丁应用失败: {e}")
+        return False
+    
+    # 清理构建目录以重新编译
+    print("清理 lua-neturl 构建目录...")
+    subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
+    return True
+
 
 
 def fix_makefile_separator(log_file):
