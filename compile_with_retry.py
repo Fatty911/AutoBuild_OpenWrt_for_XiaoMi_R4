@@ -930,8 +930,8 @@ def main():
         
         os.remove(log_tmp)
         retry_count += 1
-        print("等待 3 秒后重试...")
-        time.sleep(3)
+        print("等待 2 秒后重试...")
+        time.sleep(2)
     
     print("--------------------------------------------------")
     print(f"达到最大重试次数 ({args.max_retry})，编译最终失败。")
@@ -939,3 +939,6 @@ def main():
     extract_error_block(args.log_file)
     print(f"请检查完整日志: {args.log_file}")
     return 1
+    
+if __name__ == "__main__":
+    sys.exit(main())
