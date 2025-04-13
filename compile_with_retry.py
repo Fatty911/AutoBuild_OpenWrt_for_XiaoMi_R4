@@ -34,7 +34,7 @@ def get_relative_path(path):
     except:
         return path
 def fix_lua_neturl_directory():
-    """修复 lua-neturl 的 Makefile 以正确处理目录结构"""
+    """修复 lua-neturl 的 Makefile 以设置 PKG_SOURCE_SUBDIR"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
     if not os.path.exists(makefile_path):
         print("无法找到 lua-neturl 的 Makefile")
@@ -43,45 +43,25 @@ def fix_lua_neturl_directory():
     with open(makefile_path, 'r') as f:
         content = f.read()
     
-    # 检查是否已包含正确的修复
-    if "mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/" in content and "$(call Build/Patch)" in content:
-        print("Makefile 已经包含正确的目录修复")
+    # 检查是否已包含 PKG_SOURCE_SUBDIR
+    if "PKG_SOURCE_SUBDIR:=" in content:
+        print("Makefile 已有 PKG_SOURCE_SUBDIR，请手动检查")
         return False
     
-    # 定义所需的 Build/Prepare 内容
-    required_prepare = """
-define Build/Prepare
-	mkdir -p $(PKG_BUILD_DIR)
-	$(TAR) -xzf $(DL_DIR)/$(PKG_SOURCE) -C $(PKG_BUILD_DIR)/..
-	mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/
-	rmdir $(PKG_BUILD_DIR)/../neturl-1.2-1
-	$(call Build/Patch)
-endef
-"""
-    # 检查是否已有 Build/Prepare
-    prepare_start = content.find("define Build/Prepare")
-    if prepare_start != -1:
-        prepare_end = content.find("endef", prepare_start) + len("endef")
-        existing_prepare = content[prepare_start:prepare_end]
-        
-        # 如果已有正确的修复逻辑，无需修改
-        if "mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/" in existing_prepare and "$(call Build/Patch)" in existing_prepare:
-            print("现有 Build/Prepare 已包含正确修复")
-            return False
-        
-        # 替换现有的 Build/Prepare
-        print("替换现有的 Build/Prepare 以修复目录结构")
-        content = content[:prepare_start] + required_prepare + content[prepare_end:]
+    # 添加 PKG_SOURCE_SUBDIR
+    insert_pos = content.find("PKG_VERSION:=")
+    if insert_pos != -1:
+        insert_pos = content.find('\n', insert_pos) + 1
+        content = content[:insert_pos] + "PKG_SOURCE_SUBDIR:=neturl-1.2-1\n" + content[insert_pos:]
     else:
-        # 如果没有 Build/Prepare，直接添加
-        print("添加新的 Build/Prepare 以修复目录结构")
-        content += required_prepare
+        content += "\nPKG_SOURCE_SUBDIR:=neturl-1.2-1\n"
     
     with open(makefile_path, 'w') as f:
         f.write(content)
     
-    print("已修复 lua-neturl 的 Makefile")
+    print("已修复 lua-neturl 的 Makefile，设置 PKG_SOURCE_SUBDIR")
     return True
+
 
 
 
