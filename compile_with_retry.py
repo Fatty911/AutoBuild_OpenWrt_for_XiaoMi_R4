@@ -33,6 +33,42 @@ def get_relative_path(path):
         return os.path.relpath(path, current_pwd)
     except:
         return path
+def fix_lua_neturl_directory():
+    """修复 lua-neturl 的 Makefile 以正确处理目录结构"""
+    makefile_path = "feeds/small8/lua-neturl/Makefile"
+    if not os.path.exists(makefile_path):
+        print("无法找到 lua-neturl 的 Makefile")
+        return False
+    
+    with open(makefile_path, 'r') as f:
+        content = f.read()
+    
+    # 检查是否已经包含修复
+    if "mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/" in content:
+        print("Makefile 已经包含目录修复")
+        return False
+    
+    # 添加修复逻辑
+    prepare_section = """
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	mv $(PKG_BUILD_DIR)/../neturl-1.2-1/* $(PKG_BUILD_DIR)/
+	rmdir $(PKG_BUILD_DIR)/../neturl-1.2-1
+endef
+"""
+    # 检查是否已有 Build/Prepare 定义
+    if "define Build/Prepare" in content:
+        print("Makefile 已有 Build/Prepare 部分，请手动检查并合并修复")
+        return False
+    else:
+        content += prepare_section
+    
+    with open(makefile_path, 'w') as f:
+        f.write(content)
+    
+    print("已修复 lua-neturl 的 Makefile")
+    return True
+
 def fix_patch_application(log_file):
     """修复补丁应用失败的问题"""
     print("检测到补丁应用失败，尝试修复...")
@@ -51,6 +87,11 @@ def fix_patch_application(log_file):
     patch_file = patch_file_match.group(1)
     print(f"补丁文件: {patch_file}")
     
+    # 如果是 lua-neturl 的补丁，修复 Makefile
+    if "feeds/small8/lua-neturl" in patch_file:
+        return fix_lua_neturl_directory()
+    
+    # 保留原有逻辑处理其他包的补丁失败（可选）
     # 检查补丁文件内容
     with open(patch_file, 'r') as f:
         patch_content = f.read()
@@ -83,6 +124,7 @@ def fix_patch_application(log_file):
         print(f"复制文件 {actual_file_in_subdir} 到 {actual_file_in_src}")
         os.makedirs(os.path.dirname(actual_file_in_src), exist_ok=True)
         shutil.copy2(actual_file_in_subdir, actual_file_in_src)
+    
     # 应用补丁
     try:
         subprocess.run(f"patch -p1 < {patch_file}", shell=True, cwd=src_dir, check=True)
@@ -91,6 +133,7 @@ def fix_patch_application(log_file):
         print("补丁应用失败")
         return False
     return True
+
 
 
 
