@@ -35,20 +35,41 @@ def get_relative_path(path):
         return path
 
 
+def fix_backup_patch_paths(patch_file):
+    """动态调整备份补丁文件中的路径"""
+    backup_patch_file = patch_file + ".bak"
+    if not os.path.exists(backup_patch_file):
+        print(f"备份补丁文件 {backup_patch_file} 不存在，跳过修复。")
+        return False
+    
+    with open(backup_patch_file, 'r') as f:
+        content = f.read()
+    
+    # 调整补丁路径，移除多余的目录层级
+    corrected_content = re.sub(r'--- a/[^/]+/', '--- a/', content)
+    corrected_content = re.sub(r'\+\+\+ b/[^/]+/', '+++ b/', corrected_content)
+    
+    with open(backup_patch_file, 'w') as f:
+        f.write(corrected_content)
+    
+    print(f"已调整备份补丁文件 {backup_patch_file} 中的路径")
+    return True
+
+import re
+import os
+
 def fix_lua_neturl_directory():
-    """修复 lua-neturl 的 Makefile，动态设置 PKG_BUILD_DIR"""
+    """修复 lua-neturl 的 Makefile 和备份补丁，动态设置 PKG_BUILD_DIR 并调整补丁路径"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
+    patch_dir = "feeds/small8/lua-neturl/patches"
+    backup_patch = os.path.join(patch_dir, "010-userinfo-regex.patch.bak")
+    
     if not os.path.exists(makefile_path):
         print("无法找到 lua-neturl 的 Makefile")
         return False
     
     with open(makefile_path, 'r') as f:
         content = f.read()
-    
-    # 检查是否已包含 PKG_BUILD_DIR
-    if "PKG_BUILD_DIR:=" in content:
-        print("Makefile 已有 PKG_BUILD_DIR 定义，请手动检查")
-        return False
     
     # 提取 PKG_SOURCE
     pkg_source_match = re.search(r'PKG_SOURCE:=([^\n]+)', content)
@@ -58,7 +79,7 @@ def fix_lua_neturl_directory():
     
     pkg_source = pkg_source_match.group(1).strip()
     
-    # 动态确定解压目录名，移除常见的压缩扩展名
+    # 动态确定解压目录名
     archive_extensions = ['.tar.gz', '.tar.bz2', '.tar.xz', '.zip']
     subdir = pkg_source
     for ext in archive_extensions:
@@ -66,27 +87,54 @@ def fix_lua_neturl_directory():
             subdir = subdir[:-len(ext)]
             break
     
-    # 检查解压目录是否合理
     if not subdir or subdir == pkg_source:
         print(f"无法从 PKG_SOURCE '{pkg_source}' 解析有效的解压目录名")
         return False
     
-    # 设置 PKG_BUILD_DIR
+    # 检查并设置 PKG_BUILD_DIR
     build_dir_line = f"PKG_BUILD_DIR:=$(BUILD_DIR)/{subdir}\n"
-    
-    # 插入到 PKG_VERSION 后
-    insert_pos = content.find("PKG_VERSION:=")
-    if insert_pos != -1:
-        insert_pos = content.find('\n', insert_pos) + 1
-        content = content[:insert_pos] + build_dir_line + content[insert_pos:]
+    modified = False
+    if "PKG_BUILD_DIR:=" not in content:
+        insert_pos = content.find("PKG_VERSION:=")
+        if insert_pos != -1:
+            insert_pos = content.find('\n', insert_pos) + 1
+            content = content[:insert_pos] + build_dir_line + content[insert_pos:]
+        else:
+            content += "\n" + build_dir_line
+        print(f"动态设置 PKG_BUILD_DIR 为 $(BUILD_DIR)/{subdir}")
+        modified = True
     else:
-        content += "\n" + build_dir_line
+        print("Makefile 已有 PKG_BUILD_DIR 定义，检查备份补丁")
     
-    with open(makefile_path, 'w') as f:
-        f.write(content)
+    # 保存修改后的 Makefile
+    if modified:
+        with open(makefile_path, 'w') as f:
+            f.write(content)
     
-    print(f"已修复 lua-neturl 的 Makefile，动态设置 PKG_BUILD_DIR 为 $(BUILD_DIR)/{subdir}")
-    return True
+    # 检查并修复备份补丁
+    if os.path.exists(backup_patch):
+        with open(backup_patch, 'r') as f:
+            patch_content = f.read()
+        
+        # 检查路径是否包含多余目录层级
+        incorrect_path = f"{subdir}/lib/net/url.lua"
+        if incorrect_path in patch_content:
+            # 修正路径，去除多余的 subdir 前缀
+            corrected_content = patch_content.replace(f"a/{subdir}/lib/net/url.lua", "a/lib/net/url.lua") \
+                                            .replace(f"b/{subdir}/lib/net/url.lua", "b/lib/net/url.lua")
+            with open(backup_patch, 'w') as f:
+                f.write(corrected_content)
+            print(f"已修复备份补丁 {backup_patch}，修正路径为 lib/net/url.lua")
+            modified = True
+        else:
+            print(f"备份补丁 {backup_patch} 已正确，无需调整")
+    
+    if modified:
+        print("已完成 lua-neturl 的 Makefile 和补丁修复")
+        return True
+    else:
+        print("无需进一步修复，Makefile 和补丁已正确配置")
+        return False
 
 
 
