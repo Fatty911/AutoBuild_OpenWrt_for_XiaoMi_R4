@@ -235,6 +235,8 @@ jobs:
      
       - name: 归档
         run: |
+          echo "压缩前先看一下目录结构"
+          ls -la openwrt
           # tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
           tar -czf ${{ env.SOURCE }}.tar.gz openwrt 
           
