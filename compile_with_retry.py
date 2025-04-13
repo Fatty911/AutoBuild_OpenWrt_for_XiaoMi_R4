@@ -54,8 +54,9 @@ def fix_patch_application(log_file):
     # 检查源码解压目录
     dl_dir = "./dl"
     build_dir = "./build_dir/target-mipsel_24kc_musl"
-    pkg_name = "neturl-1.2"  # 根据错误日志推导
+    pkg_name = "neturl-1.2"
     src_dir = os.path.join(build_dir, pkg_name)
+    src_subdir = os.path.join(build_dir, "neturl-1.2-1")
     
     if not os.path.isdir(src_dir):
         print(f"源码目录 {src_dir} 不存在，尝试解压...")
@@ -66,39 +67,40 @@ def fix_patch_application(log_file):
             print(f"源码文件 {tarball} 不存在，无法修复。")
             return False
     
-    # 检查实际文件路径（针对 neturl-1.2-1 子目录）
+    # 检查文件位置并调整
     expected_file = "lib/net/url.lua"
-    actual_file = os.path.join(build_dir, "neturl-1.2-1", expected_file)
-    if os.path.exists(actual_file):
-        print(f"找到文件 {actual_file}，调整补丁路径...")
-        # 备份补丁文件
-        shutil.copy2(patch_file, f"{patch_file}.bak")
+    actual_file_in_subdir = os.path.join(src_subdir, expected_file)
+    actual_file_in_src = os.path.join(src_dir, expected_file)
+    
+    if os.path.exists(actual_file_in_subdir) and not os.path.exists(actual_file_in_src):
+        print(f"找到文件 {actual_file_in_subdir}，但 {src_dir} 为空，复制文件到 {src_dir}...")
+        # 将 neturl-1.2-1 的内容复制到 neturl-1.2
+        subprocess.run(f"cp -r {src_subdir}/* {src_dir}/", shell=True)
+        print(f"已复制文件到 {src_dir}")
         
-        # 读取补丁内容并修改路径以匹配 neturl-1.2-1
+        # 恢复补丁文件到原始路径（如果被修改）
         with open(patch_file, 'r') as f:
             patch_content = f.read()
-        new_patch_content = patch_content.replace(
-            f"--- a/{expected_file}",
-            f"--- a/neturl-1.2-1/{expected_file}"
-        ).replace(
-            f"+++ b/{expected_file}",
-            f"+++ b/neturl-1.2-1/{expected_file}"
-        )
-        
-        # 写入修改后的补丁
-        with open(patch_file, 'w') as f:
-            f.write(new_patch_content)
-        
-        print(f"已更新补丁文件 {patch_file} 以匹配实际路径 neturl-1.2-1/{expected_file}")
+        if "neturl-1.2-1" in patch_content:
+            original_patch_content = patch_content.replace(
+                f"--- a/neturl-1.2-1/{expected_file}",
+                f"--- a/{expected_file}"
+            ).replace(
+                f"+++ b/neturl-1.2-1/{expected_file}",
+                f"+++ b/{expected_file}"
+            )
+            with open(patch_file, 'w') as f:
+                f.write(original_patch_content)
+            print(f"已恢复补丁文件 {patch_file} 到原始路径")
         
         # 清理构建目录以重新应用补丁
         print("清理 lua-neturl 构建目录...")
         subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
         return True
     else:
-        print(f"未找到预期文件 {actual_file}，尝试检查其他可能性...")
-        # 如果文件仍未找到，可能需要更新包或手动调整
+        print(f"文件 {actual_file_in_subdir} 不存在或 {actual_file_in_src} 已存在，跳过修复。")
         return False
+
 
 def fix_makefile_separator(log_file):
     """修复 Makefile "missing separator" 错误"""
