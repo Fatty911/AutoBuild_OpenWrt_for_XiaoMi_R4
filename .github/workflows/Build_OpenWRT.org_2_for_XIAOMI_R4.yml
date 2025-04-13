@@ -78,10 +78,10 @@ jobs:
       - name: 解压文件
         run: |
           echo "解压前"
-          pwd && ls
+          pwd && ls -la
           tar -xzf ${{ env.SOURCE }}.tar.gz
           echo "解压完成"
-          ls
+          ls -la
 
           
       # - name: Compile packages
