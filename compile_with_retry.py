@@ -46,9 +46,10 @@ def find_trojan_build_dir():
     except subprocess.CalledProcessError:
         pass
     return None
+    
 def fix_gsl_include_error(log_file, attempt_count=0):
-    """修复 trojan-plus 的 GSL 头文件缺失问题"""
-    print("检测到 GSL 头文件缺失，尝试修复...")
+    """修复 trojan-plus 的 GSL 头文件或 std::at 相关问题"""
+    print("检测到 GSL 或 std::at 相关错误，尝试修复...")
     
     # 查找 trojan-plus 的构建目录
     trojan_build_dir = find_trojan_build_dir()
@@ -72,10 +73,21 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     with open(config_cpp_path, 'r') as f:
         content = f.read()
     
+    # 调试：打印修改前的第647行附近内容
+    lines = content.splitlines()
+    if len(lines) >= 647:
+        print("修改前第647行附近的内容：")
+        for i in range(max(0, 646), min(len(lines), 650)):
+            print(f"行 {i+1}: {lines[i]}")
+    
     # 替换 gsl::at 或 std::at 为直接索引
     if 'gsl::at' in content or 'std::at' in content:
-        content = re.sub(r'(gsl|std)::at$([^,]+),\s*([^)]+)$', r'\2[\3]', content)
-        print("已将 config.cpp 中的 gsl::at 或 std::at 替换为直接索引")
+        new_content = re.sub(r'(gsl|std)::at$([^,]+),\s*([^)]+)$', r'\2[\3]', content)
+        if new_content != content:
+            content = new_content
+            print("已将 config.cpp 中的 gsl::at 或 std::at 替换为直接索引")
+        else:
+            print("替换逻辑未触发，可能正则表达式未匹配成功")
     
     # 移除 using namespace gsl;（如果存在）
     if 'using namespace gsl;' in content:
@@ -87,6 +99,14 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         f.write(content)
     print(f"已更新 {config_cpp_path}")
     
+    # 调试：打印修改后的第647行附近内容
+    with open(config_cpp_path, 'r') as f:
+        lines = f.read().splitlines()
+    if len(lines) >= 647:
+        print("修改后第647行附近的内容：")
+        for i in range(max(0, 646), min(len(lines), 650)):
+            print(f"行 {i+1}: {lines[i]}")
+    
     # 清理并重新配置构建目录
     if attempt_count < 2:  # 仅在第一次或第二次尝试时清理
         print("清理 trojan-plus 构建目录...")
@@ -95,7 +115,6 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         print("重新运行 CMake 配置...")
         cmake_lists_path = os.path.join(trojan_build_dir, "CMakeLists.txt")
         if os.path.exists(cmake_lists_path):
-            # 在构建目录中直接运行 cmake .
             result = subprocess.run(
                 ["cmake", "."],
                 cwd=trojan_build_dir,
@@ -111,6 +130,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 
 
