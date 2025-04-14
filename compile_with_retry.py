@@ -47,21 +47,10 @@ def find_trojan_build_dir():
         pass
     return None
     
-import os
-import re
-import shutil
-import subprocess
-
-import os
-import re
-import shutil
-import subprocess
 
 def fix_gsl_include_error(log_file, attempt_count=0):
-    """修复 trojan-plus 的 GSL 或 std::at 相关问题"""
-    print("检测到 GSL 或 std::at 相关错误，尝试修复...")
+    print("检测到 'at' is not a member of 'std' 错误，尝试修复...")
     
-    # 查找 trojan-plus 的构建目录
     trojan_build_dir = find_trojan_build_dir()
     if not trojan_build_dir:
         print("无法找到 trojan-plus 的构建目录")
@@ -69,46 +58,41 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     
     config_cpp_path = os.path.join(trojan_build_dir, "src/core/config.cpp")
     
-    # 检查 config.cpp 文件是否存在
+    # 检查文件是否存在
     if not os.path.exists(config_cpp_path):
         print(f"无法找到 config.cpp 文件: {config_cpp_path}")
         return False
     
-    # 备份 config.cpp
+    # 备份原文件
     backup_path = f"{config_cpp_path}.bak"
     shutil.copy2(config_cpp_path, backup_path)
     print(f"已备份 {config_cpp_path} 到 {backup_path}")
     
-    # 读取 config.cpp 内容
+    # 读取文件内容
     with open(config_cpp_path, 'r') as f:
         content = f.read()
     
-    # 调试：打印修改前的第647行附近内容
+    # 调试：打印修改前的第 647 行附近内容
     lines = content.splitlines()
     if len(lines) >= 647:
         print("修改前第647行附近的内容：")
         for i in range(max(0, 646), min(len(lines), 650)):
             print(f"行 {i+1}: {lines[i].strip()}")
     
-    # 替换 gsl::at 或 std::at 为直接索引
+    # 替换 std::at 为直接索引
     original_content = content
-    content = re.sub(r'(gsl|std)::\s*at\s*$\s*mdString\s*,\s*([^)]+)$', r'mdString[\2]', content)
+    content = re.sub(r'std::at\s*$\s*mdString\s*,\s*([^)]+)$', r'mdString[\1]', content)
     if content != original_content:
-        print("已将 config.cpp 中的 gsl::at 或 std::at 替换为直接索引")
+        print("已将 config.cpp 中的 std::at 替换为直接索引")
     else:
         print("替换逻辑未触发，可能正则表达式未匹配到代码")
-    
-    # 移除 using namespace gsl;（如果存在）
-    if 'using namespace gsl;' in content:
-        content = re.sub(r'using\s+namespace\s+gsl;\s*\n?', '', content)
-        print("已移除 config.cpp 中的 using namespace gsl;")
     
     # 写入修改后的内容
     with open(config_cpp_path, 'w') as f:
         f.write(content)
     print(f"已更新 {config_cpp_path}")
     
-    # 调试：打印修改后的第647行附近内容
+    # 调试：打印修改后的第 647 行附近内容
     with open(config_cpp_path, 'r') as f:
         lines = f.read().splitlines()
     if len(lines) >= 647:
@@ -116,8 +100,8 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         for i in range(max(0, 646), min(len(lines), 650)):
             print(f"行 {i+1}: {lines[i].strip()}")
     
-    # 清理并重新配置构建目录
-    if attempt_count < 2:  # 仅在第一次或第二次尝试时清理
+    # 清理构建目录以确保使用修改后的代码
+    if attempt_count < 2:
         print("清理 trojan-plus 构建目录...")
         subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
         
@@ -127,8 +111,6 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         if os.path.exists(trojan_build_path):
             shutil.rmtree(trojan_build_path)
             print(f"已删除构建目录 {trojan_build_path} 以强制重新提取源代码")
-        
-        print("重新运行 CMake 配置将在下次编译时自动执行")
     
     return True
 
@@ -977,11 +959,11 @@ def main():
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
             if "error: 'at' is not a member of 'std'" in log_content:
-                if std_at_fix_attempts < 2:  # 最多尝试修复两次
-                    print("检测到 'at' is not a member of 'std' 错误，调用 fix_gsl_include_error...")
-                    fix_gsl_include_error(args.log_file, std_at_fix_attempts)
-                    fix_applied_this_iteration = 1
-                    std_at_fix_attempts +=1
+                print("检测到 'at' is not a member of 'std' 错误，调用修复函数...")
+                if fix_gsl_include_error(args.log_file, retry_count):
+                    print("修复完成，准备下一次编译尝试...")
+                else:
+                    print("修复失败，请检查日志和文件路径")
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
