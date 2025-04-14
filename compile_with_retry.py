@@ -858,6 +858,7 @@ def main():
     retry_count = 1
     last_fix_applied = ""
     metadata_fixed = 0
+    consecutive_fix_failures = 0
     
     while retry_count <= args.max_retry:
         if retry_count > 1:
