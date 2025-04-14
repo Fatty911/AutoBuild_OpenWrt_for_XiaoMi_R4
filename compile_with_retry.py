@@ -47,6 +47,11 @@ def find_trojan_build_dir():
         pass
     return None
     
+import os
+import re
+import shutil
+import subprocess
+
 def fix_gsl_include_error(log_file, attempt_count=0):
     """修复 trojan-plus 的 GSL 头文件或 std::at 相关问题"""
     print("检测到 GSL 或 std::at 相关错误，尝试修复...")
@@ -82,7 +87,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     
     # 替换 gsl::at 或 std::at 为直接索引
     if 'gsl::at' in content or 'std::at' in content:
-        new_content = re.sub(r'(gsl|std)::at$([^,]+),\s*([^)]+)$', r'\2[\3]', content)
+        new_content = re.sub(r'(gsl|std)::at$(mdString),\s*([^)]+)$', r'\2[\3]', content)
         if new_content != content:
             content = new_content
             print("已将 config.cpp 中的 gsl::at 或 std::at 替换为直接索引")
@@ -130,6 +135,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 
 
