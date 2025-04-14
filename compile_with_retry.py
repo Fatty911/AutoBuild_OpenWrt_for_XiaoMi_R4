@@ -359,7 +359,7 @@ def fix_makefile_separator(log_file):
     return fix_attempted == 1
 
 
-def fix_trojan_plus_boost_error():
+def fix_trojan_plus_boost_error(log_content):
     """修复 trojan-plus 中的 boost::asio::buffer_cast 错误"""
     print("修复 trojan-plus 中的 boost::asio::buffer_cast 错误...")
     found_path = ""
@@ -386,9 +386,6 @@ def fix_trojan_plus_boost_error():
     if not found_path:
         print("未能在 build_dir 中动态找到 trojan-plus 源码路径，尝试基于日志猜测路径...")
         try:
-            with open(args.log_file, 'r', errors='replace') as f:
-                log_content = f.read()
-            
             target_build_dir_match = re.search(r'(/[^ ]+)?build_dir/target-[^/]+/trojan-plus-[^/]+', log_content)
             if target_build_dir_match:
                 target_build_dir = target_build_dir_match.group(0)
@@ -406,57 +403,60 @@ def fix_trojan_plus_boost_error():
     
     print(f"尝试修复 {found_path} ...")
     
+    # 从日志中提取错误行号
+    error_match = re.search(r'service\.cpp:(\d+):\d+: error: \'buffer_cast\' is not a member of \'boost::asio\'', log_content)
+    if not error_match:
+        print("无法从日志中提取行号")
+        return False
+    line_num = int(error_match.group(1)) - 1  # 行号从 0 开始
+    
     # 备份原文件
     shutil.copy2(found_path, f"{found_path}.bak")
     
     # 读取文件内容
     with open(found_path, 'r', errors='replace') as f:
-        content = f.read()
+        lines = f.read().splitlines()
     
-    # 查找错误行附近的内容
-    lines = content.splitlines()
-    error_line_num = 549  # 第 550 行（从 0 开始计数为 549）
+    if line_num >= len(lines):
+        print("行号超出文件范围")
+        shutil.move(f"{found_path}.bak", found_path)
+        return False
+    
+    # 打印错误行附近的内容
     context_lines = 5
     print("错误行附近的内容：")
-    for i in range(max(0, error_line_num - context_lines), min(len(lines), error_line_num + context_lines + 1)):
+    for i in range(max(0, line_num - context_lines), min(len(lines), line_num + context_lines + 1)):
         print(f"行 {i + 1}: {lines[i]}")
     
-    # 应用正则表达式修复
-    pattern = r'boost::asio::buffer_cast<char\*>\s*$([^)]*)$'
+    # 在错误行上应用替换
+    line = lines[line_num]
+    pattern = r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*([^)]*)\s*$'
     replacement = r'static_cast<char*>(\1.data())'
-    modified_content, num_replacements = re.subn(pattern, replacement, content)
-    print(f"进行了 {num_replacements} 次替换")
+    new_line = re.sub(pattern, replacement, line)
     
-    if num_replacements > 0:
-        # 写入修改后的内容
+    if new_line != line:
+        lines[line_num] = new_line
+        # 写回文件
         with open(found_path, 'w') as f:
-            f.write(modified_content)
+            f.write('\n'.join(lines) + '\n')
         
         # 验证修复并打印修改后内容
         with open(found_path, 'r') as f:
             modified_lines = f.read().splitlines()
             print("修改后错误行附近的内容：")
-            for i in range(max(0, error_line_num - context_lines), min(len(modified_lines), error_line_num + context_lines + 1)):
+            for i in range(max(0, line_num - context_lines), min(len(modified_lines), line_num + context_lines + 1)):
                 print(f"行 {i + 1}: {modified_lines[i]}")
             
-            f.seek(0)
-            if 'static_cast<char*>' in f.read():
-                print(f"已成功修改 {found_path}")
-                os.remove(f"{found_path}.bak")
-                return True
-            else:
-                print(f"替换后文件中未找到 'static_cast<char*>'，可能替换不正确，恢复备份文件。")
-                shutil.move(f"{found_path}.bak", found_path)
-                return False
+            print(f"已成功修改第 {line_num + 1} 行")
+            os.remove(f"{found_path}.bak")
+            return True
     else:
-        print("未找到需要替换的模式，恢复备份文件。")
-        # 打印更多上下文以帮助调试
-        if "boost::asio::buffer_cast" in content:
-            print("文件中存在 'boost::asio::buffer_cast'，但未匹配正则表达式，请检查代码格式。")
-        else:
-            print("文件中未找到 'boost::asio::buffer_cast'，可能文件内容异常。")
+        print(f"未在第 {line_num + 1} 行找到需要替换的模式")
+        print(f"错误行内容: {line}")
+        print("正则表达式可能需要调整")
         shutil.move(f"{found_path}.bak", found_path)
         return False
+
 
 
 
@@ -874,7 +874,7 @@ def main():
                     print("上次已尝试修复 trojan-plus 错误，但问题未解决，停止重试。")
                     # ...
                 last_fix_applied = "fix_trojan_plus_boost_error"
-                if fix_trojan_plus_boost_error():
+                if fix_trojan_plus_boost_error(log_content):
                     fix_applied_this_iteration = 1
                     # 清理 trojan-plus 构建目录以应用更改
                     print("清理 trojan-plus 构建目录以应用更改...")
