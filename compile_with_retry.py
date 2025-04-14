@@ -63,6 +63,11 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         print(f"无法找到 config.cpp 文件: {config_cpp_path}")
         return False
     
+    # 备份 config.cpp
+    backup_path = f"{config_cpp_path}.bak"
+    shutil.copy2(config_cpp_path, backup_path)
+    print(f"已备份 {config_cpp_path} 到 {backup_path}")
+    
     # 读取 config.cpp 内容
     with open(config_cpp_path, 'r') as f:
         content = f.read()
@@ -106,6 +111,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 
 
