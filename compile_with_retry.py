@@ -34,11 +34,9 @@ def get_relative_path(path):
     except:
         return path
 
-
 def find_trojan_build_dir():
     """动态查找 trojan-plus 的构建目录"""
     try:
-        # 在 build_dir 下查找 trojan-plus-* 目录
         build_dirs = subprocess.check_output(
             ["find", "build_dir", "-type", "d", "-name", "trojan-plus-*", "-print", "-quit"],
             text=True,
@@ -50,59 +48,74 @@ def find_trojan_build_dir():
         pass
     return None
 
-def fix_gsl_include_error(log_file):
+def fix_gsl_include_error(log_file, attempt_count=0):
     """修复 trojan-plus 的 GSL 头文件缺失问题"""
     print("检测到 GSL 头文件缺失，尝试修复...")
     
-    # 动态查找 trojan-plus 构建目录
     trojan_build_dir = find_trojan_build_dir()
     if not trojan_build_dir:
         print("无法找到 trojan-plus 的构建目录")
         return False
     
-    # GSL 头文件的预期路径
     gsl_include_path = os.path.join(trojan_build_dir, "external/GSL/include/gsl")
+    config_cpp_path = os.path.join(trojan_build_dir, "src/core/config.cpp")
     
-    # 检查 GSL 头文件是否存在
-    if os.path.exists(gsl_include_path):
-        print("GSL 头文件已存在，无需修复。")
-        return True
-    
-    print(f"GSL 头文件未找到于 {gsl_include_path}，尝试下载并部署...")
-    
-    # 临时目录用于克隆 GSL
-    temp_dir = "tmp/gsl_temp"
-    if os.path.exists(temp_dir):
-        shutil.rmtree(temp_dir)
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    try:
-        # 克隆 Microsoft GSL 仓库
-        subprocess.run(
-            ["git", "clone", "https://github.com/microsoft/GSL.git", temp_dir],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
-        )
-        
-        # 目标路径
-        dest_dir = os.path.join(trojan_build_dir, "external/GSL/include")
-        os.makedirs(dest_dir, exist_ok=True)
-        
-        # 复制 GSL 头文件
-        shutil.copytree(os.path.join(temp_dir, "include/gsl"), os.path.join(dest_dir, "gsl"))
-        print("成功下载并部署 GSL 头文件。")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"克隆 GSL 仓库失败: {e}")
-        return False
-    except Exception as e:
-        print(f"修复失败: {e}")
-        return False
-    finally:
-        # 清理临时目录
+    # Step 1: 确保 GSL 头文件存在
+    if not os.path.exists(gsl_include_path):
+        print(f"GSL 头文件未找到于 {gsl_include_path}，尝试下载并部署...")
+        temp_dir = "tmp/gsl_temp"
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
+        os.makedirs(temp_dir, exist_ok=True)
+        try:
+            subprocess.run(
+                ["git", "clone", "https://github.com/microsoft/GSL.git", temp_dir],
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            dest_dir = os.path.join(trojan_build_dir, "external/GSL/include")
+            os.makedirs(dest_dir, exist_ok=True)
+            shutil.copytree(os.path.join(temp_dir, "include/gsl"), os.path.join(dest_dir, "gsl"))
+            print("成功下载并部署 GSL 头文件。")
+        except Exception as e:
+            print(f"修复失败: {e}")
+            return False
+        finally:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir)
+    else:
+        print("GSL 头文件已存在。")
+    
+    # Step 2: 检查并修复 config.cpp 文件
+    if os.path.exists(config_cpp_path):
+        with open(config_cpp_path, 'r') as f:
+            content = f.read()
+        if '#include <gsl/gsl>' not in content:
+            print("在 config.cpp 中未找到 #include <gsl/gsl>，尝试添加...")
+            new_content = '#include <gsl/gsl>\n' + content
+            with open(config_cpp_path, 'w') as f:
+                f.write(new_content)
+            print("已添加 #include <gsl/gsl> 到 config.cpp")
+        else:
+            print("config.cpp 已包含 #include <gsl/gsl>")
+    else:
+        print(f"无法找到 config.cpp 文件: {config_cpp_path}")
+        return False
+    
+    # Step 3: 清理并重新配置构建目录
+    if attempt_count < 2:  # 仅在第一次或第二次尝试时清理
+        print("清理 trojan-plus 构建目录...")
+        subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
+        print("重新运行 CMake 配置...")
+        cmake_lists_path = os.path.join(trojan_build_dir, "CMakeLists.txt")
+        if os.path.exists(cmake_lists_path):
+            subprocess.run(["cmake", "."], cwd=trojan_build_dir, shell=True)
+        else:
+            print("无法找到 CMakeLists.txt，跳过 CMake 配置")
+    
+    return True
+
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并隔离备份补丁"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
@@ -897,6 +910,7 @@ def main():
     last_fix_applied = ""
     metadata_fixed = 0
     consecutive_fix_failures = 0
+    gsl_fix_attempts = 0
     
     while retry_count <= args.max_retry:
         if retry_count > 1:
@@ -938,10 +952,16 @@ def main():
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
             if "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
-                if fix_gsl_include_error(args.log_file):
-                    print("已应用 GSL 修复，将重试编译...")
+                if gsl_fix_attempts < 2:  # 最多尝试修复两次
+                    if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
+                        fix_applied_this_iteration = 1
+                        gsl_fix_attempts += 1
+                        print(f"已应用 GSL 修复（第 {gsl_fix_attempts} 次），将重试编译...")
+                    else:
+                        print("GSL 修复失败，停止重试。")
+                        break
                 else:
-                    print("GSL 修复失败，停止重试。")
+                    print("GSL 修复已尝试 2 次仍未成功，停止重试。")
                     break
             elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
                 if fix_trojan_plus_boost_error(log_content):
