@@ -430,8 +430,8 @@ def fix_trojan_plus_boost_error(log_content):
     
     # 在错误行上应用替换
     line = lines[line_num]
-    pattern = r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*([^)]*)\s*$'
-    replacement = r'static_cast<char*>(\1.data())'
+    pattern = r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+)\s*\)'
+    replacement = r'static_cast<\1>(\2.data())'
     new_line = re.sub(pattern, replacement, line)
     
     if new_line != line:
@@ -870,15 +870,17 @@ def main():
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
             if 'trojan-plus' in log_content and 'buffer_cast' in log_content:
-                if last_fix_applied == "fix_trojan_plus_boost_error":
-                    print("上次已尝试修复 trojan-plus 错误，但问题未解决，停止重试。")
-                    # ...
-                last_fix_applied = "fix_trojan_plus_boost_error"
                 if fix_trojan_plus_boost_error(log_content):
                     fix_applied_this_iteration = 1
                     # 清理 trojan-plus 构建目录以应用更改
                     print("清理 trojan-plus 构建目录以应用更改...")
                     subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
+                else:
+                    if last_fix_applied == "fix_trojan_plus_boost_error":
+                        consecutive_fix_failures += 1
+                    else:
+                        consecutive_fix_failures = 1
+                last_fix_applied = "fix_trojan_plus_boost_error"
             
             elif 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
                 print("检测到 lua-neturl 下载错误...")
@@ -935,18 +937,22 @@ def main():
                 matched_pattern = re.search(args.error_pattern, log_content, re.MULTILINE)
                 print(f"检测到通用错误模式: {matched_pattern.group(0) if matched_pattern else '未知'}")
                 if last_fix_applied == "fix_generic_retry":
-                    print("上次已尝试通用重试但无效果，停止重试。")
-                    with open(args.log_file, 'a') as main_log:
-                        with open(log_tmp, 'r', errors='replace') as tmp_log:
-                            main_log.write(tmp_log.read())
-                    os.remove(log_tmp)
-                    return 1
+                    consecutive_fix_failures += 1
+                else:
+                    consecutive_fix_failures = 1
                 last_fix_applied = "fix_generic_retry"
                 print("未找到特定修复程序，将重试编译一次。")
         
         if fix_applied_this_iteration == 0 and compile_status != 0:
             print(f"警告：检测到错误，但此轮未应用有效修复。上次尝试: {last_fix_applied or '无'}")
-            if retry_count >= args.max_retry - 1:
+            if consecutive_fix_failures >= 2:
+                print(f"连续 {consecutive_fix_failures} 次尝试 {last_fix_applied} 修复失败，停止重试。")
+                with open(args.log_file, 'a') as main_log:
+                    with open(log_tmp, 'r', errors='replace') as tmp_log:
+                        main_log.write(tmp_log.read())
+                os.remove(log_tmp)
+                return 1
+            elif retry_count >= args.max_retry - 1:
                 print("停止重试，因为未应用有效修复或已达重试上限。")
                 with open(args.log_file, 'a') as main_log:
                     with open(log_tmp, 'r', errors='replace') as tmp_log:
