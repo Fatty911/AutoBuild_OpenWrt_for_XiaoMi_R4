@@ -899,7 +899,7 @@ def main():
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
             if "gsl/gsl: No such file or directory" in log_content:
-                if fix_gsl_include_error(log_file):
+                if fix_gsl_include_error(args.log_file):
                     print("已应用 GSL 修复，将重试编译...")
                 else:
                     print("GSL 修复失败，停止重试。")
