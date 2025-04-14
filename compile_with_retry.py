@@ -35,7 +35,36 @@ def get_relative_path(path):
         return path
 
 
-
+# 修复 GSL 头文件缺失的函数
+def fix_gsl_include_error(log_file):
+    print("检测到 GSL 头文件缺失，尝试修复...")
+    
+    # GSL 头文件的预期路径
+    gsl_include_path = "/home/xuerui/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-mipsel_24kc_musl/trojan-plus-10.0.3/external/GSL/include/gsl"
+    config_file = "/home/xuerui/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-mipsel_24kc_musl/trojan-plus-10.0.3/src/core/config.cpp"
+    
+    # 检查 GSL 头文件是否存在
+    if not os.path.exists(gsl_include_path):
+        print(f"GSL 头文件未找到于 {gsl_include_path}")
+        
+        # 尝试从源码中移除对 <gsl/gsl> 的引用（临时解决方案）
+        try:
+            with open(config_file, 'r') as f:
+                lines = f.readlines()
+            with open(config_file, 'w') as f:
+                for line in lines:
+                    if "#include <gsl/gsl>" in line:
+                        f.write("// " + line)  # 注释掉该行
+                        print(f"已注释掉 {config_file} 中的 '#include <gsl/gsl>'")
+                    else:
+                        f.write(line)
+            return True  # 表示修复已应用
+        except Exception as e:
+            print(f"修改源码失败: {e}")
+            return False
+    else:
+        print("GSL 头文件已存在，无需修复。")
+        return True
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并隔离备份补丁"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
@@ -869,7 +898,13 @@ def main():
             return 0
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
-            if 'trojan-plus' in log_content and 'buffer_cast' in log_content:
+            if "gsl/gsl: No such file or directory" in log_content:
+                if fix_gsl_include_error(log_file):
+                    print("已应用 GSL 修复，将重试编译...")
+                else:
+                    print("GSL 修复失败，停止重试。")
+                    break
+            elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
                 if fix_trojan_plus_boost_error(log_content):
                     fix_applied_this_iteration = 1
                     # 清理 trojan-plus 构建目录以应用更改
