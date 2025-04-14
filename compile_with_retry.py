@@ -91,14 +91,30 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     if os.path.exists(config_cpp_path):
         with open(config_cpp_path, 'r') as f:
             content = f.read()
+        
+        # 检查是否包含 #include <gsl/gsl>
         if '#include <gsl/gsl>' not in content:
             print("在 config.cpp 中未找到 #include <gsl/gsl>，尝试添加...")
-            new_content = '#include <gsl/gsl>\n' + content
-            with open(config_cpp_path, 'w') as f:
-                f.write(new_content)
-            print("已添加 #include <gsl/gsl> 到 config.cpp")
-        else:
-            print("config.cpp 已包含 #include <gsl/gsl>")
+            content = '#include <gsl/gsl>\n' + content
+        
+        # 检查是否包含 using namespace gsl;
+        if 'using namespace gsl;' not in content:
+            print("在 config.cpp 中未找到 'using namespace gsl;'，尝试添加...")
+            # 在 #include <gsl/gsl> 后添加 using namespace gsl;
+            include_pos = content.find('#include <gsl/gsl>')
+            if include_pos != -1:
+                newline_pos = content.find('\n', include_pos)
+                if newline_pos != -1:
+                    content = content[:newline_pos + 1] + 'using namespace gsl;\n' + content[newline_pos + 1:]
+                else:
+                    content += '\nusing namespace gsl;\n'
+            else:
+                content = '#include <gsl/gsl>\nusing namespace gsl;\n' + content
+        
+        # 写入修改后的内容
+        with open(config_cpp_path, 'w') as f:
+            f.write(content)
+        print("config.cpp 已更新，包含 #include <gsl/gsl> 和 using namespace gsl;")
     else:
         print(f"无法找到 config.cpp 文件: {config_cpp_path}")
         return False
@@ -107,14 +123,29 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     if attempt_count < 2:  # 仅在第一次或第二次尝试时清理
         print("清理 trojan-plus 构建目录...")
         subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
+        
         print("重新运行 CMake 配置...")
         cmake_lists_path = os.path.join(trojan_build_dir, "CMakeLists.txt")
         if os.path.exists(cmake_lists_path):
-            subprocess.run(["cmake", "."], cwd=trojan_build_dir, shell=True)
+            # 确保 CMake 包含 GSL 路径
+            with open(cmake_lists_path, 'r') as f:
+                cmake_content = f.read()
+            if 'GSL' not in cmake_content:
+                print("CMakeLists.txt 未配置 GSL，尝试添加...")
+                cmake_content += '\ninclude_directories("${CMAKE_SOURCE_DIR}/external/GSL/include")\n'
+                with open(cmake_lists_path, 'w') as f:
+                    f.write(cmake_content)
+            # 使用明确的源目录和构建目录运行 CMake
+            subprocess.run(
+                ["cmake", "-S", trojan_build_dir, "-B", trojan_build_dir],
+                cwd=trojan_build_dir,
+                shell=False
+            )
         else:
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并隔离备份补丁"""
