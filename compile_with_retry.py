@@ -46,67 +46,48 @@ def find_trojan_build_dir():
     except subprocess.CalledProcessError:
         pass
     return None
-def find_trojan_source_dir():
-    """动态查找 trojan-plus 的源代码目录"""
-    try:
-        # 假设源代码目录在 dl 目录下
-        dl_dir = "dl"
-        for root, dirs, files in os.walk(dl_dir):
-            for dir in dirs:
-                if dir.startswith("trojan-plus-"):
-                    return os.path.join(root, dir)
-    except Exception as e:
-        print(f"查找源代码目录时出错: {e}")
-    return None
-
 def fix_gsl_include_error(log_file, attempt_count=0):
     """修复 trojan-plus 的 GSL 头文件缺失问题"""
     print("检测到 GSL 头文件缺失，尝试修复...")
     
+    # 查找 trojan-plus 的构建目录
     trojan_build_dir = find_trojan_build_dir()
     if not trojan_build_dir:
         print("无法找到 trojan-plus 的构建目录")
         return False
     
-    trojan_source_dir = find_trojan_source_dir()
-    if not trojan_source_dir:
-        print("无法找到 trojan-plus 的源代码目录")
-        return False
-    
-    gsl_include_path = os.path.join(trojan_build_dir, "external/GSL/include/gsl")
     config_cpp_path = os.path.join(trojan_build_dir, "src/core/config.cpp")
     
-    # Step 1: 检查 GSL 头文件（仅提示，不强制下载）
-    if not os.path.exists(gsl_include_path):
-        print(f"警告: GSL 头文件未找到于 {gsl_include_path}，将尝试使用 std::at 替代")
-    else:
-        print("GSL 头文件已存在。")
-    
-    # Step 2: 修改 config.cpp，使用 std::at 替代 gsl::at
-    if os.path.exists(config_cpp_path):
-        with open(config_cpp_path, 'r') as f:
-            content = f.read()
-        
-        # 替换 gsl::at 为 std::at
-        if 'gsl::at' in content:
-            content = re.sub(r'gsl::at\(', 'std::at(', content)
-            # 移除 using namespace gsl;（如果存在）
-            content = re.sub(r'using\s+namespace\s+gsl;\s*\n?', '', content)
-            print("已将 config.cpp 中的 gsl::at 替换为 std::at，并移除 using namespace gsl;")
-        
-        # 确保包含 <vector> 或 <array>（std::at 所需）
-        if '#include <vector>' not in content and '#include <array>' not in content:
-            content = '#include <vector>\n' + content
-        
-        # 写入修改后的内容
-        with open(config_cpp_path, 'w') as f:
-            f.write(content)
-        print(f"已更新 {config_cpp_path}")
-    else:
+    # 检查 config.cpp 文件是否存在
+    if not os.path.exists(config_cpp_path):
         print(f"无法找到 config.cpp 文件: {config_cpp_path}")
         return False
     
-    # Step 3: 清理并重新配置构建目录
+    # 读取 config.cpp 内容
+    with open(config_cpp_path, 'r') as f:
+        content = f.read()
+    
+    # 替换 gsl::at 为 std::at
+    if 'gsl::at' in content:
+        content = re.sub(r'gsl::at\(', 'std::at(', content)
+        print("已将 config.cpp 中的 gsl::at 替换为 std::at")
+    
+    # 移除 using namespace gsl;（如果存在）
+    if 'using namespace gsl;' in content:
+        content = re.sub(r'using\s+namespace\s+gsl;\s*\n?', '', content)
+        print("已移除 config.cpp 中的 using namespace gsl;")
+    
+    # 确保包含 <vector> 或 <array>，因为 std::at 需要这些容器
+    if '#include <vector>' not in content and '#include <array>' not in content:
+        content = '#include <vector>\n' + content
+        print("已添加 #include <vector> 到 config.cpp")
+    
+    # 写入修改后的内容
+    with open(config_cpp_path, 'w') as f:
+        f.write(content)
+    print(f"已更新 {config_cpp_path}")
+    
+    # 清理并重新配置构建目录
     if attempt_count < 2:  # 仅在第一次或第二次尝试时清理
         print("清理 trojan-plus 构建目录...")
         subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
@@ -114,9 +95,9 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         print("重新运行 CMake 配置...")
         cmake_lists_path = os.path.join(trojan_build_dir, "CMakeLists.txt")
         if os.path.exists(cmake_lists_path):
-            # 使用正确的源目录和构建目录
+            # 在构建目录中直接运行 cmake .
             result = subprocess.run(
-                ["cmake", "-S", trojan_source_dir, "-B", trojan_build_dir],
+                ["cmake", "."],
                 cwd=trojan_build_dir,
                 shell=False,
                 capture_output=True,
@@ -130,6 +111,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 
 
