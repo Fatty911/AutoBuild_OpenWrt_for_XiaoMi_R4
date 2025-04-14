@@ -91,13 +91,12 @@ def fix_gsl_include_error(log_file, attempt_count=0):
             print(f"行 {i+1}: {lines[i].strip()}")
     
     # 替换 gsl::at 或 std::at 为直接索引
-    if 'gsl::at' in content or 'std::at' in content:
-        new_content = re.sub(r'(gsl|std)::at$(mdString),\s*([^)]+)$', r'\2[\3]', content)
-        if new_content != content:
-            content = new_content
-            print("已将 config.cpp 中的 gsl::at 或 std::at 替换为直接索引")
-        else:
-            print("替换逻辑未触发，可能正则表达式未匹配成功")
+    original_content = content
+    content = re.sub(r'(gsl|std)::\s*at\s*$\s*mdString\s*,\s*([^)]+)$', r'mdString[\2]', content)
+    if content != original_content:
+        print("已将 config.cpp 中的 gsl::at 或 std::at 替换为直接索引")
+    else:
+        print("替换逻辑未触发，可能正则表达式未匹配到代码")
     
     # 移除 using namespace gsl;（如果存在）
     if 'using namespace gsl;' in content:
@@ -122,22 +121,14 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         print("清理 trojan-plus 构建目录...")
         subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
         
-        print("重新运行 CMake 配置...")
-        cmake_lists_path = os.path.join(trojan_build_dir, "CMakeLists.txt")
-        if os.path.exists(cmake_lists_path):
-            result = subprocess.run(
-                ["cmake", "."],
-                cwd=trojan_build_dir,
-                shell=False,
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0:
-                print("CMake 配置成功")
-            else:
-                print(f"CMake 配置失败:\n{result.stderr}")
-        else:
-            print("无法找到 CMakeLists.txt，跳过 CMake 配置")
+        # 删除整个构建目录以强制重新提取源代码
+        build_dir = os.path.dirname(trojan_build_dir)
+        trojan_build_path = os.path.join(build_dir, "trojan-plus-10.0.3")
+        if os.path.exists(trojan_build_path):
+            shutil.rmtree(trojan_build_path)
+            print(f"已删除构建目录 {trojan_build_path} 以强制重新提取源代码")
+        
+        print("重新运行 CMake 配置将在下次编译时自动执行")
     
     return True
 
@@ -944,6 +935,7 @@ def main():
     metadata_fixed = 0
     consecutive_fix_failures = 0
     gsl_fix_attempts = 0
+    std_at_fix_attempts = 0
     
     while retry_count <= args.max_retry:
         if retry_count > 1:
@@ -985,8 +977,11 @@ def main():
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
             if "error: 'at' is not a member of 'std'" in log_content:
-                print("检测到 'at' is not a member of 'std' 错误，调用 fix_gsl_include_error...")
-                fix_gsl_include_error(args.log_file, attempt_count)
+                if std_at_fix_attempts < 2:  # 最多尝试修复两次
+                    print("检测到 'at' is not a member of 'std' 错误，调用 fix_gsl_include_error...")
+                    fix_gsl_include_error(args.log_file, std_at_fix_attempts)
+                    fix_applied_this_iteration = 1
+                    std_at_fix_attempts +=1
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
