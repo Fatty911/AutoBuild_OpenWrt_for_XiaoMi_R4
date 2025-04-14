@@ -6,6 +6,12 @@ on:
     types:
       - completed  # 当工作流 1 完成时触发
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: true
+        default: false
   push:
     branches: 
       - master
@@ -83,7 +89,10 @@ jobs:
           echo "解压完成后查看压缩包内"
           ls -la openwrt
 
-
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        timeout-minutes: 300
       
       - name: Build image
         id: build_image
