@@ -67,20 +67,15 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     with open(config_cpp_path, 'r') as f:
         content = f.read()
     
-    # 替换 gsl::at 为 std::at
-    if 'gsl::at' in content:
-        content = re.sub(r'gsl::at\(', 'std::at(', content)
-        print("已将 config.cpp 中的 gsl::at 替换为 std::at")
+    # 替换 gsl::at 或 std::at 为直接索引
+    if 'gsl::at' in content or 'std::at' in content:
+        content = re.sub(r'(gsl|std)::at$([^,]+),\s*([^)]+)$', r'\2[\3]', content)
+        print("已将 config.cpp 中的 gsl::at 或 std::at 替换为直接索引")
     
     # 移除 using namespace gsl;（如果存在）
     if 'using namespace gsl;' in content:
         content = re.sub(r'using\s+namespace\s+gsl;\s*\n?', '', content)
         print("已移除 config.cpp 中的 using namespace gsl;")
-    
-    # 确保包含 <vector> 或 <array>，因为 std::at 需要这些容器
-    if '#include <vector>' not in content and '#include <array>' not in content:
-        content = '#include <vector>\n' + content
-        print("已添加 #include <vector> 到 config.cpp")
     
     # 写入修改后的内容
     with open(config_cpp_path, 'w') as f:
@@ -111,6 +106,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 
 
