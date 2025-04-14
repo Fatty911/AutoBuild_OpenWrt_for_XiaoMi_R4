@@ -986,7 +986,7 @@ def main():
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
             if "error: 'at' is not a member of 'std'" in log_content:
                 print("检测到 'at' is not a member of 'std' 错误，调用 fix_gsl_include_error...")
-                fix_gsl_include_error(log_file, attempt_count)
+                fix_gsl_include_error(args.log_file, attempt_count)
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
