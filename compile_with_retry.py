@@ -34,18 +34,17 @@ def get_relative_path(path):
     except:
         return path
 
-def find_trojan_build_dir():
-    """动态查找 trojan-plus 的构建目录"""
+def find_trojan_source_dir():
+    """动态查找 trojan-plus 的源代码目录"""
     try:
-        build_dirs = subprocess.check_output(
-            ["find", "build_dir", "-type", "d", "-name", "trojan-plus-*", "-print", "-quit"],
-            text=True,
-            stderr=subprocess.DEVNULL
-        ).strip()
-        if build_dirs:
-            return build_dirs
-    except subprocess.CalledProcessError:
-        pass
+        # 假设源代码目录在 dl 目录下
+        dl_dir = "dl"
+        for root, dirs, files in os.walk(dl_dir):
+            for dir in dirs:
+                if dir.startswith("trojan-plus-"):
+                    return os.path.join(root, dir)
+    except Exception as e:
+        print(f"查找源代码目录时出错: {e}")
     return None
 
 def fix_gsl_include_error(log_file, attempt_count=0):
@@ -57,64 +56,40 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         print("无法找到 trojan-plus 的构建目录")
         return False
     
+    trojan_source_dir = find_trojan_source_dir()
+    if not trojan_source_dir:
+        print("无法找到 trojan-plus 的源代码目录")
+        return False
+    
     gsl_include_path = os.path.join(trojan_build_dir, "external/GSL/include/gsl")
     config_cpp_path = os.path.join(trojan_build_dir, "src/core/config.cpp")
     
-    # Step 1: 确保 GSL 头文件存在
+    # Step 1: 检查 GSL 头文件（仅提示，不强制下载）
     if not os.path.exists(gsl_include_path):
-        print(f"GSL 头文件未找到于 {gsl_include_path}，尝试下载并部署...")
-        temp_dir = "tmp/gsl_temp"
-        if os.path.exists(temp_dir):
-            shutil.rmtree(temp_dir)
-        os.makedirs(temp_dir, exist_ok=True)
-        try:
-            subprocess.run(
-                ["git", "clone", "https://github.com/microsoft/GSL.git", temp_dir],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-            dest_dir = os.path.join(trojan_build_dir, "external/GSL/include")
-            os.makedirs(dest_dir, exist_ok=True)
-            shutil.copytree(os.path.join(temp_dir, "include/gsl"), os.path.join(dest_dir, "gsl"))
-            print("成功下载并部署 GSL 头文件。")
-        except Exception as e:
-            print(f"修复失败: {e}")
-            return False
-        finally:
-            if os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir)
+        print(f"警告: GSL 头文件未找到于 {gsl_include_path}，将尝试使用 std::at 替代")
     else:
         print("GSL 头文件已存在。")
     
-    # Step 2: 检查并修复 config.cpp 文件
+    # Step 2: 修改 config.cpp，使用 std::at 替代 gsl::at
     if os.path.exists(config_cpp_path):
         with open(config_cpp_path, 'r') as f:
             content = f.read()
         
-        # 检查是否包含 #include <gsl/gsl>
-        if '#include <gsl/gsl>' not in content:
-            print("在 config.cpp 中未找到 #include <gsl/gsl>，尝试添加...")
-            content = '#include <gsl/gsl>\n' + content
+        # 替换 gsl::at 为 std::at
+        if 'gsl::at' in content:
+            content = re.sub(r'gsl::at\(', 'std::at(', content)
+            # 移除 using namespace gsl;（如果存在）
+            content = re.sub(r'using\s+namespace\s+gsl;\s*\n?', '', content)
+            print("已将 config.cpp 中的 gsl::at 替换为 std::at，并移除 using namespace gsl;")
         
-        # 检查是否包含 using namespace gsl;
-        if 'using namespace gsl;' not in content:
-            print("在 config.cpp 中未找到 'using namespace gsl;'，尝试添加...")
-            # 在 #include <gsl/gsl> 后添加 using namespace gsl;
-            include_pos = content.find('#include <gsl/gsl>')
-            if include_pos != -1:
-                newline_pos = content.find('\n', include_pos)
-                if newline_pos != -1:
-                    content = content[:newline_pos + 1] + 'using namespace gsl;\n' + content[newline_pos + 1:]
-                else:
-                    content += '\nusing namespace gsl;\n'
-            else:
-                content = '#include <gsl/gsl>\nusing namespace gsl;\n' + content
+        # 确保包含 <vector> 或 <array>（std::at 所需）
+        if '#include <vector>' not in content and '#include <array>' not in content:
+            content = '#include <vector>\n' + content
         
         # 写入修改后的内容
         with open(config_cpp_path, 'w') as f:
             f.write(content)
-        print("config.cpp 已更新，包含 #include <gsl/gsl> 和 using namespace gsl;")
+        print(f"已更新 {config_cpp_path}")
     else:
         print(f"无法找到 config.cpp 文件: {config_cpp_path}")
         return False
@@ -127,24 +102,23 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         print("重新运行 CMake 配置...")
         cmake_lists_path = os.path.join(trojan_build_dir, "CMakeLists.txt")
         if os.path.exists(cmake_lists_path):
-            # 确保 CMake 包含 GSL 路径
-            with open(cmake_lists_path, 'r') as f:
-                cmake_content = f.read()
-            if 'GSL' not in cmake_content:
-                print("CMakeLists.txt 未配置 GSL，尝试添加...")
-                cmake_content += '\ninclude_directories("${CMAKE_SOURCE_DIR}/external/GSL/include")\n'
-                with open(cmake_lists_path, 'w') as f:
-                    f.write(cmake_content)
-            # 使用明确的源目录和构建目录运行 CMake
-            subprocess.run(
-                ["cmake", "-S", trojan_build_dir, "-B", trojan_build_dir],
+            # 使用正确的源目录和构建目录
+            result = subprocess.run(
+                ["cmake", "-S", trojan_source_dir, "-B", trojan_build_dir],
                 cwd=trojan_build_dir,
-                shell=False
+                shell=False,
+                capture_output=True,
+                text=True
             )
+            if result.returncode == 0:
+                print("CMake 配置成功")
+            else:
+                print(f"CMake 配置失败:\n{result.stderr}")
         else:
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 
 def fix_lua_neturl_directory():
