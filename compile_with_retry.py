@@ -52,8 +52,13 @@ import re
 import shutil
 import subprocess
 
+import os
+import re
+import shutil
+import subprocess
+
 def fix_gsl_include_error(log_file, attempt_count=0):
-    """修复 trojan-plus 的 GSL 头文件或 std::at 相关问题"""
+    """修复 trojan-plus 的 GSL 或 std::at 相关问题"""
     print("检测到 GSL 或 std::at 相关错误，尝试修复...")
     
     # 查找 trojan-plus 的构建目录
@@ -83,7 +88,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     if len(lines) >= 647:
         print("修改前第647行附近的内容：")
         for i in range(max(0, 646), min(len(lines), 650)):
-            print(f"行 {i+1}: {lines[i]}")
+            print(f"行 {i+1}: {lines[i].strip()}")
     
     # 替换 gsl::at 或 std::at 为直接索引
     if 'gsl::at' in content or 'std::at' in content:
@@ -110,7 +115,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     if len(lines) >= 647:
         print("修改后第647行附近的内容：")
         for i in range(max(0, 646), min(len(lines), 650)):
-            print(f"行 {i+1}: {lines[i]}")
+            print(f"行 {i+1}: {lines[i].strip()}")
     
     # 清理并重新配置构建目录
     if attempt_count < 2:  # 仅在第一次或第二次尝试时清理
@@ -135,6 +140,7 @@ def fix_gsl_include_error(log_file, attempt_count=0):
             print("无法找到 CMakeLists.txt，跳过 CMake 配置")
     
     return True
+
 
 
 
@@ -978,7 +984,10 @@ def main():
             return 0
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
-            if "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
+            if "error: 'at' is not a member of 'std'" in log_content:
+                print("检测到 'at' is not a member of 'std' 错误，调用 fix_gsl_include_error...")
+                fix_gsl_include_error(log_file, attempt_count)
+            elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
                         fix_applied_this_iteration = 1
