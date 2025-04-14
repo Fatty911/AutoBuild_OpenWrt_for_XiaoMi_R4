@@ -33,7 +33,19 @@ def get_relative_path(path):
         return os.path.relpath(path, current_pwd)
     except:
         return path
-
+def find_trojan_build_dir():
+    """动态查找 trojan-plus 的构建目录"""
+    try:
+        build_dirs = subprocess.check_output(
+            ["find", "build_dir", "-type", "d", "-name", "trojan-plus-*", "-print", "-quit"],
+            text=True,
+            stderr=subprocess.DEVNULL
+        ).strip()
+        if build_dirs:
+            return build_dirs
+    except subprocess.CalledProcessError:
+        pass
+    return None
 def find_trojan_source_dir():
     """动态查找 trojan-plus 的源代码目录"""
     try:
