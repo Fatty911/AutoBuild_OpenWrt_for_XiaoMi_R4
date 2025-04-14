@@ -3,6 +3,12 @@ name: Simple Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages
 on:
   #手动运行
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: true
+        default: false
   #文件修改时触发
   push:
     branches:
@@ -92,7 +98,12 @@ jobs:
           cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 8 
           
 
-
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        with:
+          limit-access-to-actor: false
+          timeout-minutes: 300
       
       - name: Build image
         id: build_image
