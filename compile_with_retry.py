@@ -35,36 +35,74 @@ def get_relative_path(path):
         return path
 
 
-# 修复 GSL 头文件缺失的函数
+def find_trojan_build_dir():
+    """动态查找 trojan-plus 的构建目录"""
+    try:
+        # 在 build_dir 下查找 trojan-plus-* 目录
+        build_dirs = subprocess.check_output(
+            ["find", "build_dir", "-type", "d", "-name", "trojan-plus-*", "-print", "-quit"],
+            text=True,
+            stderr=subprocess.DEVNULL
+        ).strip()
+        if build_dirs:
+            return build_dirs
+    except subprocess.CalledProcessError:
+        pass
+    return None
+
 def fix_gsl_include_error(log_file):
+    """修复 trojan-plus 的 GSL 头文件缺失问题"""
     print("检测到 GSL 头文件缺失，尝试修复...")
     
+    # 动态查找 trojan-plus 构建目录
+    trojan_build_dir = find_trojan_build_dir()
+    if not trojan_build_dir:
+        print("无法找到 trojan-plus 的构建目录")
+        return False
+    
     # GSL 头文件的预期路径
-    gsl_include_path = "/home/xuerui/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-mipsel_24kc_musl/trojan-plus-10.0.3/external/GSL/include/gsl"
-    config_file = "/home/xuerui/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-mipsel_24kc_musl/trojan-plus-10.0.3/src/core/config.cpp"
+    gsl_include_path = os.path.join(trojan_build_dir, "external/GSL/include/gsl")
     
     # 检查 GSL 头文件是否存在
-    if not os.path.exists(gsl_include_path):
-        print(f"GSL 头文件未找到于 {gsl_include_path}")
-        
-        # 尝试从源码中移除对 <gsl/gsl> 的引用（临时解决方案）
-        try:
-            with open(config_file, 'r') as f:
-                lines = f.readlines()
-            with open(config_file, 'w') as f:
-                for line in lines:
-                    if "#include <gsl/gsl>" in line:
-                        f.write("// " + line)  # 注释掉该行
-                        print(f"已注释掉 {config_file} 中的 '#include <gsl/gsl>'")
-                    else:
-                        f.write(line)
-            return True  # 表示修复已应用
-        except Exception as e:
-            print(f"修改源码失败: {e}")
-            return False
-    else:
+    if os.path.exists(gsl_include_path):
         print("GSL 头文件已存在，无需修复。")
         return True
+    
+    print(f"GSL 头文件未找到于 {gsl_include_path}，尝试下载并部署...")
+    
+    # 临时目录用于克隆 GSL
+    temp_dir = "tmp/gsl_temp"
+    if os.path.exists(temp_dir):
+        shutil.rmtree(temp_dir)
+    os.makedirs(temp_dir, exist_ok=True)
+    
+    try:
+        # 克隆 Microsoft GSL 仓库
+        subprocess.run(
+            ["git", "clone", "https://github.com/microsoft/GSL.git", temp_dir],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        
+        # 目标路径
+        dest_dir = os.path.join(trojan_build_dir, "external/GSL/include")
+        os.makedirs(dest_dir, exist_ok=True)
+        
+        # 复制 GSL 头文件
+        shutil.copytree(os.path.join(temp_dir, "include/gsl"), os.path.join(dest_dir, "gsl"))
+        print("成功下载并部署 GSL 头文件。")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"克隆 GSL 仓库失败: {e}")
+        return False
+    except Exception as e:
+        print(f"修复失败: {e}")
+        return False
+    finally:
+        # 清理临时目录
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并隔离备份补丁"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
@@ -899,7 +937,7 @@ def main():
             return 0
         else:
             print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
-            if "gsl/gsl: No such file or directory" in log_content:
+            if "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if fix_gsl_include_error(args.log_file):
                     print("已应用 GSL 修复，将重试编译...")
                 else:
