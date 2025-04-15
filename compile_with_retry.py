@@ -501,23 +501,60 @@ def compile_trojan_plus():
     subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=True)
     subprocess.run(["make", "package/feeds/small8/trojan-plus/compile", "V=s"], check=True)
 
-def fix_trojan_plus_boost_error(log_content):
+def fix_trojan_plus_boost_error(log_content=None):
+    """直接修改 trojan-plus 源码中的 boost::asio::buffer_cast 为 static_cast"""
     try:
         version = get_trojan_plus_version()
         source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
-        lines_to_patch = find_lines_to_patch(source_path)
-        if lines_to_patch:
-            patch_content = generate_patch(source_path, lines_to_patch)
-            save_patch(patch_content, version)
-            compile_trojan_plus()
-            print("补丁已应用并成功编译")
-            return True
-        else:
-            print("未找到需要修改的行")
+
+        if not os.path.exists(source_path):
+            print(f"[错误] 找不到源码文件: {source_path}")
             return False
+
+        with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+
+        # 匹配 boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()))
+        pattern = re.compile(
+            r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\))\s*\)'
+        )
+        matches = pattern.findall(content)
+
+        if not matches:
+            print("未找到 boost::asio::buffer_cast 相关代码，跳过修改")
+            return False
+
+        print(f"找到 {len(matches)} 处 boost::asio::buffer_cast 调用，准备替换为 static_cast")
+
+        new_content = pattern.sub(r'static_cast<char*>(\1.data())', content)
+
+        # 备份原文件
+        backup_path = source_path + ".bak"
+        shutil.copy2(source_path, backup_path)
+        print(f"已备份原始文件到: {backup_path}")
+
+        with open(source_path, 'w', encoding='utf-8') as f:
+            f.write(new_content)
+
+        print("已完成源码修改，准备清理构建目录并重新编译...")
+
+        # 删除所有补丁，避免再次失败
+        patch_dir = "package/feeds/small8/trojan-plus/patches"
+        for patch_file in os.listdir(patch_dir):
+            if patch_file.endswith(".patch"):
+                full_patch_path = os.path.join(patch_dir, patch_file)
+                os.remove(full_patch_path)
+                print(f"已删除补丁文件: {full_patch_path}")
+
+        # 清理构建目录
+        subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=False)
+
+        return True
+
     except Exception as e:
-        print(f"修复 trojan-plus 失败: {e}")
+        print(f"[异常] 修复 trojan-plus 出错: {e}")
         return False
+
 
 
 
@@ -961,18 +998,14 @@ def main():
                     print("修复完成，准备下一次编译尝试...")
                 else:
                     print("修复失败，请检查日志和文件路径")
-            elif 'trojan-plus' in log_content and "'buffer_cast' is not a member of 'boost::asio'" in log_content:
-                print("检测到 'buffer_cast' 错误，尝试修复...")
-                if fix_patch_application(log_tmp):
+            elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
+                print("检测到 trojan-plus buffer_cast 错误，尝试直接修复源码...")
+                if fix_trojan_plus_boost_error(log_content):
                     fix_applied_this_iteration = 1
-                    print("清理 trojan-plus 构建目录以应用更改...")
-                    subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
+                    last_fix_applied = "fix_trojan_plus_boost_error"
                 else:
-                    if last_fix_applied == "fix_patch_application":
-                        consecutive_fix_failures += 1
-                    else:
-                        consecutive_fix_failures = 1
-                last_fix_applied = "fix_patch_application" 
+                    print("源码修复失败或未找到替换项")
+
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
