@@ -503,8 +503,6 @@ def compile_trojan_plus():
 
 def fix_trojan_plus_boost_error(log_content=None):
     try:
-        clean_all_trojan_patches()
-
         version = get_trojan_plus_version()
         source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
         if not os.path.exists(source_path):
