@@ -33,21 +33,133 @@ def get_relative_path(path):
         return os.path.relpath(path, current_pwd)
     except:
         return path
-def find_trojan_build_dir():
-    """动态查找 trojan-plus 的构建目录"""
-    try:
-        build_dirs = subprocess.check_output(
-            ["find", "build_dir", "-type", "d", "-name", "trojan-plus-*", "-print", "-quit"],
-            text=True,
-            stderr=subprocess.DEVNULL
-        ).strip()
-        if build_dirs:
-            return build_dirs
-    except subprocess.CalledProcessError:
-        pass
-    return None
     
+def fix_trojan_plus_manually():
+    """手动修复 trojan-plus 源码，不依赖补丁"""
+    print("尝试手动修复 trojan-plus 源码...")
+    
+    # 查找 trojan-plus 的源码目录
+    trojan_source_dir = "feeds/small8/trojan-plus"
+    if not os.path.exists(trojan_source_dir):
+        print(f"无法找到 trojan-plus 的源码目录: {trojan_source_dir}")
+        return False
+    
+    # 备份原始补丁文件
+    patches_dir = os.path.join(trojan_source_dir, "patches")
+    if os.path.exists(patches_dir):
+        for file in os.listdir(patches_dir):
+            if file.endswith('.patch') and "buffer-cast" in file:
+                patch_file = os.path.join(patches_dir, file)
+                backup_file = f"{patch_file}.bak"
+                os.rename(patch_file, backup_file)
+                print(f"已备份补丁文件 {patch_file} 到 {backup_file}")
+                
+                # 创建一个空的补丁文件，避免补丁应用失败
+                with open(patch_file, 'w') as f:
+                    f.write(f"# 已通过修改 Makefile 和源码的方式解决 buffer_cast 问题\n")
+    
+    # 修改 Makefile，添加替换 buffer_cast 的编译选项
+    makefile_path = os.path.join(trojan_source_dir, "Makefile")
+    if not os.path.exists(makefile_path):
+        print(f"无法找到 Makefile: {makefile_path}")
+        return False
+    
+    with open(makefile_path, 'r') as f:
+        makefile_content = f.read()
+    
+    # 检查是否已经添加了自定义编译选项
+    if "BUFFER_CAST_FIX" not in makefile_content:
+        # 在 TARGET_CXXFLAGS 行后添加自定义编译选项
+        new_content = re.sub(
+            r'(TARGET_CXXFLAGS\s*=.*)',
+            r'\1 -DBUFFER_CAST_FIX',
+            makefile_content
+        )
+        
+        # 如果没有找到 TARGET_CXXFLAGS 行，就在文件末尾添加
+        if new_content == makefile_content:
+            new_content += "\n# Fix for buffer_cast deprecation\nTARGET_CXXFLAGS += -DBUFFER_CAST_FIX\n"
+        
+        with open(makefile_path, 'w') as f:
+            f.write(new_content)
+        
+        print("已更新 Makefile，添加 buffer_cast 修复的编译选项")
+    
+    # 创建一个头文件，包含 buffer_cast 的替代实现
+    includes_dir = os.path.join(trojan_source_dir, "trojan-plus-patches")
+    if not os.path.exists(includes_dir):
+        os.makedirs(includes_dir)
+    
+    buffer_fix_header = os.path.join(includes_dir, "buffer_cast_fix.h")
+    with open(buffer_fix_header, 'w') as f:
+        f.write("""
+#ifndef BUFFER_CAST_FIX_H
+#define BUFFER_CAST_FIX_H
 
+#include <boost/asio/buffer.hpp>
+
+#ifdef BUFFER_CAST_FIX
+namespace boost {
+namespace asio {
+    template <typename T>
+    inline T buffer_cast(const boost::asio::mutable_buffer& b) {
+        return static_cast<T>(b.data());
+    }
+    
+    template <typename T>
+    inline T buffer_cast(const boost::asio::const_buffer& b) {
+        return static_cast<T>(b.data());
+    }
+}
+}
+#endif
+
+#endif // BUFFER_CAST_FIX_H
+""")
+    print(f"已创建 buffer_cast 修复的头文件: {buffer_fix_header}")
+    
+    # 修改 trojan-plus 的 Makefile，添加包含目录
+    if "-I$(CURDIR)/trojan-plus-patches" not in makefile_content:
+        new_content = re.sub(
+            r'(TARGET_CXXFLAGS\s*=.*)',
+            r'\1 -I$(CURDIR)/trojan-plus-patches',
+            new_content if 'new_content' in locals() else makefile_content
+        )
+        
+        with open(makefile_path, 'w') as f:
+            f.write(new_content)
+        
+        print("已更新 Makefile，添加自定义头文件目录")
+    
+    # 创建一个补丁文件，在需要的地方包含我们的头文件
+    service_patch_file = os.path.join(patches_dir, "010-include-buffer-cast-fix.patch")
+    with open(service_patch_file, 'w') as f:
+        f.write("""--- a/src/core/service.cpp
++++ b/src/core/service.cpp
+@@ -20,6 +20,7 @@
+ #include "session/serversession.h"
+ #include "session/forwardsession.h"
+ #include "ssl/ssldefaults.h"
++#include "buffer_cast_fix.h"
+ #include <boost/asio/signal_set.hpp>
+ #include <boost/asio/ssl/context.hpp>
+ #include <openssl/opensslv.h>
+""")
+    print(f"已创建包含头文件的补丁: {service_patch_file}")
+    
+    # 清理旧的构建目录
+    print("清理 trojan-plus 构建目录...")
+    subprocess.run(["make", "package/feeds/small8/trojan-plus/clean"], check=False)
+    
+    return True
+
+def find_trojan_build_dir():
+    """查找 trojan-plus 的构建目录"""
+    build_dir = "build_dir/target-*/trojan-plus-*"
+    dirs = glob.glob(build_dir)
+    if not dirs:
+        return None
+    return dirs[0]
 def fix_gsl_include_error(log_file, attempt_count=0):
     print("检测到 'at' is not a member of 'std' 错误，尝试修复...")
     
@@ -926,18 +1038,17 @@ def main():
                     print("修复完成，准备下一次编译尝试...")
                 else:
                     print("修复失败，请检查日志和文件路径")
-            elif 'trojan-plus' in log_content and "'buffer_cast' is not a member of 'boost::asio'" in log_content:
-                print("检测到 'buffer_cast' 错误，尝试修复...")
-                if fix_patch_application(log_tmp):
+            elif 'trojan-plus' in log_content and ('Patch failed' in log_content or 'buffer_cast' in log_content):
+                print("检测到 trojan-plus 补丁或 buffer_cast 错误，尝试手动修复...")
+                if fix_trojan_plus_manually():
                     fix_applied_this_iteration = 1
-                    print("清理 trojan-plus 构建目录以应用更改...")
-                    subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
+                    print("已手动修复 trojan-plus 源码，将重试编译...")
                 else:
-                    if last_fix_applied == "fix_patch_application":
+                    if last_fix_applied == "fix_trojan_plus":
                         consecutive_fix_failures += 1
                     else:
                         consecutive_fix_failures = 1
-                last_fix_applied = "fix_patch_application" 
+                last_fix_applied = "fix_trojan_plus"
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
