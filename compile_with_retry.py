@@ -516,9 +516,18 @@ def fix_trojan_plus_boost_error(log_content):
     
     # 在错误行上应用替换
     line = lines[line_num]
-    pattern = r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+)\s*\)'
-    replacement = r'static_cast<\1>(\2.data())'
-    new_line = re.sub(pattern, replacement, line)
+    # 特定于第 550 行的替换
+    if 'boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()))' in line:
+        new_line = line.replace(
+            'boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()))',
+            'static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data())'
+        )
+        print("应用了针对第 550 行的特定替换")
+    else:
+        # 通用正则表达式替换（备用）
+        pattern = r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+\([^)]*\)[^)]*)\s*\)'
+        replacement = r'static_cast<\1>(\2.data())'
+        new_line = re.sub(pattern, replacement, line)
     
     if new_line != line:
         lines[line_num] = new_line
@@ -529,7 +538,7 @@ def fix_trojan_plus_boost_error(log_content):
         # 验证修复并打印修改后内容
         with open(found_path, 'r') as f:
             modified_lines = f.read().splitlines()
-            print("修改后错误行附近的内容：")
+            print("修改后 personally nearby content:")
             for i in range(max(0, line_num - context_lines), min(len(modified_lines), line_num + context_lines + 1)):
                 print(f"行 {i + 1}: {modified_lines[i]}")
             
