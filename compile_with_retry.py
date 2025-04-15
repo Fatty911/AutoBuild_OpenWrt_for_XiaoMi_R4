@@ -946,7 +946,7 @@ def main():
                     print("GSL 修复已尝试 2 次仍未成功，停止重试。")
                     break
             elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
-                if fix_trojan_plus_boost_error(log_content):
+                if fix_trojan_plus_boost_error():
                     fix_applied_this_iteration = 1
                     # 清理 trojan-plus 构建目录以应用更改
                     print("清理 trojan-plus 构建目录以应用更改...")
