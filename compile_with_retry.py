@@ -205,35 +205,44 @@ def fix_patch_application(log_file):
     print("检测到补丁应用失败，尝试修复...")
     with open(log_file, 'r', errors='replace') as f:
         log_content = f.read()
-    
-    if "Patch failed" not in log_content:
+
+    if "Patch failed" not in log_content and "Only garbage was found in the patch input" not in log_content:
         return False
-    
+
     # 提取补丁文件路径
     patch_file_match = re.search(r'Applying (.+) using plaintext:', log_content)
     if not patch_file_match:
         print("无法提取补丁文件路径，跳过修复。")
         return False
-        
-    patch_file = patch_file_match.group(1)
+
+    patch_file = patch_file_match.group(1).strip()
     print(f"补丁文件: {patch_file}")
-    
+
+    if "Only garbage was found in the patch input" in log_content:
+        print("补丁格式无效，自动删除补丁文件以跳过应用...")
+        try:
+            os.remove(patch_file)
+            print(f"已删除无效补丁文件: {patch_file}")
+        except Exception as e:
+            print(f"删除补丁失败: {e}")
+        return True  # 返回 True 表示应用了修复（删除补丁）
+
     if "trojan-plus" in patch_file:
         print("检测到 trojan-plus 补丁失败，尝试直接修改源代码...")
         trojan_build_dir = find_trojan_build_dir()
         if not trojan_build_dir:
             print("无法找到 trojan-plus 的构建目录")
             return False
-    
+
         service_cpp_path = os.path.join(trojan_build_dir, "src/core/service.cpp")
         if not os.path.exists(service_cpp_path):
             print(f"无法找到 service.cpp 文件: {service_cpp_path}")
             return False
-    
+
         with open(service_cpp_path, 'r') as f:
             content = f.read()
-    
-        # 调试信息
+
+        # 更宽松的正则匹配 boost::asio::buffer_cast
         matches = re.findall(
             r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\)\s*\)',
             content
@@ -242,38 +251,38 @@ def fix_patch_application(log_file):
             print(f"找到 {len(matches)} 处 boost::asio::buffer_cast 调用，准备替换")
         else:
             print("未找到 boost::asio::buffer_cast 调用，跳过替换")
-    
-        # 替换 boost::asio::buffer_cast
+
         new_content = re.sub(
             r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\)\s*\)',
             r'static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data())',
             content
         )
-    
+
         if new_content != content:
             with open(service_cpp_path, 'w') as f:
                 f.write(new_content)
             print("已直接修改 service.cpp 文件")
-    
+
             # 删除补丁文件避免再次失败
             try:
                 os.remove(patch_file)
-                print(f"已删除失败补丁文件: {patch_file}")
+                print(f"已删除补丁文件: {patch_file}")
             except Exception as e:
                 print(f"删除补丁失败: {e}")
-    
+
             return True
         else:
             print("未找到需要替换的代码")
             return False
-            
+
     elif "lua-neturl" in patch_file:
         print("检测到 lua-neturl 补丁失败，调用专用修复函数...")
         return fix_lua_neturl_directory()
-    
+
     else:
         print("非 trojan-plus 或 lua-neturl 的补丁失败，跳过修复。")
         return False
+
 
 
 
@@ -469,26 +478,15 @@ def get_trojan_plus_version():
 def find_lines_to_patch(source_path):
     with open(source_path, 'r') as f:
         lines = f.readlines()
+
     lines_to_patch = []
     for i, line in enumerate(lines):
-        if 'boost::asio::buffer_cast' in line:
+        if 'boost::asio::buffer_cast' in line and 'udp_read_buf.prepare' in line:
             lines_to_patch.append(i)
     return lines_to_patch
 
-def generate_patch(source_path, lines_to_patch):
-    with open(source_path, 'r') as f:
-        lines = f.readlines()
-    patch_content = ""
-    for line_num in lines_to_patch:
-        old_line = lines[line_num]
-        new_line = re.sub(r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+)\s*\)', 
-                         r'static_cast<\1>(\2.data())', old_line)
-        patch_content += f"--- a/src/core/service.cpp\n"
-        patch_content += f"+++ b/src/core/service.cpp\n"
-        patch_content += f"@@ -{line_num+1},1 +{line_num+1},1 @@\n"
-        patch_content += f"-{old_line.strip()}\n"
-        patch_content += f"+{new_line.strip()}\n"
-    return patch_content
+
+
 
 def save_patch(patch_content, version):
     patches_dir = "package/feeds/small8/trojan-plus/patches"
@@ -520,12 +518,6 @@ def fix_trojan_plus_boost_error(log_content):
     except Exception as e:
         print(f"修复 trojan-plus 失败: {e}")
         return False
-
-
-
-
-
-
 
 
 
@@ -761,6 +753,31 @@ def fix_metadata_errors():
     
     return True
 
+
+def generate_patch(source_path, lines_to_patch):
+    """根据匹配行动态生成标准 diff 格式的补丁"""
+    with open(source_path, 'r') as f:
+        lines = f.readlines()
+
+    patch_lines = []
+    for line_num in lines_to_patch:
+        old_line = lines[line_num]
+        new_line = re.sub(
+            r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\))\s*\)',
+            r'static_cast<char*>(\1.data())',
+            old_line
+        )
+
+        if old_line == new_line:
+            continue  # 没有变化就跳过
+
+        patch_lines.append(f"--- a/src/core/service.cpp\n")
+        patch_lines.append(f"+++ b/src/core/service.cpp\n")
+        patch_lines.append(f"@@ -{line_num+1},1 +{line_num+1},1 @@\n")
+        patch_lines.append(f"-{old_line.rstrip()}\n")
+        patch_lines.append(f"+{new_line.rstrip()}\n")
+
+    return ''.join(patch_lines)
 
 
 
