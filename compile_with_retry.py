@@ -218,52 +218,45 @@ def fix_patch_application(log_file):
     patch_file = patch_file_match.group(1)
     print(f"补丁文件: {patch_file}")
     
-    # 如果是 lua-neturl 的补丁，修复 Makefile
-    if "feeds/small8/lua-neturl" in patch_file:
-        return fix_lua_neturl_directory()
-    
-    # 保留原有逻辑处理其他包的补丁失败（可选）
-    # 检查补丁文件内容
-    with open(patch_file, 'r') as f:
-        patch_content = f.read()
-    print(f"补丁文件内容:\n{patch_content}")
-    
-    # 检查源码解压目录
-    dl_dir = "./dl"
-    build_dir = "./build_dir/target-mipsel_24kc_musl"
-    pkg_name = "neturl-1.2"
-    src_dir = os.path.join(build_dir, pkg_name)
-    src_subdir = os.path.join(build_dir, "neturl-1.2-1")
-    
-    if not os.path.isdir(src_dir):
-        print(f"源码目录 {src_dir} 不存在，尝试解压...")
-        tarball = os.path.join(dl_dir, "neturl-1.2-1.tar.gz")
-        if os.path.exists(tarball):
-            subprocess.run(f"tar -xzf {tarball} -C {build_dir}", shell=True)
-            print(f"已解压 {tarball} 到 {build_dir}")
+    if "trojan-plus" in patch_file:
+        print("检测到 trojan-plus 补丁失败，尝试直接修改源代码...")
+        trojan_build_dir = find_trojan_build_dir()
+        if not trojan_build_dir:
+            print("无法找到 trojan-plus 的构建目录")
+            return False
+        
+        service_cpp_path = os.path.join(trojan_build_dir, "src/core/service.cpp")
+        if not os.path.exists(service_cpp_path):
+            print(f"无法找到 service.cpp 文件: {service_cpp_path}")
+            return False
+        
+        with open(service_cpp_path, 'r') as f:
+            content = f.read()
+        
+        # 替换 boost::asio::buffer_cast
+        new_content = re.sub(
+            r'boost::asio::buffer_cast<char\*>\s*$\s*udp_read_buf\.prepare\(config\.get_udp_recv_buf\($\)\s*\)',
+            'static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data())',
+            content
+        )
+        
+        if new_content != content:
+            with open(service_cpp_path, 'w') as f:
+                f.write(new_content)
+            print("已直接修改 service.cpp 文件")
+            return True
         else:
-            print(f"源码文件 {tarball} 不存在，无法修复。")
+            print("未找到需要替换的代码")
             return False
     
-    # 检查文件位置并调整
-    expected_file = "lib/net/url.lua"
-    actual_file_in_subdir = os.path.join(src_subdir, expected_file)
-    actual_file_in_src = os.path.join(src_dir, expected_file)
+    elif "lua-neturl" in patch_file:
+        print("检测到 lua-neturl 补丁失败，调用专用修复函数...")
+        return fix_lua_neturl_directory()
     
-    # 复制文件
-    if not os.path.exists(actual_file_in_src):
-        print(f"复制文件 {actual_file_in_subdir} 到 {actual_file_in_src}")
-        os.makedirs(os.path.dirname(actual_file_in_src), exist_ok=True)
-        shutil.copy2(actual_file_in_subdir, actual_file_in_src)
-    
-    # 应用补丁
-    try:
-        subprocess.run(f"patch -p1 < {patch_file}", shell=True, cwd=src_dir, check=True)
-        print("补丁成功应用")
-    except subprocess.SubprocessError:
-        print("补丁应用失败")
+    else:
+        print("非 trojan-plus 或 lua-neturl 的补丁失败，跳过修复。")
         return False
-    return True
+
 
 
 
@@ -933,6 +926,18 @@ def main():
                     print("修复完成，准备下一次编译尝试...")
                 else:
                     print("修复失败，请检查日志和文件路径")
+            elif 'trojan-plus' in log_content and "'buffer_cast' is not a member of 'boost::asio'" in log_content:
+                print("检测到 'buffer_cast' 错误，尝试修复...")
+                if fix_patch_application(log_tmp):
+                    fix_applied_this_iteration = 1
+                    print("清理 trojan-plus 构建目录以应用更改...")
+                    subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
+                else:
+                    if last_fix_applied == "fix_patch_application":
+                        consecutive_fix_failures += 1
+                    else:
+                        consecutive_fix_failures = 1
+                last_fix_applied = "fix_patch_application" 
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
@@ -945,19 +950,7 @@ def main():
                 else:
                     print("GSL 修复已尝试 2 次仍未成功，停止重试。")
                     break
-            elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
-                if fix_trojan_plus_boost_error(args.log_file):
-                    fix_applied_this_iteration = 1
-                    # 清理 trojan-plus 构建目录以应用更改
-                    print("清理 trojan-plus 构建目录以应用更改...")
-                    subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
-                else:
-                    if last_fix_applied == "fix_trojan_plus_boost_error":
-                        consecutive_fix_failures += 1
-                    else:
-                        consecutive_fix_failures = 1
-                last_fix_applied = "fix_trojan_plus_boost_error"
-            
+           
             elif 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
                 print("检测到 lua-neturl 下载错误...")
                 if last_fix_applied == "fix_lua_neturl":
@@ -1000,7 +993,7 @@ def main():
                 last_fix_applied = "fix_patch_application"
                 if fix_patch_application(log_tmp):
                     fix_applied_this_iteration = 1
-                    subprocess.run("make package/feeds/small8/lua-neturl/clean V=s", shell=True)
+                    subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
             
             elif ("Collected errors:" in log_content or "ERROR: " in log_content) and metadata_fixed == 0:
                 print("检测到可能的元数据错误...")
