@@ -446,70 +446,70 @@ def fix_makefile_separator(log_file):
 
 
 def get_trojan_plus_version():
-    # 指定 Makefile 的路径
     makefile_path = "package/feeds/small8/trojan-plus/Makefile"
-    if not os.path.exists(makefile_path):
-        print("未找到 trojan-plus 的 Makefile")
-        return None
-
-    # 读取 Makefile 文件内容
     with open(makefile_path, 'r') as f:
         content = f.read()
-
-    # 使用正则表达式提取 PKG_VERSION
     version_match = re.search(r'PKG_VERSION:=([\d.]+)', content)
     if version_match:
-        version = version_match.group(1)
-        print(f"检测到 trojan-plus 版本: {version}")
-        return version
+        return version_match.group(1)
     else:
-        print("无法从 Makefile 中提取 PKG_VERSION")
-        return None
+        raise ValueError("无法从 Makefile 中提取 PKG_VERSION")
 
-def fix_trojan_plus_boost_error():
-    # 获取版本号
-    version = get_trojan_plus_version()
-    if not version:
-        return False
-
-    # 动态构建源代码路径
-    source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
-    if not os.path.exists(source_path):
-        print(f"未找到 trojan-plus 源代码: {source_path}")
-        return False
-
-    # 读取源文件内容
+def find_lines_to_patch(source_path):
     with open(source_path, 'r') as f:
         lines = f.readlines()
-
-    # 查找并替换 boost::asio::buffer_cast
-    modified = False
+    lines_to_patch = []
     for i, line in enumerate(lines):
         if 'boost::asio::buffer_cast' in line:
-            # 使用正则表达式匹配 buffer_cast 的使用模式
-            match = re.search(r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+)\s*\)', line)
-            if match:
-                type_cast = match.group(1)  # 类型，例如 "char *" 或 "uint8_t"
-                buffer_expr = match.group(2)  # 缓冲区表达式，例如 "buffer"
-                new_expr = f'static_cast<{type_cast}>({buffer_expr}.data())'
-                new_line = line.replace(match.group(0), new_expr)
-                lines[i] = new_line
-                print(f"已替换第 {i+1} 行: {line.strip()} -> {new_line.strip()}")
-                modified = True
+            lines_to_patch.append(i)
+    return lines_to_patch
 
-    # 如果有修改，写回文件
-    if modified:
-        with open(source_path, 'w') as f:
-            f.writelines(lines)
+def generate_patch(source_path, lines_to_patch):
+    with open(source_path, 'r') as f:
+        lines = f.readlines()
+    patch_content = ""
+    for line_num in lines_to_patch:
+        old_line = lines[line_num]
+        new_line = re.sub(r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+)\s*\)', 
+                         r'static_cast<\1>(\2.data())', old_line)
+        patch_content += f"--- a/src/core/service.cpp\n"
+        patch_content += f"+++ b/src/core/service.cpp\n"
+        patch_content += f"@@ -{line_num+1},1 +{line_num+1},1 @@\n"
+        patch_content += f"-{old_line.strip()}\n"
+        patch_content += f"+{new_line.strip()}\n"
+    return patch_content
 
-        # 清理并重新编译
-        print("清理并重新编译以应用更改...")
-        subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=True)
-        subprocess.run(["make", "package/feeds/small8/trojan-plus/compile", "V=s"], check=True)
-        return True
-    else:
-        print("未找到需要替换的内容")
+def save_patch(patch_content, version):
+    patches_dir = "package/feeds/small8/trojan-plus/patches"
+    if not os.path.exists(patches_dir):
+        os.makedirs(patches_dir)
+    patch_file = os.path.join(patches_dir, f"001-fix-buffer-cast-v{version}.patch")
+    with open(patch_file, 'w') as f:
+        f.write(patch_content)
+    print(f"补丁文件已保存到: {patch_file}")
+
+def compile_trojan_plus():
+    subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=True)
+    subprocess.run(["make", "package/feeds/small8/trojan-plus/compile", "V=s"], check=True)
+
+def fix_trojan_plus_boost_error(log_content):
+    try:
+        version = get_trojan_plus_version()
+        source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
+        lines_to_patch = find_lines_to_patch(source_path)
+        if lines_to_patch:
+            patch_content = generate_patch(source_path, lines_to_patch)
+            save_patch(patch_content, version)
+            compile_trojan_plus()
+            print("补丁已应用并成功编译")
+            return True
+        else:
+            print("未找到需要修改的行")
+            return False
+    except Exception as e:
+        print(f"修复 trojan-plus 失败: {e}")
         return False
+
 
 
 
@@ -946,7 +946,7 @@ def main():
                     print("GSL 修复已尝试 2 次仍未成功，停止重试。")
                     break
             elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
-                if fix_trojan_plus_boost_error():
+                if fix_trojan_plus_boost_error(args.log_file):
                     fix_applied_this_iteration = 1
                     # 清理 trojan-plus 构建目录以应用更改
                     print("清理 trojan-plus 构建目录以应用更改...")
