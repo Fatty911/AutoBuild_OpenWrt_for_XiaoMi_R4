@@ -782,32 +782,37 @@ def fix_metadata_errors():
     return True
 
 
-def generate_patch(source_path, lines_to_patch):
-    """根据匹配行动态生成标准 diff 格式的补丁"""
-    with open(source_path, 'r') as f:
-        lines = f.readlines()
+def generate_buffer_cast_patch(version: str):
+    """生成并保存 buffer_cast 替换 patch 到 feeds/small8/trojan-plus/patches/"""
+    patch_dir = f"feeds/small8/trojan-plus/patches"
+    os.makedirs(patch_dir, exist_ok=True)
 
-    patch_lines = []
-    for line_num in lines_to_patch:
-        old_line = lines[line_num]
-        new_line = re.sub(
-            r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\))\s*\)',
-            r'static_cast<char*>(\1.data())',
-            old_line
-        )
+    patch_path = os.path.join(patch_dir, "001-fix-buffer-cast.patch")
 
-        if old_line == new_line:
-            continue  # 没有变化就跳过
+    # 补丁内容
+    patch_content = f"""\
+--- a/src/core/service.cpp
++++ b/src/core/service.cpp
+@@ -550,7 +550,7 @@
+-              boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf())), read_length, ttl);
++              static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data()), read_length, ttl);
+"""
 
-        patch_lines.append(f"--- a/src/core/service.cpp\n")
-        patch_lines.append(f"+++ b/src/core/service.cpp\n")
-        patch_lines.append(f"@@ -{line_num+1},1 +{line_num+1},1 @@\n")
-        patch_lines.append(f"-{old_line.rstrip()}\n")
-        patch_lines.append(f"+{new_line.rstrip()}\n")
+    with open(patch_path, "w") as f:
+        f.write(patch_content)
 
-    return ''.join(patch_lines)
+    print(f"[补丁] 已生成补丁文件: {patch_path}")
 
 
+def clean_trojan_plus_build():
+    """清理 trojan-plus 构建缓存"""
+    print("[清理] 清理 trojan-plus 构建缓存...")
+    os.system("make package/feeds/small8/trojan-plus/clean V=s")
+def apply_trojan_plus_buffer_cast_fix():
+    """应用 buffer_cast -> static_cast 补丁修复"""
+    version = get_trojan_plus_version()
+    generate_buffer_cast_patch(version)
+    clean_trojan_plus_build()
 
 
 def fix_lua_neturl_download(log_file):
@@ -990,10 +995,11 @@ def main():
                 else:
                     print("修复失败，请检查日志和文件路径")
             elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
-                print("检测到 trojan-plus buffer_cast 错误，尝试直接修复源码...")
-                if fix_trojan_plus_boost_error(log_content):
-                    fix_applied_this_iteration = 1
-                    last_fix_applied = "fix_trojan_plus_boost_error"
+                print("检测到 trojan-plus buffer_cast 错误，尝试生成补丁修复...")
+                apply_trojan_plus_buffer_cast_fix()
+                fix_applied_this_iteration = 1
+                last_fix_applied = "apply_trojan_plus_buffer_cast_fix"
+
                 else:
                     print("源码修复失败或未找到替换项")
 
