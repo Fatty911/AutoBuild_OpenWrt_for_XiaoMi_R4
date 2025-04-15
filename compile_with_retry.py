@@ -1000,8 +1000,6 @@ def main():
                 fix_applied_this_iteration = 1
                 last_fix_applied = "apply_trojan_plus_buffer_cast_fix"
 
-                else:
-                    print("源码修复失败或未找到替换项")
 
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
                 if gsl_fix_attempts < 2:  # 最多尝试修复两次
