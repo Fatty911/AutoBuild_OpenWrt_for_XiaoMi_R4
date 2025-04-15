@@ -445,112 +445,72 @@ def fix_makefile_separator(log_file):
     return fix_attempted == 1
 
 
-def fix_trojan_plus_boost_error(log_content):
-    """修复 trojan-plus 中的 boost::asio::buffer_cast 错误"""
-    print("修复 trojan-plus 中的 boost::asio::buffer_cast 错误...")
-    found_path = ""
-    
-    # 查找 trojan-plus 源码目录
-    try:
-        build_dirs = subprocess.check_output(
-            ["find", "build_dir", "-type", "d", "-path", "*/trojan-plus-*/src/core", "-print", "-quit"],
-            text=True
-        ).strip()
-        
-        if build_dirs:
-            trojan_src_dir = build_dirs.split("\n")[0]
-            service_cpp = os.path.join(trojan_src_dir, "service.cpp")
-            if os.path.isfile(service_cpp):
-                found_path = service_cpp
-                print(f"找到 trojan-plus 源码: {found_path}")
-            else:
-                print(f"在找到的目录 {trojan_src_dir} 中未找到 service.cpp")
-    except subprocess.SubprocessError:
-        print("在 build_dir 中搜索 trojan-plus 源码时出错")
-    
-    # 如果未找到，尝试从日志猜测
-    if not found_path:
-        print("未能在 build_dir 中动态找到 trojan-plus 源码路径，尝试基于日志猜测路径...")
-        try:
-            target_build_dir_match = re.search(r'(/[^ ]+)?build_dir/target-[^/]+/trojan-plus-[^/]+', log_content)
-            if target_build_dir_match:
-                target_build_dir = target_build_dir_match.group(0)
-                if os.path.isdir(target_build_dir):
-                    service_cpp = os.path.join(target_build_dir, "src/core/service.cpp")
-                    if os.path.isfile(service_cpp):
-                        found_path = service_cpp
-                        print(f"根据日志猜测找到 trojan-plus 源码: {found_path}")
-        except:
-            pass
-    
-    if not found_path:
-        print("无法定位 trojan-plus 的 service.cpp 文件，跳过修复。")
-        return False
-    
-    print(f"尝试修复 {found_path} ...")
-    
-    # 从日志中提取错误行号
-    error_match = re.search(r'service\.cpp:(\d+):\d+: error: \'buffer_cast\' is not a member of \'boost::asio\'', log_content)
-    if not error_match:
-        print("无法从日志中提取行号")
-        return False
-    line_num = int(error_match.group(1)) - 1  # 行号从 0 开始
-    
-    # 备份原文件
-    shutil.copy2(found_path, f"{found_path}.bak")
-    
-    # 读取文件内容
-    with open(found_path, 'r', errors='replace') as f:
-        lines = f.read().splitlines()
-    
-    if line_num >= len(lines):
-        print("行号超出文件范围")
-        shutil.move(f"{found_path}.bak", found_path)
-        return False
-    
-    # 打印错误行附近的内容
-    context_lines = 5
-    print("错误行附近的内容：")
-    for i in range(max(0, line_num - context_lines), min(len(lines), line_num + context_lines + 1)):
-        print(f"行 {i + 1}: {lines[i]}")
-    
-    # 在错误行上应用替换
-    line = lines[line_num]
-    # 特定于第 550 行的替换
-    if 'boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()))' in line:
-        new_line = line.replace(
-            'boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()))',
-            'static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data())'
-        )
-        print("应用了针对第 550 行的特定替换")
+def get_trojan_plus_version():
+    # 指定 Makefile 的路径
+    makefile_path = "package/feeds/small8/trojan-plus/Makefile"
+    if not os.path.exists(makefile_path):
+        print("未找到 trojan-plus 的 Makefile")
+        return None
+
+    # 读取 Makefile 文件内容
+    with open(makefile_path, 'r') as f:
+        content = f.read()
+
+    # 使用正则表达式提取 PKG_VERSION
+    version_match = re.search(r'PKG_VERSION:=([\d.]+)', content)
+    if version_match:
+        version = version_match.group(1)
+        print(f"检测到 trojan-plus 版本: {version}")
+        return version
     else:
-        # 通用正则表达式替换（备用）
-        pattern = r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+\([^)]*\)[^)]*)\s*\)'
-        replacement = r'static_cast<\1>(\2.data())'
-        new_line = re.sub(pattern, replacement, line)
-    
-    if new_line != line:
-        lines[line_num] = new_line
-        # 写回文件
-        with open(found_path, 'w') as f:
-            f.write('\n'.join(lines) + '\n')
-        
-        # 验证修复并打印修改后内容
-        with open(found_path, 'r') as f:
-            modified_lines = f.read().splitlines()
-            print("修改后 personally nearby content:")
-            for i in range(max(0, line_num - context_lines), min(len(modified_lines), line_num + context_lines + 1)):
-                print(f"行 {i + 1}: {modified_lines[i]}")
-            
-            print(f"已成功修改第 {line_num + 1} 行")
-            os.remove(f"{found_path}.bak")
-            return True
-    else:
-        print(f"未在第 {line_num + 1} 行找到需要替换的模式")
-        print(f"错误行内容: {line}")
-        print("正则表达式可能需要调整")
-        shutil.move(f"{found_path}.bak", found_path)
+        print("无法从 Makefile 中提取 PKG_VERSION")
+        return None
+
+def fix_trojan_plus_boost_error():
+    # 获取版本号
+    version = get_trojan_plus_version()
+    if not version:
         return False
+
+    # 动态构建源代码路径
+    source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
+    if not os.path.exists(source_path):
+        print(f"未找到 trojan-plus 源代码: {source_path}")
+        return False
+
+    # 读取源文件内容
+    with open(source_path, 'r') as f:
+        lines = f.readlines()
+
+    # 查找并替换 boost::asio::buffer_cast
+    modified = False
+    for i, line in enumerate(lines):
+        if 'boost::asio::buffer_cast' in line:
+            # 使用正则表达式匹配 buffer_cast 的使用模式
+            match = re.search(r'boost::asio::buffer_cast\s*<\s*(\w+\s*\*?)\s*>\s*\(\s*([^)]+)\s*\)', line)
+            if match:
+                type_cast = match.group(1)  # 类型，例如 "char *" 或 "uint8_t"
+                buffer_expr = match.group(2)  # 缓冲区表达式，例如 "buffer"
+                new_expr = f'static_cast<{type_cast}>({buffer_expr}.data())'
+                new_line = line.replace(match.group(0), new_expr)
+                lines[i] = new_line
+                print(f"已替换第 {i+1} 行: {line.strip()} -> {new_line.strip()}")
+                modified = True
+
+    # 如果有修改，写回文件
+    if modified:
+        with open(source_path, 'w') as f:
+            f.writelines(lines)
+
+        # 清理并重新编译
+        print("清理并重新编译以应用更改...")
+        subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=True)
+        subprocess.run(["make", "package/feeds/small8/trojan-plus/compile", "V=s"], check=True)
+        return True
+    else:
+        print("未找到需要替换的内容")
+        return False
+
 
 
 
