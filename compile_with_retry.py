@@ -502,51 +502,43 @@ def compile_trojan_plus():
     subprocess.run(["make", "package/feeds/small8/trojan-plus/compile", "V=s"], check=True)
 
 def fix_trojan_plus_boost_error(log_content=None):
-    """直接修改 trojan-plus 源码中的 boost::asio::buffer_cast 为 static_cast"""
     try:
+        clean_all_trojan_patches()
+
         version = get_trojan_plus_version()
         source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
-
         if not os.path.exists(source_path):
             print(f"[错误] 找不到源码文件: {source_path}")
             return False
 
         with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
+            lines = f.readlines()
 
-        # 匹配 boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()))
-        pattern = re.compile(
-            r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\))\s*\)'
-        )
-        matches = pattern.findall(content)
+        modified = False
+        for idx, line in enumerate(lines):
+            if 'boost::asio::buffer_cast' in line and 'udp_read_buf.prepare' in line:
+                print(f"[替换] 第 {idx+1} 行包含 buffer_cast，准备替换")
+                lines[idx] = re.sub(
+                    r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\))\s*\)',
+                    r'static_cast<char*>(\1.data())',
+                    line
+                )
+                modified = True
 
-        if not matches:
-            print("未找到 boost::asio::buffer_cast 相关代码，跳过修改")
+        if not modified:
+            print("[信息] 未找到需要替换的 buffer_cast 行")
             return False
-
-        print(f"找到 {len(matches)} 处 boost::asio::buffer_cast 调用，准备替换为 static_cast")
-
-        new_content = pattern.sub(r'static_cast<char*>(\1.data())', content)
 
         # 备份原文件
         backup_path = source_path + ".bak"
         shutil.copy2(source_path, backup_path)
-        print(f"已备份原始文件到: {backup_path}")
+        print(f"[备份] 已备份原始文件到: {backup_path}")
 
         with open(source_path, 'w', encoding='utf-8') as f:
-            f.write(new_content)
+            f.writelines(lines)
 
-        print("已完成源码修改，准备清理构建目录并重新编译...")
+        print("[完成] 已替换 buffer_cast 为 static_cast")
 
-        # 删除所有补丁，避免再次失败
-        patch_dir = "package/feeds/small8/trojan-plus/patches"
-        for patch_file in os.listdir(patch_dir):
-            if patch_file.endswith(".patch"):
-                full_patch_path = os.path.join(patch_dir, patch_file)
-                os.remove(full_patch_path)
-                print(f"已删除补丁文件: {full_patch_path}")
-
-        # 清理构建目录
         subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=False)
 
         return True
@@ -554,6 +546,7 @@ def fix_trojan_plus_boost_error(log_content=None):
     except Exception as e:
         print(f"[异常] 修复 trojan-plus 出错: {e}")
         return False
+
 
 
 
