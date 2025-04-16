@@ -203,48 +203,48 @@ def fix_lua_neturl_directory():
 
 def fix_patch_application(log_file):
 
-   """修复补丁应用失败的问题"""
-
-   print("检测到补丁应用失败，尝试修复...")
-
-   with open(log_file, 'r', errors='replace') as f:
-
-       log_content = f.read()
-
-   if "Patch failed" not in log_content and "Only garbage was found in the patch input" not in log_content and "unexpected end of file in patch" not in log_content:
-
-       return False
-
-   # 提取补丁文件路径
-
-   patch_file_match = re.search(r'Applying (.+) using plaintext:', log_content)
-
-   if not patch_file_match:
-
-       print("无法提取补丁文件路径，跳过修复。")
-
-       return False
-
-   patch_file = patch_file_match.group(1).strip()
-
-   print(f"补丁文件: {patch_file}")
-
-   if "Only garbage was found in the patch input" in log_content or "unexpected end of file in patch" in log_content:
-
-       print("补丁格式无效，自动删除补丁文件以跳过应用...")
-
-       try:
-
+    """修复补丁应用失败的问题"""
+    
+    print("检测到补丁应用失败，尝试修复...")
+    
+    with open(log_file, 'r', errors='replace') as f:
+    
+        log_content = f.read()
+    
+    if "Patch failed" not in log_content and "Only garbage was found in the patch input" not in log_content and "unexpected end of file in patch" not in log_content:
+    
+        return False
+    
+    # 提取补丁文件路径
+    
+    patch_file_match = re.search(r'Applying (.+) using plaintext:', log_content)
+    
+    if not patch_file_match:
+    
+        print("无法提取补丁文件路径，跳过修复。")
+        
+        return False
+    
+    patch_file = patch_file_match.group(1).strip()
+    
+    print(f"补丁文件: {patch_file}")
+    
+    if "Only garbage was found in the patch input" in log_content or "unexpected end of file in patch" in log_content:
+    
+        print("补丁格式无效，自动删除补丁文件以跳过应用...")
+        
+        try:
+        
            os.remove(patch_file)
-
+        
            print(f"已删除无效补丁文件: {patch_file}")
-
-       except Exception as e:
-
+        
+        except Exception as e:
+        
            print(f"删除补丁失败: {e}")
-
-       return True  # 返回 True 表示应用了修复（删除补丁）
-
+        
+        return True  # 返回 True 表示应用了修复（删除补丁）
+    
     if "trojan-plus" in patch_file:
         print("检测到 trojan-plus 补丁失败，尝试直接修改源代码...")
         trojan_build_dir = find_trojan_build_dir()
@@ -328,7 +328,7 @@ def fix_patch_application(log_file):
     elif "lua-neturl" in patch_file:
         print("检测到 lua-neturl 补丁失败，调用专用修复函数...")
         return fix_lua_neturl_directory()
-
+    
     else:
         print("非 trojan-plus 或 lua-neturl 的补丁失败，跳过修复。")
         return False
