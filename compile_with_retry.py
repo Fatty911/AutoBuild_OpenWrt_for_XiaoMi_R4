@@ -409,6 +409,12 @@ def fix_trojan_plus_boost_error():
                 return f"static_cast<{type_str}>({expr}.data())"
             new_content = re.sub(pattern, replace_buffer_cast, content)
 
+            # 修复脚本生成的错误代码
+            new_content = new_content.replace("n.data()", "n")
+            new_content = new_content.replace("char_length.data()", "char_length")
+            new_content = new_content.replace("target.data(.data())", "target.data()")
+            new_content = new_content.replace("append_buf.data(.data())", "append_buf.data()")
+
             if new_content != content:
                 backup_path = source_path + ".bak"
                 shutil.copy2(source_path, backup_path)
