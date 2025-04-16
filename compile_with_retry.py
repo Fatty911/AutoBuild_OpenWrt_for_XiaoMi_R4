@@ -399,19 +399,53 @@ def fix_trojan_plus_boost_error():
                 continue
 
             with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
-                content = f.read()
+                lines = f.readlines()
 
-            # 匹配 buffer_cast 的模式
-            pattern = r'boost::asio::buffer_cast\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
-            new_content = re.sub(pattern, r'static_cast<\1>(\2.data())', content)
+            new_lines = []
+            modified = False
+            for line in lines:
+                if 'buffer_cast' in line:
+                    # 提取 buffer_cast 的类型和表达式
+                    pattern = r'boost::asio::buffer_cast\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
+                    match = re.search(pattern, line)
+                    if match:
+                        type_str = match.group(1).strip()
+                        expr = match.group(2).strip()
+                        # 检查表达式中是否有嵌套调用
+                        if 'prepare(' in expr:
+                            # 对于 prepare() 的调用，data() 应该应用于 prepare() 结果
+                            new_expr = f"static_cast<{type_str}>({expr}.data())"
+                            new_line = line.replace(match.group(0), new_expr)
+                            print(f"[替换] 在 {source_path} 中替换 '{match.group(0)}' 为 '{new_expr}'")
+                            new_lines.append(new_line)
+                            modified = True
+                        elif 'data(' in expr or 'data()' in expr:
+                            # 对于已经包含 data() 的表达式，直接替换 buffer_cast 为 static_cast
+                            new_expr = f"static_cast<{type_str}>({expr})"
+                            new_line = line.replace(match.group(0), new_expr)
+                            print(f"[替换] 在 {source_path} 中替换 '{match.group(0)}' 为 '{new_expr}'")
+                            new_lines.append(new_line)
+                            modified = True
+                        else:
+                            # 其他情况，直接替换为 static_cast 并添加 data()
+                            new_expr = f"static_cast<{type_str}>({expr}.data())"
+                            new_line = line.replace(match.group(0), new_expr)
+                            print(f"[替换] 在 {source_path} 中替换 '{match.group(0)}' 为 '{new_expr}'")
+                            new_lines.append(new_line)
+                            modified = True
+                    else:
+                        print(f"[警告] 在 {source_path} 中找到 buffer_cast，但无法匹配正则表达式: {line.strip()}")
+                        new_lines.append(line)
+                else:
+                    new_lines.append(line)
 
-            if new_content != content:
+            if modified:
                 backup_path = source_path + ".bak"
                 shutil.copy2(source_path, backup_path)
                 print(f"[备份] 已备份原始文件到: {backup_path}")
                 
                 with open(source_path, 'w', encoding='utf-8') as f:
-                    f.write(new_content)
+                    f.writelines(new_lines)
                 print(f"[完成] 已替换 {source_path} 中的 buffer_cast 为 static_cast")
                 fix_applied = True
             else:
