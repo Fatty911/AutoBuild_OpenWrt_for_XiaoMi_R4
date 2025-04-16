@@ -401,40 +401,24 @@ def fix_trojan_plus_boost_error():
             with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
 
-            # 模糊匹配并替换 buffer_cast
-            pattern = r'boost::asio::buffer_cast\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
+            # 修复已损坏的代码：移除错误插入的 (.data())
+            content = content.replace("config.get_udp_recv_buf(.data())", "config.get_udp_recv_buf()")
+            content = content.replace("append_buf.data(.data())", "append_buf.data()")
+            content = content.replace("target.prepare(n.data())", "target.prepare(n)")
+            content = content.replace("target.prepare(char_length.data())", "target.prepare(char_length)")
+            content = content.replace("target.data(.data())", "target.data()")
+
+            # 替换 boost::asio::buffer_cast 为 static_cast 并添加 .data()
+            pattern = r'(boost::asio::buffer_cast|static_cast)\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
             def replace_buffer_cast(match):
-                type_str = match.group(1).strip()
-                expr = match.group(2).strip()
+                type_str = match.group(2).strip()
+                expr = match.group(3).strip()
+                # 如果已经有 static_cast<void*> 嵌套，去掉多余层级
+                if expr.startswith("static_cast<void*>(") and expr.endswith(")"):
+                    expr = expr[len("static_cast<void*>("):-1]
                 return f"static_cast<{type_str}>({expr}.data())"
             new_content = re.sub(pattern, replace_buffer_cast, content)
 
-            # 如果正则替换未成功，且是 service.cpp，硬编码修复第550行附近
-            if new_content == content and 'service.cpp' in source_path:
-                lines = content.splitlines()
-                new_lines = []
-                modified = False
-                for i, line in enumerate(lines):
-                    if 'buffer_cast' in line and 'udp_read_buf.prepare' in line:
-                        original = line
-                        # 手动构建正确的替换代码
-                        start_idx = line.find('boost::asio::buffer_cast')
-                        end_idx = line.find(')', start_idx)
-                        if start_idx != -1 and end_idx != -1:
-                            expr_part = line[start_idx+len('boost::asio::buffer_cast<char*>('):end_idx]
-                            new_line = line[:start_idx] + f"static_cast<char*>({expr_part}.data())" + line[end_idx+1:]
-                            new_lines.append(new_line)
-                            modified = True
-                            print(f"[硬编码替换] 在 {source_path} 行 {i+1} 替换 '{original.strip()}' 为 '{new_line.strip()}'")
-                        else:
-                            new_lines.append(line)
-                    else:
-                        new_lines.append(line)
-                if modified:
-                    new_content = '\n'.join(new_lines)
-                    fix_applied = True
-
-            # 如果有任何替换发生，保存文件
             if new_content != content:
                 backup_path = source_path + ".bak"
                 shutil.copy2(source_path, backup_path)
@@ -447,6 +431,11 @@ def fix_trojan_plus_boost_error():
             else:
                 print(f"[信息] 未找到需要替换的 buffer_cast 行在 {source_path}")
 
+        # 如果替换成功，尝试清理缓存以确保编译从新文件开始
+        if fix_applied:
+            os.system("make package/feeds/small8/trojan-plus/clean V=s")
+            print("[清理] 已清理 trojan-plus 缓存，确保从新文件开始编译")
+            
         return fix_applied
 
     except Exception as e:
