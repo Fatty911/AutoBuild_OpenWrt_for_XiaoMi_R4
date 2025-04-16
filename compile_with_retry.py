@@ -401,21 +401,11 @@ def fix_trojan_plus_boost_error():
             with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
 
-            # 修复已损坏的代码：移除错误插入的 (.data())
-            content = content.replace("config.get_udp_recv_buf(.data())", "config.get_udp_recv_buf()")
-            content = content.replace("append_buf.data(.data())", "append_buf.data()")
-            content = content.replace("target.prepare(n.data())", "target.prepare(n)")
-            content = content.replace("target.prepare(char_length.data())", "target.prepare(char_length)")
-            content = content.replace("target.data(.data())", "target.data()")
-
             # 替换 boost::asio::buffer_cast 为 static_cast 并添加 .data()
-            pattern = r'(boost::asio::buffer_cast|static_cast)\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
+            pattern = r'boost::asio::buffer_cast\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
             def replace_buffer_cast(match):
-                type_str = match.group(2).strip()
-                expr = match.group(3).strip()
-                # 如果已经有 static_cast<void*> 嵌套，去掉多余层级
-                if expr.startswith("static_cast<void*>(") and expr.endswith(")"):
-                    expr = expr[len("static_cast<void*>("):-1]
+                type_str = match.group(1).strip()
+                expr = match.group(2).strip()
                 return f"static_cast<{type_str}>({expr}.data())"
             new_content = re.sub(pattern, replace_buffer_cast, content)
 
@@ -431,11 +421,6 @@ def fix_trojan_plus_boost_error():
             else:
                 print(f"[信息] 未找到需要替换的 buffer_cast 行在 {source_path}")
 
-        # 如果替换成功，尝试清理缓存以确保编译从新文件开始
-        if fix_applied:
-            os.system("make package/feeds/small8/trojan-plus/clean V=s")
-            print("[清理] 已清理 trojan-plus 缓存，确保从新文件开始编译")
-            
         return fix_applied
 
     except Exception as e:
@@ -790,6 +775,7 @@ def main():
         # 如果需要修复 trojan-plus，则先运行 prepare 阶段并修改源代码
         if trojan_fix_needed:
             print("应用 trojan-plus buffer_cast 修复...")
+            subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
             subprocess.run(["make", "package/feeds/small8/trojan-plus/prepare", "V=s"], shell=True)
             if fix_trojan_plus_boost_error():
                 fix_applied_this_iteration = 1
