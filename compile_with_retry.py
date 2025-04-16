@@ -401,37 +401,49 @@ def fix_trojan_plus_boost_error():
             with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
 
-            # 针对已知问题行进行硬编码替换
-            if 'service.cpp' in source_path:
-                # 针对第550行或类似行替换
-                original = "boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()))"
-                replacement = "static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data())"
-                if original in content:
-                    content = content.replace(original, replacement)
-                    print(f"[硬编码替换] 在 {source_path} 中替换 '{original}' 为 '{replacement}'")
-                    fix_applied = True
-            elif 'utils.cpp' in source_path:
-                # 针对 utils.cpp 中的常见 buffer_cast 用法进行替换
-                patterns = [
-                    ("boost::asio::buffer_cast<uint8_t*>(target.prepare(n))", "static_cast<uint8_t*>(target.prepare(n).data())"),
-                    ("boost::asio::buffer_cast<const uint8_t*>(append_buf.data())", "static_cast<const uint8_t*>(append_buf.data().data())"),
-                    ("boost::asio::buffer_cast<char*>(target.prepare(char_length))", "static_cast<char*>(target.prepare(char_length).data())"),
-                    ("boost::asio::buffer_cast<const char*>(target.data())", "static_cast<const char*>(target.data().data())")
-                ]
-                for original, replacement in patterns:
-                    if original in content:
-                        content = content.replace(original, replacement)
-                        print(f"[硬编码替换] 在 {source_path} 中替换 '{original}' 为 '{replacement}'")
-                        fix_applied = True
+            # 模糊匹配并替换 buffer_cast
+            pattern = r'boost::asio::buffer_cast\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
+            def replace_buffer_cast(match):
+                type_str = match.group(1).strip()
+                expr = match.group(2).strip()
+                return f"static_cast<{type_str}>({expr}.data())"
+            new_content = re.sub(pattern, replace_buffer_cast, content)
 
-            if fix_applied:
+            # 如果正则替换未成功，且是 service.cpp，硬编码修复第550行附近
+            if new_content == content and 'service.cpp' in source_path:
+                lines = content.splitlines()
+                new_lines = []
+                modified = False
+                for i, line in enumerate(lines):
+                    if 'buffer_cast' in line and 'udp_read_buf.prepare' in line:
+                        original = line
+                        # 手动构建正确的替换代码
+                        start_idx = line.find('boost::asio::buffer_cast')
+                        end_idx = line.find(')', start_idx)
+                        if start_idx != -1 and end_idx != -1:
+                            expr_part = line[start_idx+len('boost::asio::buffer_cast<char*>('):end_idx]
+                            new_line = line[:start_idx] + f"static_cast<char*>({expr_part}.data())" + line[end_idx+1:]
+                            new_lines.append(new_line)
+                            modified = True
+                            print(f"[硬编码替换] 在 {source_path} 行 {i+1} 替换 '{original.strip()}' 为 '{new_line.strip()}'")
+                        else:
+                            new_lines.append(line)
+                    else:
+                        new_lines.append(line)
+                if modified:
+                    new_content = '\n'.join(new_lines)
+                    fix_applied = True
+
+            # 如果有任何替换发生，保存文件
+            if new_content != content:
                 backup_path = source_path + ".bak"
                 shutil.copy2(source_path, backup_path)
                 print(f"[备份] 已备份原始文件到: {backup_path}")
                 
                 with open(source_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
+                    f.write(new_content)
                 print(f"[完成] 已替换 {source_path} 中的 buffer_cast 为 static_cast")
+                fix_applied = True
             else:
                 print(f"[信息] 未找到需要替换的 buffer_cast 行在 {source_path}")
 
