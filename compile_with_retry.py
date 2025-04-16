@@ -401,15 +401,9 @@ def fix_trojan_plus_boost_error():
             with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
                 content = f.read()
 
-            # 匹配所有可能的 buffer_cast 用法，包括不同的类型参数
-            pattern = r'boost::asio::buffer_cast\s*<\s*[^>]+>\s*\(\s*([^)]+)\)'
-            new_content = re.sub(pattern, r'static_cast<\g<0>>(static_cast<void*>(\1.data()))', content)
-            
-            # 如果上面的替换未完全生效，尝试更简单的替换逻辑
-            if new_content == content:
-                pattern = r'boost::asio::buffer_cast\s*<\s*[^>]+>\s*\(\s*'
-                new_content = re.sub(pattern, r'static_cast<', content)
-                new_content = re.sub(r'static_cast<([^>]+)>\s*\(\s*([^)]+)\)\s*', r'static_cast<\1>(static_cast<void*>(\2.data()))', new_content)
+            # 匹配 buffer_cast 的模式
+            pattern = r'boost::asio::buffer_cast\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
+            new_content = re.sub(pattern, r'static_cast<\1>(\2.data())', content)
 
             if new_content != content:
                 backup_path = source_path + ".bak"
