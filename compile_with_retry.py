@@ -387,29 +387,43 @@ def fix_trojan_plus_boost_error():
     """直接修改 trojan-plus 源代码以修复 buffer_cast 错误"""
     try:
         version = get_trojan_plus_version()
-        source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
-        if not os.path.exists(source_path):
-            print(f"[错误] 找不到源码文件: {source_path}")
-            return False
+        source_files = [
+            f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp",
+            f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/utils.cpp"
+        ]
+        fix_applied = False
 
-        with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
-            content = f.read()
+        for source_path in source_files:
+            if not os.path.exists(source_path):
+                print(f"[错误] 找不到源码文件: {source_path}")
+                continue
 
-        pattern = r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*\(\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*\)\s*\))\s*\)'
-        new_content = re.sub(pattern, r'static_cast<char*>(\1.data())', content)
-        
-        if new_content != content:
-            backup_path = source_path + ".bak"
-            shutil.copy2(source_path, backup_path)
-            print(f"[备份] 已备份原始文件到: {backup_path}")
+            with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+
+            # 匹配所有可能的 buffer_cast 用法，包括不同的类型参数
+            pattern = r'boost::asio::buffer_cast\s*<\s*[^>]+>\s*\(\s*([^)]+)\)'
+            new_content = re.sub(pattern, r'static_cast<\g<0>>(static_cast<void*>(\1.data()))', content)
             
-            with open(source_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
-            print("[完成] 已替换 buffer_cast 为 static_cast")
-            return True
-        else:
-            print("[信息] 未找到需要替换的 buffer_cast 行")
-            return False
+            # 如果上面的替换未完全生效，尝试更简单的替换逻辑
+            if new_content == content:
+                pattern = r'boost::asio::buffer_cast\s*<\s*[^>]+>\s*\(\s*'
+                new_content = re.sub(pattern, r'static_cast<', content)
+                new_content = re.sub(r'static_cast<([^>]+)>\s*\(\s*([^)]+)\)\s*', r'static_cast<\1>(static_cast<void*>(\2.data()))', new_content)
+
+            if new_content != content:
+                backup_path = source_path + ".bak"
+                shutil.copy2(source_path, backup_path)
+                print(f"[备份] 已备份原始文件到: {backup_path}")
+                
+                with open(source_path, 'w', encoding='utf-8') as f:
+                    f.write(new_content)
+                print(f"[完成] 已替换 {source_path} 中的 buffer_cast 为 static_cast")
+                fix_applied = True
+            else:
+                print(f"[信息] 未找到需要替换的 buffer_cast 行在 {source_path}")
+
+        return fix_applied
 
     except Exception as e:
         print(f"[异常] 修复 trojan-plus 出错: {e}")
