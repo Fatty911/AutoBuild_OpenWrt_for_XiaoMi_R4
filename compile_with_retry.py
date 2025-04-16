@@ -16,8 +16,7 @@ import time
 import shutil
 from pathlib import Path
 import requests
-import urllib.request
-import json
+
 
 def get_relative_path(path):
     """获取相对路径"""
@@ -33,6 +32,7 @@ def get_relative_path(path):
         return os.path.relpath(path, current_pwd)
     except:
         return path
+
 def find_trojan_build_dir():
     """动态查找 trojan-plus 的构建目录"""
     try:
@@ -46,7 +46,6 @@ def find_trojan_build_dir():
     except subprocess.CalledProcessError:
         pass
     return None
-    
 
 def fix_gsl_include_error(log_file, attempt_count=0):
     print("检测到 'at' is not a member of 'std' 错误，尝试修复...")
@@ -58,41 +57,34 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     
     config_cpp_path = os.path.join(trojan_build_dir, "src/core/config.cpp")
     
-    # 检查文件是否存在
     if not os.path.exists(config_cpp_path):
         print(f"无法找到 config.cpp 文件: {config_cpp_path}")
         return False
     
-    # 备份原文件
     backup_path = f"{config_cpp_path}.bak"
     shutil.copy2(config_cpp_path, backup_path)
     print(f"已备份 {config_cpp_path} 到 {backup_path}")
     
-    # 读取文件内容
     with open(config_cpp_path, 'r') as f:
         content = f.read()
     
-    # 调试：打印修改前的第 647 行附近内容
     lines = content.splitlines()
     if len(lines) >= 647:
         print("修改前第647行附近的内容：")
         for i in range(max(0, 646), min(len(lines), 650)):
             print(f"行 {i+1}: {lines[i].strip()}")
     
-    # 替换 std::at 为直接索引
     original_content = content
-    content = re.sub(r'std::at\s*$\s*mdString\s*,\s*([^)]+)$', r'mdString[\1]', content)
+    content = re.sub(r'std::at\s*\(\s*mdString\s*,\s*([^)]+)\)', r'mdString[\1]', content)
     if content != original_content:
         print("已将 config.cpp 中的 std::at 替换为直接索引")
     else:
         print("替换逻辑未触发，可能正则表达式未匹配到代码")
     
-    # 写入修改后的内容
     with open(config_cpp_path, 'w') as f:
         f.write(content)
     print(f"已更新 {config_cpp_path}")
     
-    # 调试：打印修改后的第 647 行附近内容
     with open(config_cpp_path, 'r') as f:
         lines = f.read().splitlines()
     if len(lines) >= 647:
@@ -100,12 +92,10 @@ def fix_gsl_include_error(log_file, attempt_count=0):
         for i in range(max(0, 646), min(len(lines), 650)):
             print(f"行 {i+1}: {lines[i].strip()}")
     
-    # 清理构建目录以确保使用修改后的代码
     if attempt_count < 2:
         print("清理 trojan-plus 构建目录...")
         subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
         
-        # 删除整个构建目录以强制重新提取源代码
         build_dir = os.path.dirname(trojan_build_dir)
         trojan_build_path = os.path.join(build_dir, "trojan-plus-10.0.3")
         if os.path.exists(trojan_build_path):
@@ -114,16 +104,8 @@ def fix_gsl_include_error(log_file, attempt_count=0):
     
     return True
 
-
-
-
-
-
-
-
-
 def fix_lua_neturl_directory():
-    """修复 lua-neturl 的 Makefile 和补丁，动态设置 PKG_BUILD_DIR 并隔离备份补丁"""
+    """修复 lua-neturl 的 Makefile 和补丁"""
     makefile_path = "feeds/small8/lua-neturl/Makefile"
     patch_dir = "feeds/small8/lua-neturl/patches"
     excluded_dir = os.path.join(patch_dir, "excluded")
@@ -135,7 +117,6 @@ def fix_lua_neturl_directory():
     with open(makefile_path, 'r') as f:
         content = f.read()
     
-    # 提取 PKG_SOURCE
     pkg_source_match = re.search(r'PKG_SOURCE:=([^\n]+)', content)
     if not pkg_source_match:
         print("无法找到 PKG_SOURCE 定义，无法动态设置 PKG_BUILD_DIR")
@@ -143,7 +124,6 @@ def fix_lua_neturl_directory():
     
     pkg_source = pkg_source_match.group(1).strip()
     
-    # 动态确定解压目录名
     archive_extensions = ['.tar.gz', '.tar.bz2', '.tar.xz', '.zip']
     subdir = pkg_source
     for ext in archive_extensions:
@@ -155,7 +135,6 @@ def fix_lua_neturl_directory():
         print(f"无法从 PKG_SOURCE '{pkg_source}' 解析有效的解压目录名")
         return False
     
-    # 检查并设置 PKG_BUILD_DIR
     build_dir_line = f"PKG_BUILD_DIR:=$(BUILD_DIR)/{subdir}\n"
     modified = False
     if "PKG_BUILD_DIR:=" not in content:
@@ -170,14 +149,11 @@ def fix_lua_neturl_directory():
     else:
         print("Makefile 已有 PKG_BUILD_DIR 定义，继续检查补丁")
     
-    # 保存修改后的 Makefile
     if modified:
         with open(makefile_path, 'w') as f:
             f.write(content)
     
-    # 隔离备份补丁
     if os.path.exists(patch_dir):
-        # 创建 excluded 子目录
         os.makedirs(excluded_dir, exist_ok=True)
         for patch_file in os.listdir(patch_dir):
             if patch_file.endswith('.bak') or patch_file.endswith('.bak.excluded'):
@@ -194,156 +170,48 @@ def fix_lua_neturl_directory():
         print("无需进一步修复，Makefile 和补丁已正确配置")
         return False
 
-
-
-
-
-
-
-
 def fix_patch_application(log_file):
-
     """修复补丁应用失败的问题"""
-    
     print("检测到补丁应用失败，尝试修复...")
     
     with open(log_file, 'r', errors='replace') as f:
-    
         log_content = f.read()
     
     if "Patch failed" not in log_content and "Only garbage was found in the patch input" not in log_content and "unexpected end of file in patch" not in log_content:
-    
         return False
     
-    # 提取补丁文件路径
-    
     patch_file_match = re.search(r'Applying (.+) using plaintext:', log_content)
-    
     if not patch_file_match:
-    
         print("无法提取补丁文件路径，跳过修复。")
-        
         return False
     
     patch_file = patch_file_match.group(1).strip()
-    
     print(f"补丁文件: {patch_file}")
     
     if "Only garbage was found in the patch input" in log_content or "unexpected end of file in patch" in log_content:
-    
         print("补丁格式无效，自动删除补丁文件以跳过应用...")
-        
         try:
-        
-           os.remove(patch_file)
-        
-           print(f"已删除无效补丁文件: {patch_file}")
-        
+            os.remove(patch_file)
+            print(f"已删除无效补丁文件: {patch_file}")
         except Exception as e:
-        
-           print(f"删除补丁失败: {e}")
-        
-        return True  # 返回 True 表示应用了修复（删除补丁）
+            print(f"删除补丁失败: {e}")
+        return True
     
     if "trojan-plus" in patch_file:
-        print("检测到 trojan-plus 补丁失败，尝试直接修改源代码...")
-        trojan_build_dir = find_trojan_build_dir()
-        if not trojan_build_dir:
-            print("无法找到 trojan-plus 的构建目录")
-            return False
-        
-        service_cpp_path = os.path.join(trojan_build_dir, "src/core/service.cpp")
-        if not os.path.exists(service_cpp_path):
-            print(f"无法找到 service.cpp 文件: {service_cpp_path}")
-            return False
-        
-        with open(service_cpp_path, 'r') as f:
-            content = f.read()
-        
-        pattern = r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\)\s*\)'
-        matches = re.findall(pattern, content)
-        if matches:
-            print(f"找到 {len(matches)} 处 boost::asio::buffer_cast 调用，准备替换")
-            new_content = re.sub(
-                pattern,
-                r'static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data())',
-                content
-            )
-            if new_content != content:
-                with open(service_cpp_path, 'w') as f:
-                    f.write(new_content)
-                print("已直接修改 service.cpp 文件")
-        
-                import difflib
-                diff = difflib.unified_diff(
-                    content.splitlines(keepends=True),
-                    new_content.splitlines(keepends=True),
-                    fromfile='a/src/core/service.cpp',
-                    tofile='b/src/core/service.cpp'
-                )
-                with open(patch_file, 'w') as f:
-                    f.writelines(diff)
-                print(f"已生成新的补丁文件: {patch_file}")
-        
-                subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
-                return True
-            else:
-                print("替换后内容未改变，可能是正则表达式匹配但未成功替换")
-                return False
-        else:
-            print("未找到 boost::asio::buffer_cast 调用，尝试更宽松的匹配...")
-            pattern_loose = r'boost::asio::buffer_cast\s*<\s*[^>]*\s*>\s*$\s*udp_read_buf\.prepare\s*\(\s*[^)]*\s*$\s*\)'
-            matches_loose = re.findall(pattern_loose, content)
-            if matches_loose:
-                print(f"找到 {len(matches_loose)} 处宽松匹配的 boost::asio::buffer_cast 调用，准备替换")
-                new_content = re.sub(
-                    pattern_loose,
-                    r'static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data())',
-                    content
-                )
-                if new_content != content:
-                    with open(service_cpp_path, 'w') as f:
-                        f.write(new_content)
-                    print("已直接修改 service.cpp 文件")
-        
-                    import difflib
-                    diff = difflib.unified_diff(
-                        content.splitlines(keepends=True),
-                        new_content.splitlines(keepends=True),
-                        fromfile='a/src/core/service.cpp',
-                        tofile='b/src/core/service.cpp'
-                    )
-                    with open(patch_file, 'w') as f:
-                        f.writelines(diff)
-                    print(f"已生成新的补丁文件: {patch_file}")
-        
-                    subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
-                    return True
-                else:
-                    print("宽松匹配替换后内容未改变")
-                    return False
-            else:
-                print("仍未找到 boost::asio::buffer_cast 调用，跳过替换")
-                return False
+        print("检测到 trojan-plus 补丁失败，已在主逻辑中处理，直接返回。")
+        return True
     elif "lua-neturl" in patch_file:
         print("检测到 lua-neturl 补丁失败，调用专用修复函数...")
         return fix_lua_neturl_directory()
-    
     else:
         print("非 trojan-plus 或 lua-neturl 的补丁失败，跳过修复。")
         return False
-
-
-
-
-
 
 def fix_makefile_separator(log_file):
     """修复 Makefile "missing separator" 错误"""
     print("检测到 'missing separator' 错误，尝试修复...")
     fix_attempted = 0
     
-    # 从日志中提取错误行信息
     with open(log_file, 'r', errors='replace') as f:
         log_content = f.read()
     
@@ -356,11 +224,9 @@ def fix_makefile_separator(log_file):
     line_num = int(error_line_match.group(2))
     print(f"从错误行提取: 文件名部分='{makefile_name_from_err}', 行号='{line_num}'")
     
-    # 查找最近的 "Entering directory" 以确定上下文目录
     error_line_info = error_line_match.group(0)
     context_dir = None
     
-    # 反向搜索日志查找目录上下文
     log_lines = log_content.splitlines()
     error_line_index = next((i for i, line in enumerate(log_lines) if error_line_info in line), -1)
     
@@ -384,7 +250,6 @@ def fix_makefile_separator(log_file):
             print("错误: 无法定位 Makefile 文件。")
             return False
     
-    # 获取相对路径
     makefile_path_rel = get_relative_path(full_makefile_path)
     if not makefile_path_rel and os.path.isfile(full_makefile_path):
         makefile_path_rel = full_makefile_path
@@ -392,7 +257,6 @@ def fix_makefile_separator(log_file):
     
     print(f"确定出错的 Makefile: {makefile_path_rel}, 行号: {line_num}")
     
-    # 检查并修复文件（包括子文件）
     if os.path.isfile(makefile_path_rel) and line_num and str(line_num).isdigit():
         with open(makefile_path_rel, 'r', errors='replace') as f:
             makefile_lines = f.readlines()
@@ -401,7 +265,6 @@ def fix_makefile_separator(log_file):
             line_content = makefile_lines[line_num-1].rstrip('\n')
             print(f"第 {line_num} 行内容: '{line_content}'")
             
-            # 检查是否为 include 语句
             include_match = re.match(r'^\s*include\s+(.+)', line_content)
             if include_match:
                 subfile = include_match.group(1).strip()
@@ -429,7 +292,6 @@ def fix_makefile_separator(log_file):
                         with open(subfile_path, 'w') as f:
                             f.writelines(subfile_lines)
                         
-                        # 验证修复
                         with open(subfile_path, 'r') as f:
                             if any(line.startswith('\t') for line in f):
                                 print(f"成功修复子文件 {subfile_path} 的缩进。")
@@ -441,7 +303,6 @@ def fix_makefile_separator(log_file):
                 else:
                     print(f"警告: 子文件 {subfile_path} 不存在，跳过检查。")
             
-            # 检查当前行是否需要修复缩进
             if re.match(r'^[ ]+', line_content) and not re.match(r'^\t', line_content):
                 print(f"检测到第 {line_num} 行使用空格缩进，替换为 TAB...")
                 shutil.copy2(makefile_path_rel, f"{makefile_path_rel}.bak")
@@ -450,7 +311,6 @@ def fix_makefile_separator(log_file):
                 with open(makefile_path_rel, 'w') as f:
                     f.writelines(makefile_lines)
                 
-                # 验证修复
                 with open(makefile_path_rel, 'r') as f:
                     fixed_lines = f.readlines()
                     if line_num <= len(fixed_lines) and fixed_lines[line_num-1].startswith('\t'):
@@ -481,7 +341,6 @@ def fix_makefile_separator(log_file):
     else:
         print(f"文件 '{makefile_path_rel}' 不存在或行号无效。")
     
-    # 清理相关目录
     pkg_dir = os.path.dirname(makefile_path_rel)
     if os.path.isdir(pkg_dir) and (re.match(r'^(package|feeds|tools|toolchain)/', pkg_dir) or pkg_dir == "."):
         if pkg_dir == ".":
@@ -500,7 +359,6 @@ def fix_makefile_separator(log_file):
     else:
         print(f"目录 '{pkg_dir}' 无效或非标准目录，跳过清理。")
     
-    # 特殊处理 package/libs/toolchain
     if "package/libs/toolchain" in makefile_path_rel:
         print("检测到工具链包错误，强制清理 package/libs/toolchain...")
         try:
@@ -514,8 +372,8 @@ def fix_makefile_separator(log_file):
     
     return fix_attempted == 1
 
-
 def get_trojan_plus_version():
+    """从 Makefile 获取 trojan-plus 版本"""
     makefile_path = "package/feeds/small8/trojan-plus/Makefile"
     with open(makefile_path, 'r') as f:
         content = f.read()
@@ -525,33 +383,8 @@ def get_trojan_plus_version():
     else:
         raise ValueError("无法从 Makefile 中提取 PKG_VERSION")
 
-def find_lines_to_patch(source_path):
-    with open(source_path, 'r') as f:
-        lines = f.readlines()
-
-    lines_to_patch = []
-    for i, line in enumerate(lines):
-        if 'boost::asio::buffer_cast' in line and 'udp_read_buf.prepare' in line:
-            lines_to_patch.append(i)
-    return lines_to_patch
-
-
-
-
-def save_patch(patch_content, version):
-    patches_dir = "package/feeds/small8/trojan-plus/patches"
-    if not os.path.exists(patches_dir):
-        os.makedirs(patches_dir)
-    patch_file = os.path.join(patches_dir, f"001-fix-buffer-cast-v{version}.patch")
-    with open(patch_file, 'w') as f:
-        f.write(patch_content)
-    print(f"补丁文件已保存到: {patch_file}")
-
-def compile_trojan_plus():
-    subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=True)
-    subprocess.run(["make", "package/feeds/small8/trojan-plus/compile", "V=s"], check=True)
-
-def fix_trojan_plus_boost_error(log_content=None):
+def fix_trojan_plus_boost_error():
+    """直接修改 trojan-plus 源代码以修复 buffer_cast 错误"""
     try:
         version = get_trojan_plus_version()
         source_path = f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp"
@@ -560,50 +393,32 @@ def fix_trojan_plus_boost_error(log_content=None):
             return False
 
         with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
-            lines = f.readlines()
+            content = f.read()
 
-        modified = False
-        for idx, line in enumerate(lines):
-            if 'boost::asio::buffer_cast' in line and 'udp_read_buf.prepare' in line:
-                print(f"[替换] 第 {idx+1} 行包含 buffer_cast，准备替换")
-                lines[idx] = re.sub(
-                    r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*$\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*$\s*\))\s*\)',
-                    r'static_cast<char*>(\1.data())',
-                    line
-                )
-                modified = True
-
-        if not modified:
+        pattern = r'boost::asio::buffer_cast\s*<\s*char\s*\*?\s*>\s*\(\s*(udp_read_buf\.prepare\s*\(\s*config\.get_udp_recv_buf\s*\(\s*\)\s*\))\s*\)'
+        new_content = re.sub(pattern, r'static_cast<char*>(\1.data())', content)
+        
+        if new_content != content:
+            backup_path = source_path + ".bak"
+            shutil.copy2(source_path, backup_path)
+            print(f"[备份] 已备份原始文件到: {backup_path}")
+            
+            with open(source_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            print("[完成] 已替换 buffer_cast 为 static_cast")
+            return True
+        else:
             print("[信息] 未找到需要替换的 buffer_cast 行")
             return False
-
-        # 备份原文件
-        backup_path = source_path + ".bak"
-        shutil.copy2(source_path, backup_path)
-        print(f"[备份] 已备份原始文件到: {backup_path}")
-
-        with open(source_path, 'w', encoding='utf-8') as f:
-            f.writelines(lines)
-
-        print("[完成] 已替换 buffer_cast 为 static_cast")
-
-        subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], check=False)
-
-        return True
 
     except Exception as e:
         print(f"[异常] 修复 trojan-plus 出错: {e}")
         return False
 
-
-
-
-
 def fix_directory_conflict(log_file):
     """修复目录冲突"""
     print("检测到目录冲突，尝试修复...")
     
-    # 提取冲突的目录路径
     with open(log_file, 'r', errors='replace') as f:
         log_content = f.read()
     
@@ -628,12 +443,10 @@ def fix_directory_conflict(log_file):
         print(f"冲突目录 {conflict_dir} 不存在，可能已被其他进程处理。")
         return True
 
-
 def fix_symbolic_link_conflict(log_file):
     """修复符号链接冲突"""
     print("检测到符号链接冲突，尝试修复...")
     
-    # 提取冲突的符号链接路径
     with open(log_file, 'r', errors='replace') as f:
         log_content = f.read()
     
@@ -658,7 +471,6 @@ def fix_symbolic_link_conflict(log_file):
         print(f"冲突符号链接 {conflict_link} 不存在，可能已被其他进程处理。")
         return True
 
-
 def extract_error_block(log_file):
     """提取错误块"""
     print(f"--- 最近 300 行日志 ({log_file}) ---")
@@ -671,36 +483,29 @@ def extract_error_block(log_file):
         print(f"读取日志文件时出错: {e}")
     print("--- 日志结束 ---")
 
-
 def fix_pkg_version():
     """修复 PKG_VERSION 和 PKG_RELEASE 格式"""
     print("修复 PKG_VERSION 和 PKG_RELEASE 格式...")
     changed_count = 0
     
-    # 查找所有 Makefile 和 .mk 文件
     for makefile in Path('.').glob('**/*'):
-        # 跳过 build_dir, staging_dir, tmp 目录
         if any(part in str(makefile.parent) for part in ['build_dir', 'staging_dir', 'tmp']):
             continue
         
-        # 只处理 Makefile 和 .mk 文件
         if makefile.name != 'Makefile' and not makefile.name.endswith('.mk'):
             continue
         
-        # 跳过不包含标准包定义的 Makefile
         try:
             with open(makefile, 'r', errors='replace') as f:
                 header = ''.join(f.readline() for _ in range(30))
                 if not re.search(r'^\s*(include \.\./\.\./(package|buildinfo)\.mk|include \$\(INCLUDE_DIR\)/package\.mk|include \$\(TOPDIR\)/rules\.mk)', header, re.MULTILINE):
                     continue
                 
-                # 重置文件指针并读取全部内容
                 f.seek(0)
                 original_content = f.read()
         except:
             continue
         
-        # 提取 PKG_VERSION 和 PKG_RELEASE
         current_version_match = re.search(r'^PKG_VERSION:=(.*)$', original_content, re.MULTILINE)
         release_match = re.search(r'^PKG_RELEASE:=(.*)$', original_content, re.MULTILINE)
         
@@ -710,13 +515,11 @@ def fix_pkg_version():
         modified_in_loop = 0
         makefile_changed = 0
         
-        # 情况1: 版本字符串包含连字符后缀 (例如 1.2.3-beta1)
         version_suffix_match = re.match(r'^([0-9]+(\.[0-9]+)*)-([a-zA-Z0-9_.-]+)$', current_version)
         if version_suffix_match:
             new_version = version_suffix_match.group(1)
             suffix = version_suffix_match.group(3)
             
-            # 尝试从后缀中提取数字，默认为1
             suffix_num_match = re.search(r'[0-9]*$', re.sub(r'[^0-9]', '', suffix))
             new_release = suffix_num_match.group(0) if suffix_num_match and suffix_num_match.group(0) else "1"
             
@@ -726,7 +529,6 @@ def fix_pkg_version():
             if current_version != new_version or release != new_release:
                 print(f"修改 {makefile}: PKG_VERSION: '{current_version}' -> '{new_version}', PKG_RELEASE: '{release}' -> '{new_release}'")
                 
-                # 准备新内容
                 new_content = []
                 version_printed = False
                 release_found = False
@@ -741,22 +543,17 @@ def fix_pkg_version():
                     else:
                         new_content.append(line)
                 
-                # 如果 PKG_RELEASE 不存在但 PKG_VERSION 存在，添加 PKG_RELEASE
                 if version_printed and not release_found:
-                    # 找到 PKG_VERSION 行的索引
                     version_idx = next(i for i, line in enumerate(new_content) if line.startswith('PKG_VERSION:='))
-                    # 在 PKG_VERSION 后插入 PKG_RELEASE
                     new_content.insert(version_idx + 1, f"PKG_RELEASE:={new_release}")
                 
-                # 写入新内容
                 with open(makefile, 'w') as f:
                     f.write('\n'.join(new_content))
                 
-                release = new_release  # 更新 release 变量用于下一次检查
+                release = new_release
                 modified_in_loop = 1
                 makefile_changed = 1
         
-        # 情况2: PKG_RELEASE 存在但不是简单数字 (且未在情况1中修复)
         if modified_in_loop == 0 and release and not release.isdigit():
             suffix_num_match = re.search(r'[0-9]*$', re.sub(r'[^0-9]', '', release))
             new_release = suffix_num_match.group(0) if suffix_num_match and suffix_num_match.group(0) else "1"
@@ -767,7 +564,6 @@ def fix_pkg_version():
             if release != new_release:
                 print(f"修正 {makefile}: PKG_RELEASE: '{release}' -> '{new_release}'")
                 
-                # 替换 PKG_RELEASE 行
                 new_content = re.sub(
                     r'^PKG_RELEASE:=.*$',
                     f'PKG_RELEASE:={new_release}',
@@ -780,14 +576,12 @@ def fix_pkg_version():
                 
                 makefile_changed = 1
         
-        # 情况3: PKG_RELEASE 完全缺失但 PKG_VERSION 存在 (且未被情况1处理)
         elif (modified_in_loop == 0 and not release and 
               re.search(r'^PKG_VERSION:=', original_content, re.MULTILINE) and 
               not re.search(r'^PKG_RELEASE:=', original_content, re.MULTILINE)):
             
             print(f"添加 {makefile}: PKG_RELEASE:=1")
             
-            # 在 PKG_VERSION 后添加 PKG_RELEASE
             new_content = re.sub(
                 r'^(PKG_VERSION:=.*)$',
                 r'\1\nPKG_RELEASE:=1',
@@ -806,22 +600,18 @@ def fix_pkg_version():
     print(f"修复 PKG_VERSION/RELEASE 完成，共检查/修改 {changed_count} 个文件。")
     return True
 
-
 def fix_metadata_errors():
     """修复 metadata 错误"""
     print("尝试修复 metadata 错误...")
     
-    # 1. 修复 PKG_VERSION/PKG_RELEASE 格式
     fix_pkg_version()
     
-    # 2. 更新 feeds 索引
     print("更新 feeds 索引...")
     try:
         subprocess.run(["./scripts/feeds", "update", "-i"], check=False)
     except:
         print("警告: feeds update -i 失败")
     
-    # 3. 清理 tmp 目录
     print("清理 tmp 目录...")
     if os.path.isdir("tmp"):
         try:
@@ -830,60 +620,6 @@ def fix_metadata_errors():
             print("警告: 清理 tmp 目录失败")
     
     return True
-def generate_patch(original_content, modified_content, patch_file):
-
-   import difflib
-
-   diff = difflib.unified_diff(
-
-       original_content.splitlines(keepends=True),
-
-       modified_content.splitlines(keepends=True),
-
-       fromfile='a/src/core/service.cpp',
-
-       tofile='b/src/core/service.cpp'
-
-   )
-
-   with open(patch_file, 'w') as f:
-
-       f.writelines(diff)
-
-   print(f"已生成新的补丁文件: {patch_file}")
-
-def generate_buffer_cast_patch(version: str):
-    """生成并保存 buffer_cast 替换 patch 到 feeds/small8/trojan-plus/patches/"""
-    patch_dir = f"feeds/small8/trojan-plus/patches"
-    os.makedirs(patch_dir, exist_ok=True)
-
-    patch_path = os.path.join(patch_dir, "001-fix-buffer-cast.patch")
-
-    # 补丁内容
-    patch_content = f"""\
---- a/src/core/service.cpp
-+++ b/src/core/service.cpp
-@@ -550,7 +550,7 @@
--              boost::asio::buffer_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf())), read_length, ttl);
-+              static_cast<char*>(udp_read_buf.prepare(config.get_udp_recv_buf()).data()), read_length, ttl);
-"""
-
-    with open(patch_path, "w") as f:
-        f.write(patch_content)
-
-    print(f"[补丁] 已生成补丁文件: {patch_path}")
-
-
-def clean_trojan_plus_build():
-    """清理 trojan-plus 构建缓存"""
-    print("[清理] 清理 trojan-plus 构建缓存...")
-    os.system("make package/feeds/small8/trojan-plus/clean V=s")
-def apply_trojan_plus_buffer_cast_fix():
-    """应用 buffer_cast -> static_cast 补丁修复"""
-    version = get_trojan_plus_version()
-    generate_buffer_cast_patch(version)
-    clean_trojan_plus_build()
-
 
 def fix_lua_neturl_download(log_file):
     """修复 lua-neturl 下载问题"""
@@ -987,10 +723,6 @@ def fix_lua_neturl_download(log_file):
     
     return True
 
-
-
-
-
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 V=s"')
@@ -1017,7 +749,7 @@ def main():
     metadata_fixed = 0
     consecutive_fix_failures = 0
     gsl_fix_attempts = 0
-    std_at_fix_attempts = 0
+    trojan_fix_needed = False
     
     while retry_count <= args.max_retry:
         if retry_count > 1:
@@ -1028,6 +760,21 @@ def main():
         fix_applied_this_iteration = 0
         log_tmp = f"{args.log_file}.tmp"
         
+        # 如果需要修复 trojan-plus，则先运行 prepare 阶段并修改源代码
+        if trojan_fix_needed:
+            print("应用 trojan-plus buffer_cast 修复...")
+            subprocess.run(["make", "package/feeds/small8/trojan-plus/prepare", "V=s"], shell=True)
+            if fix_trojan_plus_boost_error():
+                fix_applied_this_iteration = 1
+                trojan_fix_needed = False
+                print("源代码修改成功，继续编译...")
+            else:
+                print("源代码修改失败，跳过此次编译尝试。")
+                retry_count += 1
+                time.sleep(2)
+                continue
+        
+        # 运行编译命令
         with open(log_tmp, 'w') as f:
             process = subprocess.Popen(
                 args.make_command,
@@ -1062,17 +809,16 @@ def main():
                 print("检测到 'at' is not a member of 'std' 错误，调用修复函数...")
                 if fix_gsl_include_error(args.log_file, retry_count):
                     print("修复完成，准备下一次编译尝试...")
+                    fix_applied_this_iteration = 1
                 else:
                     print("修复失败，请检查日志和文件路径")
             elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
-                print("检测到 trojan-plus buffer_cast 错误，尝试生成补丁修复...")
-                apply_trojan_plus_buffer_cast_fix()
+                print("检测到 trojan-plus buffer_cast 错误，将在下次重试中直接修改源代码...")
+                trojan_fix_needed = True
                 fix_applied_this_iteration = 1
-                last_fix_applied = "apply_trojan_plus_buffer_cast_fix"
-
-
+                last_fix_applied = "fix_trojan_plus_boost_error"
             elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
-                if gsl_fix_attempts < 2:  # 最多尝试修复两次
+                if gsl_fix_attempts < 2:
                     if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
                         fix_applied_this_iteration = 1
                         gsl_fix_attempts += 1
@@ -1083,7 +829,6 @@ def main():
                 else:
                     print("GSL 修复已尝试 2 次仍未成功，停止重试。")
                     break
-           
             elif 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
                 print("检测到 lua-neturl 下载错误...")
                 if last_fix_applied == "fix_lua_neturl":
@@ -1096,7 +841,6 @@ def main():
                 last_fix_applied = "fix_lua_neturl"
                 if fix_lua_neturl_download(log_tmp):
                     fix_applied_this_iteration = 1
-            
             elif "invalid" in log_content and "lua-neturl" in log_content:
                 print("检测到 lua-neturl 版本号格式错误...")
                 if last_fix_applied == "fix_lua_neturl":
@@ -1109,11 +853,9 @@ def main():
                 last_fix_applied = "fix_lua_neturl"
                 if fix_lua_neturl_download(log_tmp):
                     fix_applied_this_iteration = 1
-            
             elif "missing separator" in log_content and "Stop." in log_content:
                 if fix_makefile_separator(log_tmp):
                     fix_applied_this_iteration = 1
-            
             elif "Patch failed" in log_content:
                 print("检测到补丁应用失败...")
                 if last_fix_applied == "fix_patch_application":
@@ -1126,15 +868,12 @@ def main():
                 last_fix_applied = "fix_patch_application"
                 if fix_patch_application(log_tmp):
                     fix_applied_this_iteration = 1
-                    subprocess.run("make package/feeds/small8/trojan-plus/clean V=s", shell=True)
-            
             elif ("Collected errors:" in log_content or "ERROR: " in log_content) and metadata_fixed == 0:
                 print("检测到可能的元数据错误...")
                 last_fix_applied = "fix_metadata"
                 if fix_metadata_errors():
                     fix_applied_this_iteration = 1
                     metadata_fixed = 1
-            
             elif has_error:
                 matched_pattern = re.search(args.error_pattern, log_content, re.MULTILINE)
                 print(f"检测到通用错误模式: {matched_pattern.group(0) if matched_pattern else '未知'}")
@@ -1173,6 +912,6 @@ def main():
     extract_error_block(args.log_file)
     print(f"请检查完整日志: {args.log_file}")
     return 1
-    
+
 if __name__ == "__main__":
     sys.exit(main())
