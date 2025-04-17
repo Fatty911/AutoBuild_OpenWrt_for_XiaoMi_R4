@@ -35,62 +35,185 @@ def get_relative_path(path):
 
 
 
-def fix_gsl_include_error(log_file, attempt_count=0):
+def fix_gsl_std_at_error(log_file_content, attempt_count=0):
+    """修复 trojan-plus 中 'at' is not a member of 'std' 错误"""
     print("检测到 'at' is not a member of 'std' 错误，尝试修复...")
-    
-    trojan_build_dir = find_trojan_plus_build_dir()
+
+    try:
+        version = get_trojan_plus_version()
+        trojan_build_dir = find_trojan_plus_build_dir(version)
+    except (FileNotFoundError, ValueError, IOError) as e:
+        print(f"无法获取 trojan-plus 版本或构建目录: {e}")
+        return False
+    except Exception as e:
+        print(f"查找 trojan-plus 目录时发生未知错误: {e}")
+        return False
+
+
     if not trojan_build_dir:
         print("无法找到 trojan-plus 的构建目录")
         return False
-    
+
     config_cpp_path = os.path.join(trojan_build_dir, "src/core/config.cpp")
-    
+
     if not os.path.exists(config_cpp_path):
         print(f"无法找到 config.cpp 文件: {config_cpp_path}")
+        # Try running prepare step first if file is missing
+        print("尝试运行 prepare 步骤以确保源文件存在...")
+        prepare_cmd = ["make", "package/feeds/small8/trojan-plus/prepare", "V=s"]
+        print(f"运行: {' '.join(prepare_cmd)}")
+        result = subprocess.run(prepare_cmd, shell=False, capture_output=True, text=True)
+        print(f"Prepare stdout:\n{result.stdout}")
+        print(f"Prepare stderr:\n{result.stderr}")
+        if result.returncode != 0 or not os.path.exists(config_cpp_path):
+             print(f"运行 prepare 失败或 config.cpp 仍然不存在: {config_cpp_path}")
+             return False
+        else:
+             print("Prepare 成功，重新检查 config.cpp")
+             # Re-check existence after prepare
+             if not os.path.exists(config_cpp_path):
+                  print(f"Prepare 后 config.cpp 仍然不存在: {config_cpp_path}")
+                  return False
+
+
+    backup_path = f"{config_cpp_path}.bak.{int(time.time())}" # Add timestamp to backup
+    try:
+        shutil.copy2(config_cpp_path, backup_path)
+        print(f"已备份 {config_cpp_path} 到 {backup_path}")
+    except Exception as e:
+        print(f"备份文件失败: {e}")
         return False
-    
-    backup_path = f"{config_cpp_path}.bak"
-    shutil.copy2(config_cpp_path, backup_path)
-    print(f"已备份 {config_cpp_path} 到 {backup_path}")
-    
-    with open(config_cpp_path, 'r') as f:
-        content = f.read()
-    
+
+    try:
+        with open(config_cpp_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+    except Exception as e:
+        print(f"读取 config.cpp 失败: {e}")
+        return False
+
+    # --- Debugging: Print lines around the typical error location ---
     lines = content.splitlines()
-    if len(lines) >= 647:
-        print("修改前第647行附近的内容：")
-        for i in range(max(0, 646), min(len(lines), 650)):
-            print(f"行 {i+1}: {lines[i].strip()}")
-    
+    error_line_num = 647 # Approximate line number from original script
+    print(f"--- 内容预览 {config_cpp_path} (行 {max(1, error_line_num-2)} - {min(len(lines), error_line_num+2)}) ---")
+    for i in range(max(0, error_line_num - 3), min(len(lines), error_line_num + 2)):
+         print(f"行 {i+1}: {lines[i].strip()}")
+    print("--- 预览结束 ---")
+    # --- End Debugging ---
+
+
     original_content = content
-    content = re.sub(r'std::at\s*\(\s*mdString\s*,\s*([^)]+)\)', r'mdString[\1]', content)
+    # Regex: Match 'std::at', optional whitespace, '(', optional whitespace,
+    # 'mdString', optional whitespace, ',', optional whitespace,
+    # capture the index expression until the closing ')'.
+    # Make the index capture non-greedy (.*?)
+    content = re.sub(r'std::at\s*\(\s*mdString\s*,\s*(.*?)\s*\)', r'mdString[\1]', content)
+
     if content != original_content:
-        print("已将 config.cpp 中的 std::at 替换为直接索引")
+        print("已将 config.cpp 中的 std::at(mdString, index) 替换为 mdString[index]")
+        try:
+            with open(config_cpp_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            print(f"已更新 {config_cpp_path}")
+
+            # --- Debugging: Print lines after modification ---
+            with open(config_cpp_path, 'r', encoding='utf-8', errors='replace') as f:
+                 lines_after = f.read().splitlines()
+            print(f"--- 修改后内容预览 {config_cpp_path} (行 {max(1, error_line_num-2)} - {min(len(lines_after), error_line_num+2)}) ---")
+            for i in range(max(0, error_line_num - 3), min(len(lines_after), error_line_num + 2)):
+                 print(f"行 {i+1}: {lines_after[i].strip()}")
+            print("--- 预览结束 ---")
+            # --- End Debugging ---
+
+        except Exception as e:
+            print(f"写入更新后的 config.cpp 失败: {e}")
+            # Attempt to restore backup
+            try:
+                shutil.move(backup_path, config_cpp_path)
+                print(f"已从备份 {backup_path} 恢复。")
+            except Exception as restore_e:
+                print(f"警告：恢复备份失败: {restore_e}")
+            return False
     else:
-        print("替换逻辑未触发，可能正则表达式未匹配到代码")
-    
-    with open(config_cpp_path, 'w') as f:
-        f.write(content)
-    print(f"已更新 {config_cpp_path}")
-    
-    with open(config_cpp_path, 'r') as f:
-        lines = f.read().splitlines()
-    if len(lines) >= 647:
-        print("修改后第647行附近的内容：")
-        for i in range(max(0, 646), min(len(lines), 650)):
-            print(f"行 {i+1}: {lines[i].strip()}")
-    
-    if attempt_count < 2:
-        print("清理 trojan-plus 构建目录...")
-        subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
-        
-        build_dir = os.path.dirname(trojan_build_dir)
-        trojan_build_path = os.path.join(build_dir, "trojan-plus-10.0.3")
-        if os.path.exists(trojan_build_path):
-            shutil.rmtree(trojan_build_path)
-            print(f"已删除构建目录 {trojan_build_path} 以强制重新提取源代码")
-    
+        print("替换逻辑未触发，可能 std::at(mdString, ...) 模式未匹配到。")
+        # If no replacement happened, no need to clean/rebuild unless forced
+        return False # Indicate no fix was applied by *this* function this time
+
+    # If modification was successful, clean the package to force rebuild
+    # Only clean if a change was actually made
+    print("清理 trojan-plus 以确保修改生效...")
+    clean_cmd = ["make", "package/feeds/small8/trojan-plus/clean", "V=s"]
+    print(f"运行: {' '.join(clean_cmd)}")
+    result = subprocess.run(clean_cmd, shell=False, capture_output=True, text=True)
+    print(f"Clean stdout:\n{result.stdout}")
+    print(f"Clean stderr:\n{result.stderr}")
+    if result.returncode != 0:
+         print("警告: 清理 trojan-plus 可能失败，但仍继续尝试编译。")
+
+    # Optional: Consider removing the specific object file as well
+    # obj_file = os.path.join(trojan_build_dir, "CMakeFiles/trojan.dir/src/core/config.cpp.o")
+    # if os.path.exists(obj_file):
+    #     try:
+    #         os.remove(obj_file)
+    #         print(f"已删除旧的目标文件: {obj_file}")
+    #     except OSError as e:
+    #         print(f"警告: 删除目标文件失败: {e}")
+
     return True
+
+# NEW function
+def fix_gsl_not_found(log_file_content):
+    """修复 trojan-plus 编译时找不到 gsl/gsl 的问题"""
+    print("检测到 'gsl/gsl: No such file or directory' 错误，尝试修复...")
+    print("这通常意味着 GSL 子模块未正确检出或构建目录不完整。")
+    print("尝试重新运行 prepare 步骤来获取 GSL...")
+
+    # Define the package path relative to the OpenWrt root
+    package_path = "package/feeds/small8/trojan-plus" # Adjust if your feed structure is different
+
+    # Check if the package directory exists
+    if not os.path.isdir(package_path):
+         # Try alternative common path
+         alt_package_path = "feeds/small8/trojan-plus"
+         if os.path.isdir(alt_package_path):
+              package_path = alt_package_path
+         else:
+              print(f"错误: 找不到包路径 '{package_path}' 或 '{alt_package_path}'")
+              return False
+
+    prepare_cmd = ["make", f"{package_path}/prepare", "V=s"]
+    print(f"运行: {' '.join(prepare_cmd)}")
+
+    try:
+        # Run with check=True to raise an error if it fails
+        result = subprocess.run(prepare_cmd, shell=False, check=True, capture_output=True, text=True, timeout=120) # Increased timeout
+        print("Prepare 命令成功完成。")
+        print(f"Prepare stdout:\n{result.stdout[-500:]}") # Print last 500 chars of stdout
+        print(f"Prepare stderr:\n{result.stderr}")
+
+        # Additionally, clean the specific object file that failed, if possible
+        try:
+            version = get_trojan_plus_version()
+            trojan_build_dir = find_trojan_plus_build_dir(version)
+            if trojan_build_dir:
+                obj_file = os.path.join(trojan_build_dir, "CMakeFiles/trojan.dir/src/core/config.cpp.o")
+                if os.path.exists(obj_file):
+                    os.remove(obj_file)
+                    print(f"已删除可能过时的目标文件: {obj_file}")
+        except Exception as e:
+            print(f"警告: 清理目标文件时出错 (非致命): {e}")
+
+        return True # Indicate fix was attempted (successfully ran prepare)
+    except subprocess.CalledProcessError as e:
+        print(f"错误: {package_path}/prepare 命令失败 (返回码 {e.returncode})。")
+        print(f"Stderr:\n{e.stderr}")
+        print(f"Stdout:\n{e.stdout}")
+        return False
+    except subprocess.TimeoutExpired:
+         print(f"错误: {package_path}/prepare 命令超时。")
+         return False
+    except Exception as e:
+        print(f"运行 {package_path}/prepare 时发生未知错误: {e}")
+        return False
 
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁"""
@@ -910,192 +1033,366 @@ def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 V=s"')
     parser.add_argument('log_file', help='日志文件路径，例如 "compile.log"')
-    parser.add_argument('max_retry', nargs='?', type=int, default=8, help='最大重试次数 (默认: 8)')
-    parser.add_argument('error_pattern', nargs='?', 
-                        default='cc1: some warnings being treated as errors|error:|failed|undefined reference|invalid|File exists|missing separator|cannot find dependency|No rule to make target',
-                        help='错误模式正则表达式')
-    
-    global args
-    args = parser.parse_args()
-    
-    if not args.make_command or not args.log_file:
-        print("错误：缺少必要参数。")
+    # Make max_retry and error_pattern truly optional with defaults
+    parser.add_argument('--max-retry', type=int, default=8, help='最大重试次数 (默认: 8)')
+    parser.add_argument('--error-pattern',
+                        default=r'error:|failed|undefined reference|invalid|File exists|missing separator|cannot find dependency|No rule to make target|fatal error:|collect2: error: ld returned 1 exit status', # Added fatal error and ld error
+                        help='通用错误模式正则表达式')
+
+    # Parse known args, allowing others potentially
+    args, unknown = parser.parse_known_args()
+
+    # --- Argument Validation ---
+    if not args.make_command:
+        print("错误: 缺少 'make_command' 参数。")
         parser.print_help()
         return 1
-    
+    if not args.log_file:
+        print("错误: 缺少 'log_file' 参数。")
+        parser.print_help()
+        return 1
+    if args.max_retry <= 0:
+         print("错误: --max-retry 必须是正整数。")
+         return 1
+    # --- End Validation ---
+
+
     print("--------------------------------------------------")
-    print(f"尝试编译: {args.make_command} (第 1 / {args.max_retry} 次)...")
+    print(f"编译命令: {args.make_command}")
+    print(f"日志文件: {args.log_file}")
+    print(f"最大重试: {args.max_retry}")
+    print(f"错误模式: {args.error_pattern}")
     print("--------------------------------------------------")
-    
+
     retry_count = 1
     last_fix_applied = ""
-    metadata_fixed = 0
+    metadata_fixed = False # Use boolean
     consecutive_fix_failures = 0
-    gsl_fix_attempts = 0
-    trojan_fix_needed = False
-    
+    gsl_std_at_fix_attempts = 0 # Renamed counter
+    trojan_boost_fix_needed = False # Renamed flag
+
+    # --- Ensure log directory exists ---
+    log_dir = os.path.dirname(args.log_file)
+    if log_dir and not os.path.exists(log_dir):
+        try:
+            os.makedirs(log_dir)
+            print(f"创建日志目录: {log_dir}")
+        except OSError as e:
+            print(f"错误: 无法创建日志目录 {log_dir}: {e}")
+            return 1
+    # --- End log dir check ---
+
+
     while retry_count <= args.max_retry:
-        if retry_count > 1:
-            print("--------------------------------------------------")
-            print(f"尝试编译: {args.make_command} (第 {retry_count} / {args.max_retry} 次)...")
-            print("--------------------------------------------------")
-        
-        fix_applied_this_iteration = 0
-        log_tmp = f"{args.log_file}.tmp"
-        
-        # 如果需要修复 trojan-plus，则先运行 prepare 阶段并修改源代码
-        if trojan_fix_needed:
-            print("应用 trojan-plus buffer_cast 修复...")
-            subprocess.run(["make", "package/feeds/small8/trojan-plus/clean", "V=s"], shell=True)
-            subprocess.run(["make", "package/feeds/small8/trojan-plus/prepare", "V=s"], shell=True)
-            if fix_trojan_plus_boost_error():
-                fix_applied_this_iteration = 1
-                trojan_fix_needed = False
-                print("源代码修改成功，继续编译...")
+        print("==================================================")
+        print(f"尝试编译: 第 {retry_count} / {args.max_retry} 次...")
+        print(f"命令: {args.make_command}")
+        print("==================================================")
+
+        fix_applied_this_iteration = False # Use boolean
+        # Use a temporary file for the output of the *current* run
+        current_log_file = f"{args.log_file}.current_run.{retry_count}.log"
+
+        # --- Pre-compilation Fixes (like trojan boost fix) ---
+        if trojan_boost_fix_needed:
+            print("检测到需要应用 trojan-plus buffer_cast 修复...")
+            # Ensure prepare is run before modifying source
+            package_path = "package/feeds/small8/trojan-plus" # Adjust if needed
+            alt_package_path = "feeds/small8/trojan-plus"
+            if not os.path.isdir(package_path) and os.path.isdir(alt_package_path):
+                package_path = alt_package_path
+
+            prepare_cmd = ["make", f"{package_path}/prepare", "V=s"]
+            print(f"运行 prepare: {' '.join(prepare_cmd)}")
+            prep_result = subprocess.run(prepare_cmd, shell=False, capture_output=True, text=True)
+            print(f"Prepare stdout (last 500 chars):\n{prep_result.stdout[-500:]}")
+            print(f"Prepare stderr:\n{prep_result.stderr}")
+
+            if prep_result.returncode == 0:
+                print("Prepare 成功，尝试应用 buffer_cast 修复...")
+                if fix_trojan_plus_boost_error():
+                    print("trojan-plus buffer_cast 源代码修改成功。")
+                    fix_applied_this_iteration = True
+                    trojan_boost_fix_needed = False # Reset flag after successful application
+                    # Clean after successful source mod to ensure rebuild
+                    clean_cmd = ["make", f"{package_path}/clean", "V=s"]
+                    print(f"运行 clean: {' '.join(clean_cmd)}")
+                    subprocess.run(clean_cmd, shell=False)
+                else:
+                    print("trojan-plus buffer_cast 源代码修改失败，跳过此次编译尝试。")
+                    # Don't increment retry_count here, let the main loop handle it after compile fails again
+                    # Or decide to abort if the fix itself fails critically
+                    # For now, let it try compiling anyway, maybe the prepare fixed something else
+                    trojan_boost_fix_needed = False # Avoid infinite loop if fix keeps failing
             else:
-                print("源代码修改失败，跳过此次编译尝试。")
-                retry_count += 1
-                time.sleep(2)
-                continue
-        
-        # 运行编译命令
-        with open(log_tmp, 'w') as f:
-            process = subprocess.Popen(
-                args.make_command,
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1
-            )
-            for line in process.stdout:
-                sys.stdout.write(line)
-                f.write(line)
-                f.flush()
-            compile_status = process.wait()
-        
-        with open(log_tmp, 'r', errors='replace') as f:
-            log_content = f.read()
-            has_error = re.search(args.error_pattern, log_content, re.MULTILINE) is not None
-        
-        if compile_status == 0 and not has_error:
-            print("--------------------------------------------------")
-            print("编译成功！")
-            print("--------------------------------------------------")
-            with open(args.log_file, 'a') as main_log:
-                with open(log_tmp, 'r', errors='replace') as tmp_log:
-                    main_log.write(tmp_log.read())
-            os.remove(log_tmp)
-            return 0
-        else:
-            print(f"编译失败 (退出码: {compile_status} 或在日志中检测到错误)......")
-            if "error: 'at' is not a member of 'std'" in log_content:
-                print("检测到 'at' is not a member of 'std' 错误，调用修复函数...")
-                if fix_gsl_include_error(args.log_file, retry_count):
-                    print("修复完成，准备下一次编译尝试...")
-                    fix_applied_this_iteration = 1
+                print("错误: trojan-plus prepare 失败，无法应用 buffer_cast 修复。跳过修复。")
+                trojan_boost_fix_needed = False # Avoid infinite loop
+
+        # --- Run the actual compile command ---
+        print(f"执行编译命令，输出到临时日志: {current_log_file}")
+        compile_status = -1 # Default status
+        log_content = ""    # Content of the current run
+        try:
+            with open(current_log_file, 'w', encoding='utf-8', errors='replace') as f:
+                # Use Popen for real-time output streaming
+                process = subprocess.Popen(
+                    args.make_command,
+                    shell=True, # Be cautious with shell=True if command is complex
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT, # Redirect stderr to stdout
+                    text=True,
+                    bufsize=1, # Line buffered
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                # Read and print/write line by line
+                for line in process.stdout:
+                    sys.stdout.write(line) # Show output in real-time
+                    f.write(line)
+                    log_content += line # Accumulate current run's log content
+                compile_status = process.wait() # Get the final exit code
+        except Exception as e:
+             print(f"\n!!! 执行编译命令时发生异常: {e} !!!")
+             compile_status = 999 # Indicate script-level failure
+             log_content += f"\n!!! Script Error during Popen: {e} !!!\n"
+        finally:
+             # Append the current log to the main log file *after* analysis
+             try:
+                 with open(args.log_file, 'a', encoding='utf-8', errors='replace') as main_log:
+                     main_log.write(f"\n--- Attempt {retry_count} Log Start ---\n")
+                     main_log.write(log_content)
+                     main_log.write(f"--- Attempt {retry_count} Log End (Exit Code: {compile_status}) ---\n")
+             except Exception as log_e:
+                 print(f"警告: 写入主日志文件 {args.log_file} 失败: {log_e}")
+             # Optionally remove the temporary current log file
+             # if os.path.exists(current_log_file):
+             #     os.remove(current_log_file)
+
+
+        # --- Analyze the result of the *current* run ---
+        # Check exit code first
+        if compile_status == 0:
+            # Double-check log content for errors even if exit code is 0
+            has_error_in_log = re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE) is not None
+            if not has_error_in_log:
+                print("--------------------------------------------------")
+                print("编译成功！")
+                print("--------------------------------------------------")
+                # Clean up temporary log if needed (optional)
+                # if os.path.exists(current_log_file): os.remove(current_log_file)
+                return 0 # Success
+            else:
+                 print(f"警告: 编译退出码为 0，但在日志中检测到错误模式。继续检查...")
+                 # Fall through to error handling
+
+        # --- If exit code != 0 or errors found in log ---
+        print(f"编译失败 (退出码: {compile_status}) 或在日志中检测到错误。开始分析错误...")
+        fix_applied_this_iteration = False # Reset for this analysis phase
+
+        # --- Specific Error Checks (prioritize based on likelihood/impact) ---
+
+        # 1. GSL Not Found Error (NEW)
+        if "fatal error: gsl/gsl: No such file or directory" in log_content:
+            print("检测到 GSL 头文件未找到错误。")
+            if last_fix_applied == "fix_gsl_not_found":
+                 print("上次已尝试修复 GSL 未找到问题，但仍失败。停止重试。")
+                 consecutive_fix_failures += 1 # Increment here
+                 # return 1 # Exit immediately
+            else:
+                if fix_gsl_not_found(log_content):
+                    print("已尝试运行 prepare 修复 GSL 未找到问题。")
+                    fix_applied_this_iteration = True
+                    last_fix_applied = "fix_gsl_not_found"
+                    consecutive_fix_failures = 0 # Reset counter on successful fix attempt
                 else:
-                    print("修复失败，请检查日志和文件路径")
-            elif 'trojan-plus' in log_content and 'buffer_cast' in log_content:
-                print("检测到 trojan-plus buffer_cast 错误，将在下次重试中直接修改源代码...")
-                trojan_fix_needed = True
-                fix_applied_this_iteration = 1
-                last_fix_applied = "fix_trojan_plus_boost_error"
-            elif "'gsl' has not been declared" in log_content or "gsl/gsl: No such file or directory" in log_content:
-                if gsl_fix_attempts < 2:
-                    if fix_gsl_include_error(args.log_file, gsl_fix_attempts):
-                        fix_applied_this_iteration = 1
-                        gsl_fix_attempts += 1
-                        print(f"已应用 GSL 修复（第 {gsl_fix_attempts} 次），将重试编译...")
-                    else:
-                        print("GSL 修复失败，停止重试。")
-                        break
-                else:
-                    print("GSL 修复已尝试 2 次仍未成功，停止重试。")
-                    break
-            elif 'lua-neturl' in log_content and 'No more mirrors to try - giving up' in log_content:
-                print("检测到 lua-neturl 下载错误...")
-                if last_fix_applied == "fix_lua_neturl":
-                    print("上次已尝试修复 lua-neturl 下载错误，但问题未解决，停止重试。")
-                    with open(args.log_file, 'a') as main_log:
-                        with open(log_tmp, 'r', errors='replace') as tmp_log:
-                            main_log.write(tmp_log.read())
-                    os.remove(log_tmp)
-                    return 1
-                last_fix_applied = "fix_lua_neturl"
-                if fix_lua_neturl_download(log_tmp):
-                    fix_applied_this_iteration = 1
-            elif "invalid" in log_content and "lua-neturl" in log_content:
-                print("检测到 lua-neturl 版本号格式错误...")
-                if last_fix_applied == "fix_lua_neturl":
-                    print("上次已尝试修复 lua-neturl 版本号，但问题未解决，停止重试。")
-                    with open(args.log_file, 'a') as main_log:
-                        with open(log_tmp, 'r', errors='replace') as tmp_log:
-                            main_log.write(tmp_log.read())
-                    os.remove(log_tmp)
-                    return 1
-                last_fix_applied = "fix_lua_neturl"
-                if fix_lua_neturl_download(log_tmp):
-                    fix_applied_this_iteration = 1
-            elif "missing separator" in log_content and "Stop." in log_content:
-                if fix_makefile_separator(log_tmp):
-                    fix_applied_this_iteration = 1
-            elif "Patch failed" in log_content:
-                print("检测到补丁应用失败...")
-                if last_fix_applied == "fix_patch_application":
-                    print("上次已尝试修复补丁应用失败，但问题未解决，停止重试。")
-                    with open(args.log_file, 'a') as main_log:
-                        with open(log_tmp, 'r', errors='replace') as tmp_log:
-                            main_log.write(tmp_log.read())
-                    os.remove(log_tmp)
-                    return 1
-                last_fix_applied = "fix_patch_application"
-                if fix_patch_application(log_tmp):
-                    fix_applied_this_iteration = 1
-            elif ("Collected errors:" in log_content or "ERROR: " in log_content) and metadata_fixed == 0:
-                print("检测到可能的元数据错误...")
-                last_fix_applied = "fix_metadata"
-                if fix_metadata_errors():
-                    fix_applied_this_iteration = 1
-                    metadata_fixed = 1
-            elif has_error:
-                matched_pattern = re.search(args.error_pattern, log_content, re.MULTILINE)
-                print(f"检测到通用错误模式: {matched_pattern.group(0) if matched_pattern else '未知'}")
-                if last_fix_applied == "fix_generic_retry":
+                    print("尝试修复 GSL 未找到问题失败。")
+                    last_fix_applied = "fix_gsl_not_found" # Record the attempt
                     consecutive_fix_failures += 1
+
+        # 2. Trojan Boost buffer_cast Error
+        elif 'trojan-plus' in log_content and 'buffer_cast' in log_content and 'is not a member of' in log_content:
+             # Check if we already tried the fix in the pre-compilation step
+             if last_fix_applied != "fix_trojan_plus_boost_error_prepare": # Use a distinct name if needed
+                 print("检测到 trojan-plus buffer_cast 编译错误。")
+                 print("将在下次重试前尝试 prepare 和源代码修复...")
+                 trojan_boost_fix_needed = True
+                 # Mark that we *identified* the need, the fix happens *before* next loop
+                 fix_applied_this_iteration = True # Consider identification as progress
+                 last_fix_applied = "fix_trojan_plus_boost_error_prepare"
+                 consecutive_fix_failures = 0
+             else:
+                  print("上次已尝试修复 buffer_cast，但编译仍失败。可能是修复无效或有其他问题。")
+                  consecutive_fix_failures += 1
+
+        # 3. GSL std::at Error
+        elif "error: 'at' is not a member of 'std'" in log_content and 'trojan-plus' in log_content and 'config.cpp' in log_content:
+            print("检测到 GSL std::at 编译错误。")
+            if gsl_std_at_fix_attempts >= 2:
+                 print("已尝试修复 std::at 错误 2 次，不再尝试。")
+                 # return 1 # Exit
+            elif last_fix_applied == "fix_gsl_std_at_error":
+                 print("上次已尝试修复 std::at 错误，但仍失败。")
+                 consecutive_fix_failures += 1
+                 gsl_std_at_fix_attempts += 1 # Increment attempts even if consecutive
+            else:
+                if fix_gsl_std_at_error(log_content, gsl_std_at_fix_attempts):
+                    print("已尝试修改源代码修复 std::at 错误。")
+                    fix_applied_this_iteration = True
+                    last_fix_applied = "fix_gsl_std_at_error"
+                    consecutive_fix_failures = 0
+                    gsl_std_at_fix_attempts += 1
                 else:
-                    consecutive_fix_failures = 1
+                    print("尝试修复 std::at 错误失败。")
+                    last_fix_applied = "fix_gsl_std_at_error"
+                    consecutive_fix_failures += 1
+                    gsl_std_at_fix_attempts += 1 # Increment even on failure
+
+        # 4. Lua Neturl Download Error
+        elif 'lua-neturl' in log_content and ('No more mirrors to try' in log_content or 'Download failed' in log_content or 'Hash mismatch' in log_content):
+             print("检测到 lua-neturl 下载或校验错误...")
+             if last_fix_applied == "fix_lua_neturl_download":
+                 print("上次已尝试修复 lua-neturl 下载，但仍失败。")
+                 consecutive_fix_failures += 1
+             elif hashlib is None or BeautifulSoup is None:
+                  print("缺少 'requests' 或 'beautifulsoup4' 库，无法执行 lua-neturl 下载修复。")
+                  last_fix_applied = "fix_lua_neturl_download_skipped"
+                  consecutive_fix_failures += 1
+             else:
+                 if fix_lua_neturl_download(log_content): # Pass current log
+                     print("已尝试更新 lua-neturl Makefile 并重新下载。")
+                     fix_applied_this_iteration = True
+                     last_fix_applied = "fix_lua_neturl_download"
+                     consecutive_fix_failures = 0
+                 else:
+                     print("尝试修复 lua-neturl 下载失败。")
+                     last_fix_applied = "fix_lua_neturl_download"
+                     consecutive_fix_failures += 1
+
+        # 5. Makefile Separator Error
+        elif "missing separator" in log_content and ("Stop." in log_content or "***" in log_content):
+             print("检测到 Makefile 'missing separator' 错误...")
+             # This fix needs the *current* log content to find the file/line
+             if last_fix_applied == "fix_makefile_separator":
+                  print("上次已尝试修复 missing separator，但仍失败。")
+                  consecutive_fix_failures += 1
+             else:
+                  # Create a temporary file with *only* current content for the fix function
+                  temp_current_log = f"{args.log_file}.current_separator_check.log"
+                  try:
+                       with open(temp_current_log, 'w') as tmp_f:
+                            tmp_f.write(log_content)
+                       if fix_makefile_separator(temp_current_log): # Pass temp file path
+                           print("已尝试修复 Makefile 缩进或清理相关目录。")
+                           fix_applied_this_iteration = True
+                           last_fix_applied = "fix_makefile_separator"
+                           consecutive_fix_failures = 0
+                       else:
+                           print("尝试修复 missing separator 失败或未找到修复点。")
+                           last_fix_applied = "fix_makefile_separator"
+                           consecutive_fix_failures += 1
+                  finally:
+                       if os.path.exists(temp_current_log):
+                            os.remove(temp_current_log)
+
+
+        # 6. Patch Application Error
+        elif ("Patch failed" in log_content or "Only garbage was found" in log_content or "unexpected end of file in patch" in log_content):
+             print("检测到补丁应用失败...")
+             if last_fix_applied == "fix_patch_application":
+                 print("上次已尝试修复补丁应用失败，但仍失败。")
+                 consecutive_fix_failures += 1
+             else:
+                 # Similar to separator, use current log content
+                 temp_current_log = f"{args.log_file}.current_patch_check.log"
+                 try:
+                     with open(temp_current_log, 'w') as tmp_f:
+                          tmp_f.write(log_content)
+                     if fix_patch_application(temp_current_log):
+                         print("已尝试修复补丁问题 (可能删除或调整)。")
+                         fix_applied_this_iteration = True
+                         last_fix_applied = "fix_patch_application"
+                         consecutive_fix_failures = 0
+                     else:
+                         print("尝试修复补丁失败或未进行修复。")
+                         last_fix_applied = "fix_patch_application"
+                         consecutive_fix_failures += 1
+                 finally:
+                     if os.path.exists(temp_current_log):
+                          os.remove(temp_current_log)
+
+        # 7. Metadata Errors (Check only once)
+        elif not metadata_fixed and ("Collected errors:" in log_content or "Cannot satisfy dependencies" in log_content or "check_data_file_clashes" in log_content):
+             print("检测到可能的元数据、依赖或文件冲突错误...")
+             if fix_metadata_errors(): # This function cleans tmp, updates feeds etc.
+                 print("已尝试修复元数据/依赖问题。")
+                 fix_applied_this_iteration = True
+                 last_fix_applied = "fix_metadata_errors"
+                 metadata_fixed = True # Mark as fixed for this run
+                 consecutive_fix_failures = 0
+             else:
+                 print("尝试修复元数据/依赖问题失败。")
+                 last_fix_applied = "fix_metadata_errors"
+                 consecutive_fix_failures += 1
+
+        # 8. Generic Error Pattern Match (Fallback)
+        elif re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE):
+            matched_pattern = re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE)
+            print(f"检测到通用错误模式: '{matched_pattern.group(0).strip() if matched_pattern else '未知错误'}'")
+            if last_fix_applied == "fix_generic_retry":
+                print("上次已进行通用重试，但仍失败。")
+                consecutive_fix_failures += 1
+            else:
+                print("未找到特定修复程序，将进行一次通用重试。")
+                # No specific fix applied here, just letting it retry
+                fix_applied_this_iteration = False # Not really a fix
                 last_fix_applied = "fix_generic_retry"
-                print("未找到特定修复程序，将重试编译一次。")
-        
-        if fix_applied_this_iteration == 0 and compile_status != 0:
-            print(f"警告：检测到错误，但此轮未应用有效修复。上次尝试: {last_fix_applied or '无'}")
+                consecutive_fix_failures = 1 # Start counting consecutive generic retries
+
+        # --- Post-analysis checks ---
+        if not fix_applied_this_iteration and compile_status != 0:
+            print(f"警告：检测到错误，但此轮未应用特定修复。上次尝试: {last_fix_applied or '无'}")
+            # If the last attempt was a generic retry and it failed again, increment failure count
+            if last_fix_applied == "fix_generic_retry":
+                 # Already incremented above
+                 pass
+            elif last_fix_applied: # If a specific fix was tried last time but didn't apply *this* time
+                 consecutive_fix_failures += 1
+
+
             if consecutive_fix_failures >= 2:
-                print(f"连续 {consecutive_fix_failures} 次尝试 {last_fix_applied} 修复失败，停止重试。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
+                print(f"连续 {consecutive_fix_failures} 次尝试 '{last_fix_applied}' 后编译仍失败，停止重试。")
+                extract_error_block(args.log_file) # Show recent history from main log
                 return 1
-            elif retry_count >= args.max_retry - 1:
-                print("停止重试，因为未应用有效修复或已达重试上限。")
-                with open(args.log_file, 'a') as main_log:
-                    with open(log_tmp, 'r', errors='replace') as tmp_log:
-                        main_log.write(tmp_log.read())
-                os.remove(log_tmp)
-                return 1
-        
-        os.remove(log_tmp)
+            # elif retry_count >= args.max_retry: # Check moved to loop condition
+            #     print("已达最大重试次数，停止。")
+            #     extract_error_block(args.log_file)
+            #     return 1
+            else:
+                 print("将继续重试...")
+
+
+        # --- Prepare for next iteration ---
         retry_count += 1
-        print("等待 2 秒后重试...")
-        time.sleep(2)
-    
+        if retry_count <= args.max_retry:
+             wait_time = 2
+             print(f"等待 {wait_time} 秒后重试...")
+             time.sleep(wait_time)
+        # Clean up the temporary log for the current run
+        if os.path.exists(current_log_file):
+            try:
+                os.remove(current_log_file)
+            except OSError as e:
+                print(f"警告: 删除临时日志 {current_log_file} 失败: {e}")
+
+
+    # --- Loop finished ---
     print("--------------------------------------------------")
-    print(f"达到最大重试次数 ({args.max_retry})，编译最终失败。")
+    print(f"达到最大重试次数 ({args.max_retry}) 或连续修复失败，编译最终失败。")
     print("--------------------------------------------------")
-    extract_error_block(args.log_file)
+    extract_error_block(args.log_file) # Extract from the main accumulated log
     print(f"请检查完整日志: {args.log_file}")
-    return 1
+    return 1 # Indicate failure
 
 if __name__ == "__main__":
+    # Optional: Add setup for virtual environment or dependency checks here if needed
     sys.exit(main())
