@@ -160,60 +160,114 @@ def fix_gsl_std_at_error(log_file_content, attempt_count=0):
 
     return True
 
-# NEW function
 def fix_gsl_not_found(log_file_content):
-    """修复 trojan-plus 编译时找不到 gsl/gsl 的问题"""
-    print("检测到 'gsl/gsl: No such file or directory' 错误，尝试修复...")
-    print("这通常意味着 GSL 子模块未正确检出或构建目录不完整。")
-    print("尝试重新运行 prepare 步骤来获取 GSL...")
+    """修复 trojan-plus 编译时找不到 gsl/gsl 的问题 (更积极的修复)"""
+    print("检测到 'gsl/gsl: No such file or directory' 错误，尝试更积极的修复...")
+    print("步骤: 1. 清理包 2. 运行 Prepare 3. 清理 CMake 缓存")
 
-    # Define the package path relative to the OpenWrt root
-    package_path = "package/feeds/small8/trojan-plus" # Adjust if your feed structure is different
+    package_base = "trojan-plus"
+    feed_name = "small8" # Adjust if needed
+    # Find the correct relative path to the package Makefile directory
+    package_path_rel = None
+    possible_makefile_dirs = [
+        f"feeds/{feed_name}/{package_base}",
+        f"package/feeds/{feed_name}/{package_base}",
+        f"package/network/services/{package_base}" # Less likely but possible
+    ]
+    for p in possible_makefile_dirs:
+        if os.path.isdir(p):
+            package_path_rel = p
+            break
 
-    # Check if the package directory exists
-    if not os.path.isdir(package_path):
-         # Try alternative common path
-         alt_package_path = "feeds/small8/trojan-plus"
-         if os.path.isdir(alt_package_path):
-              package_path = alt_package_path
-         else:
-              print(f"错误: 找不到包路径 '{package_path}' 或 '{alt_package_path}'")
-              return False
+    if not package_path_rel:
+        print(f"错误: 无法在已知位置找到 '{package_base}' 的包目录。")
+        return False
 
-    prepare_cmd = ["make", f"{package_path}/prepare", "V=s"]
-    print(f"运行: {' '.join(prepare_cmd)}")
+    print(f"找到包目录: {package_path_rel}")
 
+    # --- Step 1: Clean the package ---
+    clean_cmd = ["make", f"{package_path_rel}/clean", "V=s"]
+    print(f"运行清理命令: {' '.join(clean_cmd)}")
     try:
-        # Run with check=True to raise an error if it fails
-        result = subprocess.run(prepare_cmd, shell=False, check=True, capture_output=True, text=True, timeout=120) # Increased timeout
+        result_clean = subprocess.run(clean_cmd, shell=False, check=False, capture_output=True, text=True, timeout=60)
+        print(f"Clean stdout:\n{result_clean.stdout[-500:]}")
+        print(f"Clean stderr:\n{result_clean.stderr}")
+        if result_clean.returncode != 0:
+            print(f"警告: 清理命令 ({' '.join(clean_cmd)}) 可能失败 (返回码 {result_clean.returncode})，但仍继续尝试。")
+    except subprocess.TimeoutExpired:
+         print(f"警告: 清理命令超时，继续尝试。")
+    except Exception as e:
+        print(f"运行清理命令时发生错误: {e}")
+        # Decide if this should be fatal, for now, let's continue cautiously
+        # return False
+
+    # --- Step 2: Run Prepare ---
+    prepare_cmd = ["make", f"{package_path_rel}/prepare", "V=s"]
+    print(f"运行 Prepare 命令: {' '.join(prepare_cmd)}")
+    try:
+        result_prepare = subprocess.run(prepare_cmd, shell=False, check=True, capture_output=True, text=True, timeout=120)
         print("Prepare 命令成功完成。")
-        print(f"Prepare stdout:\n{result.stdout[-500:]}") # Print last 500 chars of stdout
-        print(f"Prepare stderr:\n{result.stderr}")
-
-        # Additionally, clean the specific object file that failed, if possible
-        try:
-            version = get_trojan_plus_version()
-            trojan_build_dir = find_trojan_plus_build_dir(version)
-            if trojan_build_dir:
-                obj_file = os.path.join(trojan_build_dir, "CMakeFiles/trojan.dir/src/core/config.cpp.o")
-                if os.path.exists(obj_file):
-                    os.remove(obj_file)
-                    print(f"已删除可能过时的目标文件: {obj_file}")
-        except Exception as e:
-            print(f"警告: 清理目标文件时出错 (非致命): {e}")
-
-        return True # Indicate fix was attempted (successfully ran prepare)
+        print(f"Prepare stdout (last 500 chars):\n{result_prepare.stdout[-500:]}")
+        print(f"Prepare stderr:\n{result_prepare.stderr}")
     except subprocess.CalledProcessError as e:
-        print(f"错误: {package_path}/prepare 命令失败 (返回码 {e.returncode})。")
+        print(f"错误: Prepare 命令失败 (返回码 {e.returncode})。")
         print(f"Stderr:\n{e.stderr}")
         print(f"Stdout:\n{e.stdout}")
-        return False
+        return False # Prepare failing is likely fatal for this fix
     except subprocess.TimeoutExpired:
-         print(f"错误: {package_path}/prepare 命令超时。")
+         print(f"错误: Prepare 命令超时。")
          return False
     except Exception as e:
-        print(f"运行 {package_path}/prepare 时发生未知错误: {e}")
+        print(f"运行 Prepare 命令时发生未知错误: {e}")
         return False
+
+    # --- Step 3: Clean CMake Cache ---
+    print("尝试清理 CMake 缓存...")
+    try:
+        version = get_trojan_plus_version()
+        trojan_build_dir = find_trojan_plus_build_dir(version)
+
+        if not trojan_build_dir:
+            print("警告: 无法找到构建目录，无法清理 CMake 缓存。")
+            # Still return True because prepare succeeded, maybe it was enough
+            return True
+
+        cmake_cache_file = os.path.join(trojan_build_dir, "CMakeCache.txt")
+        cmake_files_dir = os.path.join(trojan_build_dir, "CMakeFiles")
+
+        if os.path.exists(cmake_cache_file):
+            try:
+                os.remove(cmake_cache_file)
+                print(f"已删除 CMake 缓存文件: {cmake_cache_file}")
+            except OSError as e:
+                print(f"警告: 删除 CMake 缓存文件失败: {e}")
+
+        if os.path.isdir(cmake_files_dir):
+            try:
+                shutil.rmtree(cmake_files_dir)
+                print(f"已删除 CMakeFiles 目录: {cmake_files_dir}")
+            except OSError as e:
+                print(f"警告: 删除 CMakeFiles 目录失败: {e}")
+        else:
+             print(f"CMakeFiles 目录不存在，无需删除: {cmake_files_dir}")
+
+        # Also remove the specific object file that failed previously
+        obj_file = os.path.join(trojan_build_dir, "CMakeFiles/trojan.dir/src/core/config.cpp.o")
+        if os.path.exists(obj_file):
+             try:
+                  os.remove(obj_file)
+                  print(f"已删除旧的目标文件: {obj_file}")
+             except OSError as e:
+                  print(f"警告: 删除目标文件失败: {e}")
+
+
+    except (FileNotFoundError, ValueError, IOError) as e:
+        print(f"警告: 获取版本或构建目录失败，无法清理 CMake 缓存: {e}")
+    except Exception as e:
+        print(f"清理 CMake 缓存时发生未知错误: {e}")
+
+    print("GSL 未找到问题的修复尝试完成。")
+    return True # Indicate fix was attempted
 
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁"""
