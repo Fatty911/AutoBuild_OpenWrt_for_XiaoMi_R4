@@ -141,22 +141,31 @@ def fix_gsl_std_at_error(log_file_content, attempt_count=0):
     # If modification was successful, clean the package to force rebuild
     # Only clean if a change was actually made
     print("清理 trojan-plus 以确保修改生效...")
-    clean_cmd = ["make", "package/feeds/small8/trojan-plus/clean", "V=s"]
-    print(f"运行: {' '.join(clean_cmd)}")
-    result = subprocess.run(clean_cmd, shell=False, capture_output=True, text=True)
-    print(f"Clean stdout:\n{result.stdout}")
-    print(f"Clean stderr:\n{result.stderr}")
-    if result.returncode != 0:
-         print("警告: 清理 trojan-plus 可能失败，但仍继续尝试编译。")
+    # --- Find correct make target path (similar logic as in fix_gsl_not_found) ---
+    make_target_path_for_clean = None
+    package_base = "trojan-plus"
+    feed_name = "small8" # Adjust if needed
+    package_dir_path_for_clean = f"package/feeds/{feed_name}/{package_base}" # Assuming feed_name and package_base are available or defined
+    alt_package_dir_path_for_clean = f"package/network/services/{package_base}"
+    if os.path.isdir(package_dir_path_for_clean):
+         make_target_path_for_clean = package_dir_path_for_clean
+    elif os.path.isdir(alt_package_dir_path_for_clean):
+         make_target_path_for_clean = alt_package_dir_path_for_clean
+    else:
+         # Add fallback logic if needed
+         print("警告: 无法确定清理命令的 make 目标路径，将尝试默认路径。")
+         make_target_path_for_clean = f"package/feeds/{feed_name}/{package_base}" # Default guess
 
-    # Optional: Consider removing the specific object file as well
-    # obj_file = os.path.join(trojan_build_dir, "CMakeFiles/trojan.dir/src/core/config.cpp.o")
-    # if os.path.exists(obj_file):
-    #     try:
-    #         os.remove(obj_file)
-    #         print(f"已删除旧的目标文件: {obj_file}")
-    #     except OSError as e:
-    #         print(f"警告: 删除目标文件失败: {e}")
+    if make_target_path_for_clean:
+        clean_cmd = ["make", f"{make_target_path_for_clean}/clean", "V=s"]
+        print(f"运行: {' '.join(clean_cmd)}")
+        result = subprocess.run(clean_cmd, shell=False, capture_output=True, text=True)
+        print(f"Clean stdout:\n{result.stdout[-500:]}")
+        print(f"Clean stderr:\n{result.stderr}")
+        if result.returncode != 0:
+             print("警告: 清理 trojan-plus 可能失败，但仍继续尝试编译。")
+    else:
+        print("错误: 无法执行清理，因为未找到 make 目标路径。")
 
     return True
 
@@ -167,61 +176,88 @@ def fix_gsl_not_found(log_file_content):
 
     package_base = "trojan-plus"
     feed_name = "small8" # Adjust if needed
-    # Find the correct relative path to the package Makefile directory
-    package_path_rel = None
-    possible_makefile_dirs = [
+
+    # --- Determine the CORRECT make target path ---
+    # OpenWrt make targets are usually relative to the 'package' dir in the source root
+    # even if the source files are in 'feeds/'
+    make_target_path = None
+    possible_target_bases = [
         f"feeds/{feed_name}/{package_base}",
-        f"package/feeds/{feed_name}/{package_base}",
-        f"package/network/services/{package_base}" # Less likely but possible
+        # Add others if the structure varies significantly
     ]
-    for p in possible_makefile_dirs:
-        if os.path.isdir(p):
-            package_path_rel = p
-            break
+    # Check if the corresponding directory exists under 'package/'
+    package_dir_path = f"package/feeds/{feed_name}/{package_base}" # Most common structure
+    alt_package_dir_path = f"package/network/services/{package_base}"
 
-    if not package_path_rel:
-        print(f"错误: 无法在已知位置找到 '{package_base}' 的包目录。")
-        return False
+    if os.path.isdir(package_dir_path):
+         make_target_path = package_dir_path
+         print(f"使用 make 目标路径: {make_target_path}")
+    elif os.path.isdir(alt_package_dir_path):
+         make_target_path = alt_package_dir_path
+         print(f"使用备用 make 目标路径: {make_target_path}")
+    else:
+         # Fallback: Try to guess based on where the Makefile was found earlier,
+         # assuming it's under 'feeds' or 'package'
+         makefile_found_in_feeds = False
+         makefile_found_in_package = False
+         if os.path.exists(f"feeds/{feed_name}/{package_base}/Makefile"):
+             makefile_found_in_feeds = True
+         if os.path.exists(f"package/feeds/{feed_name}/{package_base}/Makefile"):
+             makefile_found_in_package = True # This dir existing implies the target path is good
 
-    print(f"找到包目录: {package_path_rel}")
+         if makefile_found_in_package:
+              make_target_path = f"package/feeds/{feed_name}/{package_base}"
+              print(f"根据 package/下的 Makefile 推断 make 目标路径: {make_target_path}")
+         elif makefile_found_in_feeds:
+              # If Makefile is in feeds/ but not package/feeds/, the target might *still* be package/feeds/
+              # This is the standard OpenWrt way.
+              make_target_path = f"package/feeds/{feed_name}/{package_base}"
+              print(f"根据 feeds/下的 Makefile 推断 make 目标路径（标准方式）: {make_target_path}")
+         else:
+              print(f"错误: 无法确定 '{package_base}' 的正确 make 目标路径 (检查了 {package_dir_path}, {alt_package_dir_path} 和 Makefile 位置)。")
+              return False
 
-    # --- Step 1: Clean the package ---
-    clean_cmd = ["make", f"{package_path_rel}/clean", "V=s"]
+
+    # --- Step 1: Clean the package using the correct make target path ---
+    clean_cmd = ["make", f"{make_target_path}/clean", "V=s"]
     print(f"运行清理命令: {' '.join(clean_cmd)}")
     try:
+        # Use check=False for clean, as it might fail if dir doesn't exist yet, which is ok
         result_clean = subprocess.run(clean_cmd, shell=False, check=False, capture_output=True, text=True, timeout=60)
-        print(f"Clean stdout:\n{result_clean.stdout[-500:]}")
+        print(f"Clean stdout (last 500 chars):\n{result_clean.stdout[-500:]}")
         print(f"Clean stderr:\n{result_clean.stderr}")
+        # Don't treat non-zero exit code as fatal for clean
         if result_clean.returncode != 0:
-            print(f"警告: 清理命令 ({' '.join(clean_cmd)}) 可能失败 (返回码 {result_clean.returncode})，但仍继续尝试。")
+            print(f"信息: 清理命令 ({' '.join(clean_cmd)}) 返回码 {result_clean.returncode} (可能目录不存在或无规则)。")
     except subprocess.TimeoutExpired:
          print(f"警告: 清理命令超时，继续尝试。")
     except Exception as e:
         print(f"运行清理命令时发生错误: {e}")
-        # Decide if this should be fatal, for now, let's continue cautiously
-        # return False
+        # Continue cautiously
 
-    # --- Step 2: Run Prepare ---
-    prepare_cmd = ["make", f"{package_path_rel}/prepare", "V=s"]
+    # --- Step 2: Run Prepare using the correct make target path ---
+    prepare_cmd = ["make", f"{make_target_path}/prepare", "V=s"]
     print(f"运行 Prepare 命令: {' '.join(prepare_cmd)}")
     try:
-        result_prepare = subprocess.run(prepare_cmd, shell=False, check=True, capture_output=True, text=True, timeout=120)
+        # Use check=True for prepare, as it *must* succeed
+        result_prepare = subprocess.run(prepare_cmd, shell=False, check=True, capture_output=True, text=True, timeout=180) # Increased timeout further
         print("Prepare 命令成功完成。")
         print(f"Prepare stdout (last 500 chars):\n{result_prepare.stdout[-500:]}")
         print(f"Prepare stderr:\n{result_prepare.stderr}")
     except subprocess.CalledProcessError as e:
-        print(f"错误: Prepare 命令失败 (返回码 {e.returncode})。")
+        print(f"错误: Prepare 命令 ('{' '.join(prepare_cmd)}') 失败 (返回码 {e.returncode})。")
         print(f"Stderr:\n{e.stderr}")
         print(f"Stdout:\n{e.stdout}")
-        return False # Prepare failing is likely fatal for this fix
+        return False # Prepare failing is fatal for this fix
     except subprocess.TimeoutExpired:
-         print(f"错误: Prepare 命令超时。")
+         print(f"错误: Prepare 命令 ('{' '.join(prepare_cmd)}') 超时。")
          return False
     except Exception as e:
-        print(f"运行 Prepare 命令时发生未知错误: {e}")
+        print(f"运行 Prepare 命令 ('{' '.join(prepare_cmd)}') 时发生未知错误: {e}")
         return False
 
     # --- Step 3: Clean CMake Cache ---
+    # (This part remains the same as before, finding the build_dir based on version)
     print("尝试清理 CMake 缓存...")
     try:
         version = get_trojan_plus_version()
@@ -229,8 +265,7 @@ def fix_gsl_not_found(log_file_content):
 
         if not trojan_build_dir:
             print("警告: 无法找到构建目录，无法清理 CMake 缓存。")
-            # Still return True because prepare succeeded, maybe it was enough
-            return True
+            return True # Prepare succeeded, maybe it was enough
 
         cmake_cache_file = os.path.join(trojan_build_dir, "CMakeCache.txt")
         cmake_files_dir = os.path.join(trojan_build_dir, "CMakeFiles")
@@ -252,14 +287,15 @@ def fix_gsl_not_found(log_file_content):
              print(f"CMakeFiles 目录不存在，无需删除: {cmake_files_dir}")
 
         # Also remove the specific object file that failed previously
-        obj_file = os.path.join(trojan_build_dir, "CMakeFiles/trojan.dir/src/core/config.cpp.o")
-        if os.path.exists(obj_file):
+        # Construct path carefully, assuming standard CMake structure
+        obj_file_rel_path = os.path.join("CMakeFiles", "trojan.dir", "src", "core", "config.cpp.o")
+        obj_file_abs_path = os.path.join(trojan_build_dir, obj_file_rel_path)
+        if os.path.exists(obj_file_abs_path):
              try:
-                  os.remove(obj_file)
-                  print(f"已删除旧的目标文件: {obj_file}")
+                  os.remove(obj_file_abs_path)
+                  print(f"已删除旧的目标文件: {obj_file_abs_path}")
              except OSError as e:
                   print(f"警告: 删除目标文件失败: {e}")
-
 
     except (FileNotFoundError, ValueError, IOError) as e:
         print(f"警告: 获取版本或构建目录失败，无法清理 CMake 缓存: {e}")
@@ -267,7 +303,7 @@ def fix_gsl_not_found(log_file_content):
         print(f"清理 CMake 缓存时发生未知错误: {e}")
 
     print("GSL 未找到问题的修复尝试完成。")
-    return True # Indicate fix was attempted
+    return True
 
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁"""
