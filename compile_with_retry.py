@@ -38,7 +38,7 @@ def get_relative_path(path):
 def fix_gsl_include_error(log_file, attempt_count=0):
     print("检测到 'at' is not a member of 'std' 错误，尝试修复...")
     
-    trojan_build_dir = find_trojan_build_dir()
+    trojan_build_dir = find_trojan_plus_build_dir()
     if not trojan_build_dir:
         print("无法找到 trojan-plus 的构建目录")
         return False
