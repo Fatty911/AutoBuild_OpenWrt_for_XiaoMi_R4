@@ -33,19 +33,7 @@ def get_relative_path(path):
     except:
         return path
 
-def find_trojan_build_dir():
-    """动态查找 trojan-plus 的构建目录"""
-    try:
-        build_dirs = subprocess.check_output(
-            ["find", "build_dir", "-type", "d", "-name", "trojan-plus-*", "-print", "-quit"],
-            text=True,
-            stderr=subprocess.DEVNULL
-        ).strip()
-        if build_dirs:
-            return build_dirs
-    except subprocess.CalledProcessError:
-        pass
-    return None
+
 
 def fix_gsl_include_error(log_file, attempt_count=0):
     print("检测到 'at' is not a member of 'std' 错误，尝试修复...")
@@ -372,68 +360,242 @@ def fix_makefile_separator(log_file):
     
     return fix_attempted == 1
 
+
 def get_trojan_plus_version():
     """从 Makefile 获取 trojan-plus 版本"""
-    makefile_path = "package/feeds/small8/trojan-plus/Makefile"
+    # 尝试在多个可能的位置查找 Makefile
+    possible_paths = [
+        "feeds/small8/trojan-plus/Makefile",
+        "package/feeds/small8/trojan-plus/Makefile"
+    ]
+    makefile_path = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            makefile_path = p
+            break
+    
+    if not makefile_path:
+         # 如果在 feeds 中找不到，尝试在 package/network/services 中查找 (虽然不太可能)
+        alt_path = "package/network/services/trojan-plus/Makefile"
+        if os.path.exists(alt_path):
+            makefile_path = alt_path
+        else:
+             raise FileNotFoundError("无法在常见位置找到 trojan-plus 的 Makefile")
+
+    print(f"找到 trojan-plus Makefile: {makefile_path}")
     with open(makefile_path, 'r') as f:
         content = f.read()
-    version_match = re.search(r'PKG_VERSION:=([\d.]+)', content)
+    version_match = re.search(r'PKG_VERSION\s*:=\s*([\d.]+)', content)
     if version_match:
         return version_match.group(1)
     else:
-        raise ValueError("无法从 Makefile 中提取 PKG_VERSION")
+        raise ValueError(f"无法从 {makefile_path} 中提取 PKG_VERSION")
+
+def find_trojan_plus_build_dir(version):
+    """根据版本号动态查找 trojan-plus 的构建目录"""
+    base_build_dir = "build_dir"
+    pattern = f"*/trojan-plus-{version}" # 匹配 target-*/trojan-plus-VERSION
+
+    try:
+        # 使用 find 命令查找匹配的目录
+        find_command = ["find", base_build_dir, "-type", "d", "-path", pattern, "-print", "-quit"]
+        result = subprocess.run(find_command, capture_output=True, text=True, check=False)
+
+        if result.returncode == 0 and result.stdout.strip():
+            found_path = result.stdout.strip()
+            print(f"动态找到 trojan-plus 构建目录: {found_path}")
+            return found_path
+        else:
+            print(f"警告: 无法通过 find 命令找到模式 '{pattern}' 的目录。尝试备用方法。")
+            # 备用方法：遍历 build_dir 下的 target-* 目录
+            for target_dir in os.listdir(base_build_dir):
+                if target_dir.startswith("target-"):
+                    potential_path = os.path.join(base_build_dir, target_dir, f"trojan-plus-{version}")
+                    if os.path.isdir(potential_path):
+                        print(f"通过备用方法找到 trojan-plus 构建目录: {potential_path}")
+                        return potential_path
+            print(f"错误: 无法在 {base_build_dir} 下找到 trojan-plus-{version} 的构建目录。")
+            return None
+
+    except Exception as e:
+        print(f"查找 trojan-plus 构建目录时出错: {e}")
+        return None
+
 
 def fix_trojan_plus_boost_error():
     """直接修改 trojan-plus 源代码以修复 buffer_cast 错误"""
     try:
         version = get_trojan_plus_version()
+        print(f"获取到的 trojan-plus 版本: {version}")
+
+        build_dir = find_trojan_plus_build_dir(version)
+        if not build_dir:
+            print("[错误] 无法确定 trojan-plus 的构建目录。")
+            return False
+
+        # 现在构建源文件路径
         source_files = [
-            f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/service.cpp",
-            f"build_dir/target-mipsel_24kc_musl/trojan-plus-{version}/src/core/utils.cpp"
+            os.path.join(build_dir, "src/core/service.cpp"),
+            os.path.join(build_dir, "src/core/utils.cpp")
         ]
         fix_applied = False
 
         for source_path in source_files:
             if not os.path.exists(source_path):
-                print(f"[错误] 找不到源码文件: {source_path}")
+                print(f"[信息] 源码文件不存在，跳过: {source_path}")
                 continue
 
-            with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
-                content = f.read()
+            print(f"检查并修复文件: {source_path}")
+            try:
+                with open(source_path, 'r', encoding='utf-8', errors='replace') as f:
+                    content = f.read()
+            except Exception as e:
+                print(f"[错误] 读取文件失败 {source_path}: {e}")
+                continue
 
-            # 替换 boost::asio::buffer_cast 为 static_cast 并添加 .data()
-            pattern = r'boost::asio::buffer_cast\s*<\s*([^>]+)\s*>\s*\(\s*([^)]+)\s*\)'
-            def replace_buffer_cast(match):
-                type_str = match.group(1).strip()
-                expr = match.group(2).strip()
-                # 处理嵌套 static_cast<void*>
-                if "static_cast<void*>" in expr:
-                    expr = expr.replace("static_cast<void*>(", "").rstrip(")")
-                return f"static_cast<{type_str}>({expr}.data())"
-            new_content = re.sub(pattern, replace_buffer_cast, content)
+            original_content = content
 
-            # 修复之前脚本生成的错误代码
-            new_content = new_content.replace("n.data()", "n")
-            new_content = new_content.replace("char_length.data()", "char_length")
-            new_content = new_content.replace("target.data(.data())", "target.data()")
-            new_content = new_content.replace("append_buf.data(.data())", "append_buf.data()")
+            # 核心修复逻辑：替换 boost::asio::buffer_cast<TYPE>(EXPR) 为 static_cast<TYPE>((EXPR).data())
+            # 正则表达式解释:
+            # boost::asio::buffer_cast  - 匹配字面量
+            # \s*<\s*                   - 匹配 '<' 前后的空格
+            # ([^>]+)                   - 捕获组 1: 尖括号内的类型 (e.g., "char*", "const void*")
+            # \s*>\s*                   - 匹配 '>' 前后的空格
+            # \(                        - 匹配左括号 '('
+            # \s*                       - 匹配括号内的前导空格
+            # (                         - 开始捕获组 2: 括号内的表达式
+            #   (?:                     - 非捕获组，用于处理嵌套括号
+            #     [^()]+                - 匹配非括号字符
+            #     |                     - 或
+            #     \( (? R) \)           - 递归匹配平衡的括号对 (需要 regex 模块支持，Python re 不支持)
+            #                           - 简化：使用非贪婪匹配 .*? 来捕获，直到最后一个 ')'
+            #   )                       - 结束捕获组 2
+            # .*?                       - 非贪婪匹配，捕获括号内的表达式内容
+            # )                         - 结束捕获组 2 (简化版)
+            # \s*                       - 匹配括号内的尾随空格
+            # \)                        - 匹配右括号 ')'
+            # 使用更健壮的括号匹配（虽然Python re不支持完全递归，但这能处理简单嵌套）
+            # 我们需要匹配从第一个 '(' 到与之对应的最后一个 ')'
+            # 尝试手动查找匹配的括号来确定表达式范围
+            
+            new_content_lines = []
+            modified_in_file = False
+            lines = content.splitlines()
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                match = re.search(r'boost::asio::buffer_cast\s*<([^>]+)>\s*\(', line)
+                if match:
+                    start_index = match.end() # '(' 之后的位置
+                    type_str = match.group(1).strip()
+                    
+                    # 查找匹配的 ')'
+                    paren_level = 1
+                    expr_start_line = i
+                    expr_start_col = start_index
+                    expr_end_line = -1
+                    expr_end_col = -1
+                    
+                    current_line_idx = i
+                    current_col_idx = start_index
+                    
+                    found_end = False
+                    while current_line_idx < len(lines):
+                        current_line_content = lines[current_line_idx]
+                        while current_col_idx < len(current_line_content):
+                            char = current_line_content[current_col_idx]
+                            if char == '(':
+                                paren_level += 1
+                            elif char == ')':
+                                paren_level -= 1
+                                if paren_level == 0:
+                                    expr_end_line = current_line_idx
+                                    expr_end_col = current_col_idx # ')' 的索引
+                                    found_end = True
+                                    break
+                            current_col_idx += 1
+                        
+                        if found_end:
+                            break
+                        
+                        # 移动到下一行
+                        current_line_idx += 1
+                        current_col_idx = 0 # 从下一行开头开始
 
-            if new_content != content:
+                    if found_end:
+                        # 提取表达式 EXPR
+                        if expr_start_line == expr_end_line:
+                            expr = lines[expr_start_line][expr_start_col:expr_end_col].strip()
+                            # 构建替换后的行
+                            prefix = line[:match.start()] # buffer_cast 之前的部分
+                            suffix = line[expr_end_col + 1:] # 匹配的 ')' 之后的部分
+                            replacement = f"static_cast<{type_str}>(({expr}).data())"
+                            new_line = prefix + replacement + suffix
+                            new_content_lines.append(new_line)
+                            print(f"  - Line {i+1}: Replaced buffer_cast")
+                            print(f"    Original segment: {match.group(0)}{expr})")
+                            print(f"    New segment: {replacement}")
+                            modified_in_file = True
+                        else:
+                            # 跨行匹配，处理比较复杂，暂时跳过并警告
+                            print(f"  - Line {i+1}: WARNING - buffer_cast expression spans multiple lines. Skipping automated fix for this instance.")
+                            new_content_lines.append(line) # 保留原始行
+                    else:
+                         # 找不到匹配的括号，可能格式有问题
+                         print(f"  - Line {i+1}: WARNING - Could not find matching parenthesis for buffer_cast. Skipping.")
+                         new_content_lines.append(line) # 保留原始行
+                else:
+                    new_content_lines.append(line) # 没有匹配，保留原始行
+                i += 1
+            
+            new_content = "\n".join(new_content_lines)
+
+            # --- 清理可能由 *先前* 错误脚本造成的 .data(.data()) ---
+            # 这个清理应该在主要替换逻辑 *之后* 进行
+            cleanup_count = new_content.count(".data(.data())")
+            if cleanup_count > 0:
+                print(f"  - Cleaning up {cleanup_count} instance(s) of '.data(.data())'")
+                new_content = new_content.replace(".data(.data())", ".data()")
+                modified_in_file = True
+            # --- 清理结束 ---
+
+            if modified_in_file:
                 backup_path = source_path + ".bak"
-                shutil.copy2(source_path, backup_path)
-                print(f"[备份] 已备份原始文件到: {backup_path}")
-                
-                with open(source_path, 'w', encoding='utf-8') as f:
-                    f.write(new_content)
-                print(f"[完成] 已替换 {source_path} 中的 buffer_cast 为 static_cast")
-                fix_applied = True
+                try:
+                    shutil.copy2(source_path, backup_path)
+                    print(f"[备份] 已备份原始文件到: {backup_path}")
+                except Exception as e:
+                    print(f"[警告] 备份文件失败 {source_path}: {e}")
+
+                try:
+                    with open(source_path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    print(f"[完成] 已修改文件: {source_path}")
+                    fix_applied = True
+                except Exception as e:
+                    print(f"[错误] 写入文件失败 {source_path}: {e}")
+                    # 尝试恢复备份
+                    if os.path.exists(backup_path):
+                        try:
+                            shutil.move(backup_path, source_path)
+                            print(f"[恢复] 已从备份恢复文件: {source_path}")
+                        except Exception as re:
+                            print(f"[严重错误] 恢复备份失败 {backup_path}: {re}")
             else:
-                print(f"[信息] 未找到需要替换的 buffer_cast 行在 {source_path}")
+                print(f"[信息] 文件无需修改: {source_path}")
 
         return fix_applied
 
+    except FileNotFoundError as e:
+        print(f"[错误] {e}")
+        return False
+    except ValueError as e:
+        print(f"[错误] {e}")
+        return False
     except Exception as e:
         print(f"[异常] 修复 trojan-plus 出错: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def fix_directory_conflict(log_file):
