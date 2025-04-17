@@ -406,10 +406,13 @@ def fix_trojan_plus_boost_error():
             def replace_buffer_cast(match):
                 type_str = match.group(1).strip()
                 expr = match.group(2).strip()
+                # 处理嵌套 static_cast<void*>
+                if "static_cast<void*>" in expr:
+                    expr = expr.replace("static_cast<void*>(", "").rstrip(")")
                 return f"static_cast<{type_str}>({expr}.data())"
             new_content = re.sub(pattern, replace_buffer_cast, content)
 
-            # 修复脚本生成的错误代码
+            # 修复之前脚本生成的错误代码
             new_content = new_content.replace("n.data()", "n")
             new_content = new_content.replace("char_length.data()", "char_length")
             new_content = new_content.replace("target.data(.data())", "target.data()")
