@@ -33,7 +33,168 @@ def get_relative_path(path):
     except:
         return path
 
+import traceback # Add this import at the top if not already present
 
+def patch_trojan_cmake_skip_gsl_clone():
+    """
+    Patches trojan-plus CMakeLists.txt to skip GSL git clone
+    if the directory seems to exist (populated by 'prepare').
+    """
+    print("尝试修补 trojan-plus CMakeLists.txt 以跳过 GSL 克隆...")
+    try:
+        version = get_trojan_plus_version()
+        trojan_build_dir = find_trojan_plus_build_dir(version)
+    except (FileNotFoundError, ValueError, IOError) as e:
+        print(f"无法获取 trojan-plus 版本或构建目录: {e}")
+        return False
+    except Exception as e:
+        print(f"查找 trojan-plus 目录时发生未知错误: {e}")
+        return False
+
+    if not trojan_build_dir:
+        print("无法找到 trojan-plus 的构建目录，无法修补 CMakeLists.txt")
+        return False
+
+    cmake_lists_path = os.path.join(trojan_build_dir, "CMakeLists.txt")
+    # Check for a file that indicates GSL is already present from 'prepare'
+    gsl_check_file = os.path.join(trojan_build_dir, "external/GSL/include/gsl/gsl")
+
+    if not os.path.exists(cmake_lists_path):
+        print(f"错误: CMakeLists.txt 未找到于 {cmake_lists_path}")
+        print("请确保 'prepare' 步骤已成功运行。")
+        return False
+
+    # Check if GSL seems present *before* patching
+    if not os.path.exists(gsl_check_file):
+         print(f"警告: GSL 检查文件 '{gsl_check_file}' 不存在。")
+         print("这可能意味着 'prepare' 未能成功获取 GSL，或者路径错误。")
+         print("仍然尝试修补 CMakeLists.txt，以防万一。")
+         # Continue, maybe the check path is slightly wrong but clone needs skipping
+
+    backup_path = f"{cmake_lists_path}.bak.gslfix.{int(time.time())}"
+    modified = False
+    lines = [] # Initialize lines
+
+    try:
+        print(f"正在读取: {cmake_lists_path}")
+        with open(cmake_lists_path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
+
+        new_lines = []
+        # --- Find the GSL clone/fetch logic ---
+        # Option 1: Look for execute_process git clone
+        git_clone_pattern = re.compile(r'execute_process\s*\(.*COMMAND\s+\${GIT_EXECUTABLE}\s+clone\s+.*Microsoft/GSL', re.IGNORECASE)
+        # Option 2: Look for FetchContent
+        fetch_content_pattern = re.compile(r'FetchContent_Declare\s*\(\s*GSL', re.IGNORECASE) # Assuming name is GSL
+        populate_content_pattern = re.compile(r'FetchContent_MakeAvailable\s*\(\s*GSL', re.IGNORECASE)
+        # Option 3: Look for ExternalProject_Add
+        external_project_pattern = re.compile(r'ExternalProject_Add\s*\(\s*GSL', re.IGNORECASE) # Assuming name is GSL
+
+        block_start = -1
+        block_end = -1
+        patch_type = None
+
+        for i, line in enumerate(lines):
+            if git_clone_pattern.search(line):
+                # Simplest case: assume the execute_process is the block
+                block_start = i
+                block_end = i # Assume single line for now
+                patch_type = "execute_process"
+                print(f"在第 {i+1} 行找到 execute_process GSL clone")
+                break
+            elif fetch_content_pattern.search(line):
+                 # FetchContent usually involves Declare and MakeAvailable/Populate
+                 block_start = i
+                 patch_type = "FetchContent"
+                 # Find the corresponding MakeAvailable/Populate
+                 for j in range(i + 1, len(lines)):
+                      if populate_content_pattern.search(lines[j]):
+                           block_end = j
+                           break
+                 if block_end == -1: block_end = i # Fallback if MakeAvailable not found nearby
+                 print(f"在第 {i+1} 行找到 FetchContent_Declare(GSL)")
+                 if block_end != i: print(f"  (对应 MakeAvailable 在第 {block_end+1} 行)")
+                 break
+            elif external_project_pattern.search(line):
+                 # ExternalProject_Add can be multi-line
+                 block_start = i
+                 patch_type = "ExternalProject"
+                 # Find the closing parenthesis ')' for the command
+                 paren_level = 0
+                 for j in range(i, len(lines)):
+                      paren_level += lines[j].count('(')
+                      paren_level -= lines[j].count(')')
+                      if paren_level <= 0 and lines[j].strip().endswith(')'): # Heuristic end
+                           block_end = j
+                           break
+                 if block_end == -1: block_end = i # Fallback
+                 print(f"在第 {i+1} 行找到 ExternalProject_Add(GSL)")
+                 if block_end != i: print(f"  (块结束于第 {block_end+1} 行)")
+                 break
+
+        if block_start != -1 and block_end != -1:
+            # Check if already guarded (simple check)
+            already_guarded = False
+            if block_start > 0:
+                 prev_line = lines[block_start-1].strip()
+                 # Check for common guard patterns
+                 if prev_line.startswith('if') and ('EXISTS' in prev_line or 'DEFINED' in prev_line) and ('GSL' in prev_line or 'external/GSL' in prev_line):
+                      already_guarded = True
+                      print("检测到可能已存在的 GSL 检查，跳过修补。")
+
+            if not already_guarded:
+                print(f"将在第 {block_start + 1} 行前插入 GSL 存在性检查...")
+                # Use CMAKE_CURRENT_SOURCE_DIR which points to the source dir being processed by CMake
+                # Check for the include file which should exist after prepare
+                check_condition = 'if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/external/GSL/include/gsl/gsl")'
+
+                # Create backup before modifying lines list
+                shutil.copy2(cmake_lists_path, backup_path)
+                print(f"已备份 {cmake_lists_path} 到 {backup_path}")
+
+                # Insert the 'if' before the block starts
+                lines.insert(block_start, f"{check_condition}\n")
+                # Insert the 'endif' after the block ends (adjust index due to 'if' insertion)
+                lines.insert(block_end + 2, "endif()\n") # +1 for block end, +1 for inserted 'if'
+
+                modified = True
+                print(f"已插入 GSL 存在性检查围绕行 {block_start+1} 到 {block_end+2} (原始行号)。") # +1 for 1-based index, +1 for inserted 'if'
+
+        else:
+            print("警告: 未能在 CMakeLists.txt 中找到 GSL 克隆/获取逻辑。无法应用补丁。")
+            return False # Can't patch if we don't find the target
+
+        if modified:
+            print(f"正在写回修改后的 CMakeLists.txt: {cmake_lists_path}")
+            with open(cmake_lists_path, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
+            # Clean CMake cache *again* after modifying CMakeLists.txt
+            print("再次清理 CMake 缓存以确保补丁生效...")
+            cmake_cache_file = os.path.join(trojan_build_dir, "CMakeCache.txt")
+            cmake_files_dir = os.path.join(trojan_build_dir, "CMakeFiles")
+            if os.path.exists(cmake_cache_file):
+                try: os.remove(cmake_cache_file); print(f"已删除: {cmake_cache_file}")
+                except OSError as e: print(f"警告: 删除失败 {cmake_cache_file}: {e}")
+            if os.path.isdir(cmake_files_dir):
+                try: shutil.rmtree(cmake_files_dir); print(f"已删除: {cmake_files_dir}")
+                except OSError as e: print(f"警告: 删除失败 {cmake_files_dir}: {e}")
+            return True
+        else:
+            # No modification needed or possible
+            return False # Return False if no modification was made
+
+    except Exception as e:
+        print(f"修补 CMakeLists.txt 时发生错误: {e}")
+        traceback.print_exc()
+        # Attempt to restore backup if modification started
+        if modified and os.path.exists(backup_path) and lines: # Check if lines were read
+            try:
+                print(f"尝试从备份 {backup_path} 恢复 CMakeLists.txt...")
+                shutil.move(backup_path, cmake_lists_path)
+                print(f"已恢复 CMakeLists.txt。")
+            except Exception as restore_e:
+                print(f"警告：恢复备份失败: {restore_e}")
+        return False
 
 def fix_gsl_std_at_error(log_file_content, attempt_count=0):
     """修复 trojan-plus 中 'at' is not a member of 'std' 错误"""
@@ -169,26 +330,20 @@ def fix_gsl_std_at_error(log_file_content, attempt_count=0):
 
     return True
 
+# Ensure patch_trojan_cmake_skip_gsl_clone is defined above this function
+
 def fix_gsl_not_found(log_file_content):
-    """修复 trojan-plus 编译时找不到 gsl/gsl 的问题 (更积极的修复)"""
+    """修复 trojan-plus 编译时找不到 gsl/gsl 的问题 (更积极的修复 + CMake 补丁)"""
     print("检测到 'gsl/gsl: No such file or directory' 错误，尝试更积极的修复...")
-    print("步骤: 1. 清理包 2. 运行 Prepare 3. 清理 CMake 缓存")
+    print("步骤: 1. 清理包 2. 运行 Prepare 3. 修补 CMakeLists 4. 清理 CMake 缓存")
 
     package_base = "trojan-plus"
     feed_name = "small8" # Adjust if needed
-
-    # --- Determine the CORRECT make target path ---
-    # OpenWrt make targets are usually relative to the 'package' dir in the source root
-    # even if the source files are in 'feeds/'
     make_target_path = None
-    possible_target_bases = [
-        f"feeds/{feed_name}/{package_base}",
-        # Add others if the structure varies significantly
-    ]
-    # Check if the corresponding directory exists under 'package/'
-    package_dir_path = f"package/feeds/{feed_name}/{package_base}" # Most common structure
+    package_dir_path = f"package/feeds/{feed_name}/{package_base}"
     alt_package_dir_path = f"package/network/services/{package_base}"
 
+    # --- Determine Make Target Path ---
     if os.path.isdir(package_dir_path):
          make_target_path = package_dir_path
          print(f"使用 make 目标路径: {make_target_path}")
@@ -196,59 +351,43 @@ def fix_gsl_not_found(log_file_content):
          make_target_path = alt_package_dir_path
          print(f"使用备用 make 目标路径: {make_target_path}")
     else:
-         # Fallback: Try to guess based on where the Makefile was found earlier,
-         # assuming it's under 'feeds' or 'package'
-         makefile_found_in_feeds = False
-         makefile_found_in_package = False
-         if os.path.exists(f"feeds/{feed_name}/{package_base}/Makefile"):
-             makefile_found_in_feeds = True
-         if os.path.exists(f"package/feeds/{feed_name}/{package_base}/Makefile"):
-             makefile_found_in_package = True # This dir existing implies the target path is good
-
+         makefile_found_in_feeds = os.path.exists(f"feeds/{feed_name}/{package_base}/Makefile")
+         makefile_found_in_package = os.path.exists(f"package/feeds/{feed_name}/{package_base}/Makefile")
          if makefile_found_in_package:
               make_target_path = f"package/feeds/{feed_name}/{package_base}"
               print(f"根据 package/下的 Makefile 推断 make 目标路径: {make_target_path}")
          elif makefile_found_in_feeds:
-              # If Makefile is in feeds/ but not package/feeds/, the target might *still* be package/feeds/
-              # This is the standard OpenWrt way.
               make_target_path = f"package/feeds/{feed_name}/{package_base}"
               print(f"根据 feeds/下的 Makefile 推断 make 目标路径（标准方式）: {make_target_path}")
          else:
-              print(f"错误: 无法确定 '{package_base}' 的正确 make 目标路径 (检查了 {package_dir_path}, {alt_package_dir_path} 和 Makefile 位置)。")
+              print(f"错误: 无法确定 '{package_base}' 的正确 make 目标路径。")
               return False
 
-
-    # --- Step 1: Clean the package using the correct make target path ---
+    # --- Step 1: Clean the package ---
     clean_cmd = ["make", f"{make_target_path}/clean", "V=s"]
     print(f"运行清理命令: {' '.join(clean_cmd)}")
     try:
-        # Use check=False for clean, as it might fail if dir doesn't exist yet, which is ok
         result_clean = subprocess.run(clean_cmd, shell=False, check=False, capture_output=True, text=True, timeout=60)
         print(f"Clean stdout (last 500 chars):\n{result_clean.stdout[-500:]}")
         print(f"Clean stderr:\n{result_clean.stderr}")
-        # Don't treat non-zero exit code as fatal for clean
         if result_clean.returncode != 0:
-            print(f"信息: 清理命令 ({' '.join(clean_cmd)}) 返回码 {result_clean.returncode} (可能目录不存在或无规则)。")
+            print(f"信息: 清理命令返回码 {result_clean.returncode}。")
     except subprocess.TimeoutExpired:
-         print(f"警告: 清理命令超时，继续尝试。")
+         print(f"警告: 清理命令超时。")
     except Exception as e:
         print(f"运行清理命令时发生错误: {e}")
-        # Continue cautiously
 
-    # --- Step 2: Run Prepare using the correct make target path ---
+    # --- Step 2: Run Prepare ---
     prepare_cmd = ["make", f"{make_target_path}/prepare", "V=s"]
     print(f"运行 Prepare 命令: {' '.join(prepare_cmd)}")
     try:
-        # Use check=True for prepare, as it *must* succeed
-        result_prepare = subprocess.run(prepare_cmd, shell=False, check=True, capture_output=True, text=True, timeout=180) # Increased timeout further
+        result_prepare = subprocess.run(prepare_cmd, shell=False, check=True, capture_output=True, text=True, timeout=180)
         print("Prepare 命令成功完成。")
-        print(f"Prepare stdout (last 500 chars):\n{result_prepare.stdout[-500:]}")
-        print(f"Prepare stderr:\n{result_prepare.stderr}")
     except subprocess.CalledProcessError as e:
         print(f"错误: Prepare 命令 ('{' '.join(prepare_cmd)}') 失败 (返回码 {e.returncode})。")
         print(f"Stderr:\n{e.stderr}")
         print(f"Stdout:\n{e.stdout}")
-        return False # Prepare failing is fatal for this fix
+        return False
     except subprocess.TimeoutExpired:
          print(f"错误: Prepare 命令 ('{' '.join(prepare_cmd)}') 超时。")
          return False
@@ -256,54 +395,37 @@ def fix_gsl_not_found(log_file_content):
         print(f"运行 Prepare 命令 ('{' '.join(prepare_cmd)}') 时发生未知错误: {e}")
         return False
 
-    # --- Step 3: Clean CMake Cache ---
-    # (This part remains the same as before, finding the build_dir based on version)
-    print("尝试清理 CMake 缓存...")
+    # --- Step 3: Patch CMakeLists.txt ---
+    patch_successful = patch_trojan_cmake_skip_gsl_clone()
+    if not patch_successful:
+         print("警告: 修补 CMakeLists.txt 失败或未执行。编译可能仍会因 GSL 克隆失败。")
+         # We still cleaned and prepared, so let's return True and hope for the best
+         # The cache clean step below might still be useful
+
+    # --- Step 4: Clean CMake Cache ---
+    # Clean cache regardless of patch success, as prepare might have changed things
+    # The patch function also cleans cache if it modifies the file.
+    # Running it again here ensures it's cleaned even if patching wasn't needed/successful.
+    print("清理 CMake 缓存...")
     try:
         version = get_trojan_plus_version()
         trojan_build_dir = find_trojan_plus_build_dir(version)
-
-        if not trojan_build_dir:
-            print("警告: 无法找到构建目录，无法清理 CMake 缓存。")
-            return True # Prepare succeeded, maybe it was enough
-
-        cmake_cache_file = os.path.join(trojan_build_dir, "CMakeCache.txt")
-        cmake_files_dir = os.path.join(trojan_build_dir, "CMakeFiles")
-
-        if os.path.exists(cmake_cache_file):
-            try:
-                os.remove(cmake_cache_file)
-                print(f"已删除 CMake 缓存文件: {cmake_cache_file}")
-            except OSError as e:
-                print(f"警告: 删除 CMake 缓存文件失败: {e}")
-
-        if os.path.isdir(cmake_files_dir):
-            try:
-                shutil.rmtree(cmake_files_dir)
-                print(f"已删除 CMakeFiles 目录: {cmake_files_dir}")
-            except OSError as e:
-                print(f"警告: 删除 CMakeFiles 目录失败: {e}")
+        if trojan_build_dir:
+            cmake_cache_file = os.path.join(trojan_build_dir, "CMakeCache.txt")
+            cmake_files_dir = os.path.join(trojan_build_dir, "CMakeFiles")
+            if os.path.exists(cmake_cache_file):
+                try: os.remove(cmake_cache_file); print(f"已删除: {cmake_cache_file}")
+                except OSError as e: print(f"警告: 删除失败 {cmake_cache_file}: {e}")
+            if os.path.isdir(cmake_files_dir):
+                try: shutil.rmtree(cmake_files_dir); print(f"已删除: {cmake_files_dir}")
+                except OSError as e: print(f"警告: 删除失败 {cmake_files_dir}: {e}")
         else:
-             print(f"CMakeFiles 目录不存在，无需删除: {cmake_files_dir}")
-
-        # Also remove the specific object file that failed previously
-        # Construct path carefully, assuming standard CMake structure
-        obj_file_rel_path = os.path.join("CMakeFiles", "trojan.dir", "src", "core", "config.cpp.o")
-        obj_file_abs_path = os.path.join(trojan_build_dir, obj_file_rel_path)
-        if os.path.exists(obj_file_abs_path):
-             try:
-                  os.remove(obj_file_abs_path)
-                  print(f"已删除旧的目标文件: {obj_file_abs_path}")
-             except OSError as e:
-                  print(f"警告: 删除目标文件失败: {e}")
-
-    except (FileNotFoundError, ValueError, IOError) as e:
-        print(f"警告: 获取版本或构建目录失败，无法清理 CMake 缓存: {e}")
+             print("警告: 无法找到构建目录，无法清理 CMake 缓存。")
     except Exception as e:
-        print(f"清理 CMake 缓存时发生未知错误: {e}")
+        print(f"清理 CMake 缓存时发生错误: {e}")
 
     print("GSL 未找到问题的修复尝试完成。")
-    return True
+    return True # Indicate fix was attempted
 
 def fix_lua_neturl_directory():
     """修复 lua-neturl 的 Makefile 和补丁"""
