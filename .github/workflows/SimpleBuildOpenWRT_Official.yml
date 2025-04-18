@@ -101,8 +101,8 @@ jobs:
           cp ../compile_with_retry.py .
           # echo "先尝试编译容易失败的lua-neturl"
           # cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/feeds/small8/lua-neturl/compile V=s" "packages.log" 8
-          echo "先尝试编译容易失败的trojan-plus"
-          python compile_with_retry.py "make -j1 package/feeds/small8/trojan-plus/compile V=s" "packages.log" 6
+          #echo "先尝试编译容易失败的trojan-plus"
+          #python compile_with_retry.py "make -j1 package/feeds/small8/trojan-plus/compile V=s" "packages.log" 6
           echo "开始尝试编译所有packages" 
           # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
           #cp ../compile_with_retry.py .
