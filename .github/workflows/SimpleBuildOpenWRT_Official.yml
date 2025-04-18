@@ -57,52 +57,39 @@ jobs:
           ./scripts/feeds install -a
           cp ../config_for_OpenWrt_org .config
           echo "暂时禁用trojan-plus及其依赖，查找 trojan-plus 的 Makefile 位置"
-          TROJAN_PLUS_MAKEFILE=$(find package -type f -name "Makefile" -exec grep -l "PKG_NAME:=trojan-plus" {} \;)
-          if [ -n "$TROJAN_PLUS_MAKEFILE" ]; then
-            echo "找到 trojan-plus 的 Makefile: $TROJAN_PLUS_MAKEFILE"
-            echo "禁用 trojan-plus 包"
-            sed -i 's/CONFIG_PACKAGE_trojan-plus=y/# CONFIG_PACKAGE_trojan-plus is not set/' .config
-          else
-            echo "未找到 trojan-plus 的 Makefile，可能是名称不匹配或路径错误"
-          fi
-          
-          echo "开始递归查找依赖 trojan-plus 的包"
-          # 初始化依赖列表，包含 trojan-plus 本身
-          DEPENDENCY_LIST="trojan-plus"
-          NEW_DEPS=""
-          # 循环查找依赖，直到没有新的依赖被发现
-          while true; do
-            NEW_DEPS=""
-            # 遍历当前依赖列表，查找直接依赖它们的包
-            for dep in $DEPENDENCY_LIST; do
-              DEPENDENT_PACKAGES=$(find package -type f -name "Makefile" -exec grep -l "DEPENDS.*$dep" {} \;)
-              for makefile in $DEPENDENT_PACKAGES; do
-                PKG_NAME=$(grep "PKG_NAME:=" "$makefile" | head -1 | cut -d'=' -f2)
-                if [ -n "$PKG_NAME" ] && ! echo "$DEPENDENCY_LIST" | grep -q "$PKG_NAME"; then
-                  NEW_DEPS="$NEW_DEPS $PKG_NAME"
-                  echo "找到依赖 $dep 的包: $PKG_NAME"
-                fi
-              done
+          # 查找 trojan-plus 的 Makefile
+          DEPS=(trojan-plus)
+          # 4. 直接遍历所有 Makefile，递归收集依赖 trojan-plus 的包
+          for (( i=0; i<${#DEPS[@]}; i++ )); do
+            dep=${DEPS[i]}
+            # 在所有 package 下查找 DEPENDS 中提到 $dep 的 Makefile
+            for mk in $(grep -R "DEPENDS.*${dep}" package -n | cut -d: -f1); do
+              # 提取 PKG_NAME，若无则取目录名
+              pkg=$(grep -m1 "^PKG_NAME:=" "$mk" | cut -d= -f2)
+              [ -z "$pkg" ] && pkg=$(basename "$(dirname "$mk")")
+              # 去重后加入 DEPS
+              [[ ! " ${DEPS[*]} " =~ " $pkg " ]] && DEPS+=( "$pkg" )
             done
-            # 如果没有新的依赖，退出循环
-            if [ -z "$NEW_DEPS" ]; then
-              break
-            fi
-            # 将新找到的依赖加入列表
-            DEPENDENCY_LIST="$DEPENDENCY_LIST $NEW_DEPS"
           done
           
-          echo "最终依赖列表: $DEPENDENCY_LIST"
-          # 禁用所有找到的包
-          for pkg in $DEPENDENCY_LIST; do
-            echo "禁用包: $pkg"
-            sed -i "s/CONFIG_PACKAGE_${pkg}=y/# CONFIG_PACKAGE_${pkg} is not set/" .config
+          echo "Detected dependent packages: ${DEPS[*]}"
+          
+          # 5. 在 .config 中禁用所有找到的包
+          for pkg in "${DEPS[@]}"; do
+            cfg=$(echo "$pkg" | tr '-' '_')
+            # 禁用模块化（m）和内嵌（y）
+            sed -i -e "s/^CONFIG_PACKAGE_${cfg}=y/# CONFIG_PACKAGE_${cfg} is not set/" \
+                   -e "s/^CONFIG_PACKAGE_${cfg}=m/# CONFIG_PACKAGE_${cfg} is not set/" .config
           done
           
-          echo "重新生成配置"
+          # 6. 重新生成配置
           make defconfig
-          echo "在defconfig之后查看配置文件"
-          cat .config | grep CONFIG_TARGET_.*=y
+          
+          echo "验证禁用效果grep 'CONFIG_PACKAGE_trojan-plus' .config " 
+          grep 'CONFIG_PACKAGE_trojan-plus' .config
+    
+          # echo "在defconfig之后查看配置文件"
+          # cat .config | grep CONFIG_TARGET_.*=y
           
           
       - name: Download package
