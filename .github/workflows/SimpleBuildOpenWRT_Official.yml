@@ -58,6 +58,8 @@ jobs:
           cp ../config_for_OpenWrt_org .config
           echo "在defconfig之后查看配置文件"
           cat .config | grep CONFIG_TARGET_.*=y
+          sed -i '/^ *DEPENDS:=/ s/$/ +libudebug/' package/network/config/netifd/Makefile
+          sed -i '/^ *CMAKE_OPTIONS/s/$/ -DENABLE_UDDEBUG=OFF/' package/network/config/netifd/Makefile || sed -i '/^define Package\/netifd/a\ \ \ CMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF' package/network/config/netifd/Makefile
           
           
       - name: Download package
