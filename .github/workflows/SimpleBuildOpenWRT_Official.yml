@@ -62,24 +62,24 @@ jobs:
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
               -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
-              feeds/passwall/luci-app-passwall/Makefile
+              feeds/passwall/luci-app-passwall/Makefile || true
           
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
               -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
-              package/feeds/passwall/luci-app-passwall/Makefile
+              package/feeds/passwall/luci-app-passwall/Makefile || true
               
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
               -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
-              feeds/small8/luci-app-passwall/Makefile
+              feeds/small8/luci-app-passwall/Makefile || true
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
               -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
-              package/feeds/small8/luci-app-passwall/Makefile
+              package/feeds/small8/luci-app-passwall/Makefile || true
 
-          sed -i '/^ *DEPENDS:=/ s/$/ +libudebug/' package/network/config/netifd/Makefile
-          sed -i '/^ *CMAKE_OPTIONS/s/$/ -DENABLE_UDDEBUG=OFF/' package/network/config/netifd/Makefile || sed -i '/^define Package\/netifd/a\ \ \ CMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF' package/network/config/netifd/Makefile
+          sed -i '/^ *DEPENDS:=/ s/$/ +libudebug/' package/network/config/netifd/Makefile || true
+          sed -i '/^ *CMAKE_OPTIONS/s/$/ -DENABLE_UDDEBUG=OFF/' package/network/config/netifd/Makefile || sed -i '/^define Package\/netifd/a\ \ \ CMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF' package/network/config/netifd/Makefile || true
 
           
       - name: Download package
