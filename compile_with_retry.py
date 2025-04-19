@@ -1240,7 +1240,36 @@ def fix_lua_neturl_download(log_file):
     time.sleep(3)
     
     return True
+def fix_netifd_libnl_tiny():
+    """修复 netifd 编译时缺少 libnl-tiny 的问题"""
+    print("尝试重新编译 libnl-tiny 以解决 netifd 链接问题...")
+    try:
+        # 清理并重新编译 libnl-tiny
+        clean_cmd = ["make", "package/libs/libnl-tiny/clean", "V=s"]
+        print(f"运行: {' '.join(clean_cmd)}")
+        result_clean = subprocess.run(clean_cmd, shell=False, capture_output=True, text=True)
+        print(f"Clean stdout:\n{result_clean.stdout[-500:]}")
+        print(f"Clean stderr:\n{result_clean.stderr}")
 
+        compile_cmd = ["make", "package/libs/libnl-tiny/compile", "V=s", "-j1"]
+        print(f"运行: {' '.join(compile_cmd)}")
+        result_compile = subprocess.run(compile_cmd, shell=False, capture_output=True, text=True)
+        print(f"Compile stdout:\n{result_compile.stdout[-500:]}")
+        print(f"Compile stderr:\n{result_compile.stderr}")
+
+        if result_compile.returncode == 0:
+            print("libnl-tiny 重新编译成功。")
+            # 清理 netifd 以强制重新编译
+            netifd_clean_cmd = ["make", "package/network/config/netifd/clean", "V=s"]
+            print(f"运行: {' '.join(netifd_clean_cmd)}")
+            subprocess.run(netifd_clean_cmd, shell=False, capture_output=True, text=True)
+            return True
+        else:
+            print("libnl-tiny 重新编译失败。")
+            return False
+    except Exception as e:
+        print(f"修复 libnl-tiny 时发生错误: {e}")
+        return False
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
     parser.add_argument('make_command', help='编译命令，例如 "make -j1 V=s"')
@@ -1559,7 +1588,22 @@ def main():
                 fix_applied_this_iteration = False # Not really a fix
                 last_fix_applied = "fix_generic_retry"
                 consecutive_fix_failures = 1 # Start counting consecutive generic retries
-
+        # 在 main() 的错误检测部分添加
+        elif "undefined reference to `nlmsg_alloc_simple`" in log_content or "undefined reference to `nla_put`" in log_content:
+            print("检测到 netifd 编译错误，缺少 libnl-tiny 符号。尝试修复...")
+            if last_fix_applied == "fix_netifd_libnl_tiny":
+                print("上次已尝试修复 netifd libnl-tiny 问题，但仍失败。停止重试。")
+                consecutive_fix_failures += 1
+            else:
+                if fix_netifd_libnl_tiny():
+                    print("已尝试重新编译 libnl-tiny 以修复 netifd 问题。")
+                    fix_applied_this_iteration = True
+                    last_fix_applied = "fix_netifd_libnl_tiny"
+                    consecutive_fix_failures = 0
+                else:
+                    print("尝试修复 netifd libnl-tiny 问题失败。")
+                    last_fix_applied = "fix_netifd_libnl_tiny"
+                    consecutive_fix_failures += 1
         # --- Post-analysis checks ---
         if not fix_applied_this_iteration and compile_status != 0:
             print(f"警告：检测到错误，但此轮未应用特定修复。上次尝试: {last_fix_applied or '无'}")
