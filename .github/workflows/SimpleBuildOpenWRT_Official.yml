@@ -80,8 +80,7 @@ jobs:
 
           sed -i '/^ *DEPENDS:=/ s/$/ +libudebug/' package/network/config/netifd/Makefile || true
           sed -i '/^ *CMAKE_OPTIONS/s/$/ -DENABLE_UDDEBUG=OFF/' package/network/config/netifd/Makefile || sed -i '/^define Package\/netifd/a\ \ \ CMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF' package/network/config/netifd/Makefile || true
-          echo "确保 libnl-tiny 被正确安装"
-          make package/libs/libnl-tiny/compile V=s -j1
+
           
       - name: Download package
         id: download_package
@@ -110,6 +109,9 @@ jobs:
           else
             echo "libnl-tiny 已存在，路径：staging_dir/target-mipsel_24kc_musl/usr/lib/libnl-tiny.so"
           fi
+          echo "确保 libnl-tiny 被正确安装"
+          make package/libs/libnl-tiny/compile V=s -j1
+          
       - name: Compile kernel
         id: compile_kernel
         run: |
