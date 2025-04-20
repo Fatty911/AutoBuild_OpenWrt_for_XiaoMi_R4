@@ -603,14 +603,14 @@ def fix_depends_format(log_file):
     if "ERROR: info field 'depends' has invalid value" not in log_content:
         return False
     
-    # 提取出错的包路径
-    package_match = re.search(r'make\[\d+\]: \*\*\* \[.*\] Error 99', log_content)
-    if not package_match:
-        print("无法从日志中提取出错的包信息。")
-        return False
+    # 提取出错的包目录
+    package_dir_match = None
+    for line in log_content.splitlines():
+        match = re.search(r'make\[\d+\]: Entering directory \'([^\']+)\'', line)
+        if match and 'luci-lib-taskd' in match.group(1):
+            package_dir_match = match
+            break
     
-    # 查找包的 Makefile 路径
-    package_dir_match = re.search(r'make\[\d+\]: Leaving directory \'([^\']+)\'', log_content)
     if not package_dir_match:
         print("无法从日志中提取包目录。")
         return False
@@ -627,14 +627,15 @@ def fix_depends_format(log_file):
     with open(makefile_path, 'r', errors='replace') as f:
         content = f.read()
     
-    # 查找 PKG_DEPENDS 或其他依赖定义
-    depends_match = re.search(r'PKG_DEPENDS:=([^\n]+)', content)
+    # 查找 PKG_DEPENDS 或 DEPENDS
+    depends_match = re.search(r'(PKG_DEPENDS|DEPENDS):=(.+?)(?:\n|$)', content, re.DOTALL)
     if not depends_match:
-        print("无法找到 PKG_DEPENDS 定义。")
+        print("无法找到 PKG_DEPENDS 或 DEPENDS 定义。")
         return False
     
-    depends_line = depends_match.group(1).strip()
-    print(f"原始依赖项：{depends_line}")
+    depends_key = depends_match.group(1)
+    depends_line = depends_match.group(2).strip()
+    print(f"原始依赖项 ({depends_key})：{depends_line}")
     
     # 移除版本约束符（如 >=, = 等）并去重
     depends_list = depends_line.split()
@@ -652,7 +653,7 @@ def fix_depends_format(log_file):
     
     # 更新 Makefile
     if new_depends_line != depends_line:
-        content = content.replace(depends_match.group(0), f"PKG_DEPENDS:={new_depends_line}")
+        content = content.replace(depends_match.group(0), f"{depends_key}:={new_depends_line}")
         with open(makefile_path, 'w') as f:
             f.write(content)
         print(f"已更新 Makefile：{makefile_path}")
@@ -665,8 +666,13 @@ def fix_depends_format(log_file):
         print(f"Clean stderr:\n{result_clean.stderr}")
         return True
     else:
-        print("依赖项无需修改。")
-        return False
+        print("依赖项无需修改，尝试直接清理并重试。")
+        clean_cmd = ["make", f"{package_dir}/clean", "V=s"]
+        print(f"运行清理命令: {' '.join(clean_cmd)}")
+        result_clean = subprocess.run(clean_cmd, shell=False, capture_output=True, text=True)
+        print(f"Clean stdout:\n{result_clean.stdout[-500:]}")
+        print(f"Clean stderr:\n{result_clean.stderr}")
+        return True
 def fix_lua_neturl_download(log_file):
     """修复 lua-neturl 下载问题"""
     if "neturl" not in open(log_file, 'r', errors='replace').read():
