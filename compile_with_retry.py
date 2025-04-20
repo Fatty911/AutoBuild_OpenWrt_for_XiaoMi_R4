@@ -611,7 +611,7 @@ def fix_depends_format(log_file):
         return False
 
     # 定位 Makefile 路径（根据你的 OpenWrt 目录结构调整）
-    makefile_path = os.path.expanduser("~/openwrt/feeds/small8/luci-lib-taskd/Makefile")
+    makefile_path = os.path.expanduser("feeds/small8/luci-lib-taskd/Makefile")
     if not os.path.exists(makefile_path):
         print(f"Makefile 未找到：{makefile_path}")
         return False
@@ -659,6 +659,7 @@ def fix_depends_format(log_file):
     subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/dirclean", "V=s"], check=False)
 
     return True
+    
 def fix_lua_neturl_download(log_file):
     """修复 lua-neturl 下载问题"""
     if "neturl" not in open(log_file, 'r', errors='replace').read():
