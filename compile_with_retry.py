@@ -64,8 +64,33 @@ def fix_netifd_libnl_tiny():
                 print(f"libnl-tiny 安装成功，路径：{libnl_tiny_path}")
             else:
                 print(f"libnl-tiny 安装失败，仍未找到于 {libnl_tiny_path}")
+                # 进一步尝试强制清理并重新编译
+                print("尝试强制清理并重新编译 libnl-tiny...")
+                force_clean_cmd = ["make", "package/libs/libnl-tiny/dirclean", "V=s"]
+                print(f"运行: {' '.join(force_clean_cmd)}")
+                result_force_clean = subprocess.run(force_clean_cmd, shell=False, capture_output=True, text=True)
+                print(f"Force Clean stdout:\n{result_force_clean.stdout[-500:]}")
+                print(f"Force Clean stderr:\n{result_force_clean.stderr}")
 
-        if result_compile.returncode == 0:
+                force_compile_cmd = ["make", "package/libs/libnl-tiny/compile", "V=s", "-j1"]
+                print(f"运行: {' '.join(force_compile_cmd)}")
+                result_force_compile = subprocess.run(force_compile_cmd, shell=False, capture_output=True, text=True)
+                print(f"Force Compile stdout:\n{result_force_compile.stdout[-500:]}")
+                print(f"Force Compile stderr:\n{result_force_compile.stderr}")
+
+                force_install_cmd = ["make", "package/libs/libnl-tiny/install", "V=s"]
+                print(f"运行: {' '.join(force_install_cmd)}")
+                result_force_install = subprocess.run(force_install_cmd, shell=False, capture_output=True, text=True)
+                print(f"Force Install stdout:\n{result_force_install.stdout[-500:]}")
+                print(f"Force Install stderr:\n{result_force_install.stderr}")
+
+                if os.path.exists(libnl_tiny_path):
+                    print(f"libnl-tiny 强制安装成功，路径：{libnl_tiny_path}")
+                else:
+                    print(f"libnl-tiny 强制安装失败，仍未找到于 {libnl_tiny_path}")
+                    return False
+
+        if result_compile.returncode == 0 or (result_force_compile and result_force_compile.returncode == 0):
             print("libnl-tiny 重新编译成功。")
             # 清理 netifd 以强制重新编译
             netifd_clean_cmd = ["make", "package/network/config/netifd/clean", "V=s"]
