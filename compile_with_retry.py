@@ -795,7 +795,7 @@ def main():
         fix_applied_this_iteration = False
 
         # 1. Trojan-plus 相关错误
-        if 'trojan-plus' in log_content:
+        if 'trojan-plus' in log_content and 'buffer-cast' in log_content:
             print("检测到 trojan-plus 相关错误。")
             if last_fix_applied == "fix_trojan_plus_issues":
                 print("上次已尝试修复 trojan-plus 问题，但仍失败。")
