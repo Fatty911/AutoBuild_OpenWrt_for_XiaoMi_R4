@@ -593,7 +593,80 @@ def fix_metadata_errors():
             print("警告: 清理 tmp 目录失败")
     
     return True
-
+def fix_depends_format(log_file):
+    """修复 APK 包依赖格式问题"""
+    print("检测到 APK 依赖格式错误，尝试修复...")
+    
+    with open(log_file, 'r', errors='replace') as f:
+        log_content = f.read()
+    
+    if "ERROR: info field 'depends' has invalid value" not in log_content:
+        return False
+    
+    # 提取出错的包路径
+    package_match = re.search(r'make\[\d+\]: \*\*\* \[.*\] Error 99', log_content)
+    if not package_match:
+        print("无法从日志中提取出错的包信息。")
+        return False
+    
+    # 查找包的 Makefile 路径
+    package_dir_match = re.search(r'make\[\d+\]: Leaving directory \'([^\']+)\'', log_content)
+    if not package_dir_match:
+        print("无法从日志中提取包目录。")
+        return False
+    
+    package_dir = package_dir_match.group(1)
+    makefile_path = os.path.join(package_dir, "Makefile")
+    if not os.path.exists(makefile_path):
+        print(f"Makefile 未找到：{makefile_path}")
+        return False
+    
+    print(f"找到 Makefile：{makefile_path}")
+    
+    # 读取 Makefile 内容
+    with open(makefile_path, 'r', errors='replace') as f:
+        content = f.read()
+    
+    # 查找 PKG_DEPENDS 或其他依赖定义
+    depends_match = re.search(r'PKG_DEPENDS:=([^\n]+)', content)
+    if not depends_match:
+        print("无法找到 PKG_DEPENDS 定义。")
+        return False
+    
+    depends_line = depends_match.group(1).strip()
+    print(f"原始依赖项：{depends_line}")
+    
+    # 移除版本约束符（如 >=, = 等）并去重
+    depends_list = depends_line.split()
+    cleaned_depends = []
+    seen = set()
+    for dep in depends_list:
+        # 移除版本约束符
+        cleaned_dep = re.sub(r'[>=<].*', '', dep).strip()
+        if cleaned_dep and cleaned_dep not in seen:
+            cleaned_depends.append(cleaned_dep)
+            seen.add(cleaned_dep)
+    
+    new_depends_line = ' '.join(cleaned_depends)
+    print(f"清理后的依赖项：{new_depends_line}")
+    
+    # 更新 Makefile
+    if new_depends_line != depends_line:
+        content = content.replace(depends_match.group(0), f"PKG_DEPENDS:={new_depends_line}")
+        with open(makefile_path, 'w') as f:
+            f.write(content)
+        print(f"已更新 Makefile：{makefile_path}")
+        
+        # 清理包以重新编译
+        clean_cmd = ["make", f"{package_dir}/clean", "V=s"]
+        print(f"运行清理命令: {' '.join(clean_cmd)}")
+        result_clean = subprocess.run(clean_cmd, shell=False, capture_output=True, text=True)
+        print(f"Clean stdout:\n{result_clean.stdout[-500:]}")
+        print(f"Clean stderr:\n{result_clean.stderr}")
+        return True
+    else:
+        print("依赖项无需修改。")
+        return False
 def fix_lua_neturl_download(log_file):
     """修复 lua-neturl 下载问题"""
     if "neturl" not in open(log_file, 'r', errors='replace').read():
@@ -910,7 +983,28 @@ def main():
                 print("尝试修复元数据/依赖问题失败。")
                 last_fix_applied = "fix_metadata_errors"
                 consecutive_fix_failures += 1
-
+        elif "ERROR: info field 'depends' has invalid value" in log_content:
+            print("检测到 APK 依赖格式错误...")
+            if last_fix_applied == "fix_depends_format":
+                print("上次已尝试修复 APK 依赖格式，但仍失败。")
+                consecutive_fix_failures += 1
+            else:
+                temp_current_log = f"{args.log_file}.current_depends_check.log"
+                try:
+                    with open(temp_current_log, 'w') as tmp_f:
+                        tmp_f.write(log_content)
+                    if fix_depends_format(temp_current_log):
+                        print("已尝试修复 APK 依赖格式问题。")
+                        fix_applied_this_iteration = True
+                        last_fix_applied = "fix_depends_format"
+                        consecutive_fix_failures = 0
+                    else:
+                        print("尝试修复 APK 依赖格式失败或未找到修复点。")
+                        last_fix_applied = "fix_depends_format"
+                        consecutive_fix_failures += 1
+                finally:
+                    if os.path.exists(temp_current_log):
+                        os.remove(temp_current_log)
         # 7. 通用错误模式
         elif re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE):
             matched_pattern = re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE)
