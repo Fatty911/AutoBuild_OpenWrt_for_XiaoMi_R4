@@ -594,95 +594,65 @@ def fix_metadata_errors():
     
     return True
 def fix_depends_format(log_file):
-    """修复 APK 包依赖格式问题"""
-    print("检测到 APK 依赖格式错误，尝试修复...")
+    print("检测到依赖格式错误，尝试修复...")
     
     with open(log_file, 'r', errors='replace') as f:
         log_content = f.read()
     
-    if "ERROR: info field 'depends' has invalid value" not in log_content:
+    # 检查是否存在依赖问题
+    if "does not exist" not in log_content or "syntax error near unexpected token" not in log_content:
         return False
     
-    # 提取出错的包目录
-    package_dir_match = None
-    for line in log_content.splitlines():
-        match = re.search(r'make\[\d+\]: Entering directory \'([^\']+)\'', line)
-        if match and 'luci-lib-taskd' in match.group(1):
-            package_dir_match = match
-            break
+    # 定位 Makefile
+    makefile_path = "~/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/feeds/small8/luci-lib-taskd/Makefile"
+    makefile_path = os.path.expanduser(makefile_path)
     
-    if not package_dir_match:
-        print("无法从日志中提取包目录。")
-        return False
-    
-    package_dir = package_dir_match.group(1)
-    makefile_path = os.path.join(package_dir, "Makefile")
     if not os.path.exists(makefile_path):
         print(f"Makefile 未找到：{makefile_path}")
         return False
     
     print(f"找到 Makefile：{makefile_path}")
     
-    # 读取 Makefile 内容
-    with open(makefile_path, 'r', errors='replace') as f:
+    # 读取 Makefile
+    with open(makefile_path, 'r') as f:
         content = f.read()
     
-    # 查找 PKG_DEPENDS 或 DEPENDS
-    depends_match = re.search(r'(PKG_DEPENDS|DEPENDS):=(.+?)(?:\n|$)', content, re.DOTALL)
+    # 查找 DEPENDS
+    depends_match = re.search(r'DEPENDS:=(.+?)(?:\n|$)', content, re.DOTALL)
     if not depends_match:
-        print("无法找到 PKG_DEPENDS 或 DEPENDS 定义。")
+        print("未找到 DEPENDS 定义")
         return False
     
-    depends_key = depends_match.group(1)
-    depends_line = depends_match.group(2).strip()
-    print(f"原始依赖项 ({depends_key})：{depends_line}")
+    depends_line = depends_match.group(1).strip()
+    print(f"原始依赖项：{depends_line}")
     
-    # 解析依赖列表，保留有效的包名和版本约束
-    depends_list = re.split(r'\s+', depends_line.strip())
+    # 清理无效依赖项
+    depends_list = re.split(r'\s+', depends_line)
     cleaned_depends = []
     for dep in depends_list:
-        # 移除 OpenWrt 特定的前缀（如 + 或 @）
-        dep = re.sub(r'^[+\@]', '', dep)
-        if not dep:
-            continue
-        # 验证依赖项是否为有效包名或包名加版本约束
-        if re.match(r'^[a-zA-Z0-9._+-]+(?:>=|<=|=|>|<)[a-zA-Z0-9._+-]+$', dep) or re.match(r'^[a-zA-Z0-9._+-]+$', dep):
-            cleaned_depends.append(dep)
+        # 移除前缀并检查有效性
+        dep = dep.lstrip('+@')
+        if re.match(r'^[a-zA-Z0-9._-]+$', dep) and dep not in ['=taskd', '(>=1.0.3-1)']:
+            cleaned_depends.append(f'+{dep}')
         else:
-            print(f"警告：跳过无效依赖项 '{dep}'")
+            print(f"跳过无效依赖项：{dep}")
     
-    # 去重，保留首次出现的依赖项
-    seen = set()
-    unique_depends = []
-    for dep in cleaned_depends:
-        pkg_name = re.split(r'[>=<]', dep)[0].strip()
-        if pkg_name not in seen:
-            seen.add(pkg_name)
-            unique_depends.append(dep)
-    
-    new_depends_line = ' '.join(unique_depends)
+    # 更新 DEPENDS
+    new_depends_line = ' '.join(cleaned_depends)
     print(f"清理后的依赖项：{new_depends_line}")
+    content = content.replace(depends_match.group(0), f"DEPENDS:={new_depends_line}")
     
-    # 更新 Makefile
-    if new_depends_line != depends_line:
-        content = content.replace(depends_match.group(0), f"{depends_key}:={new_depends_line}")
-        with open(makefile_path, 'w') as f:
-            f.write(content)
-        print(f"已更新 Makefile：{makefile_path}")
+    # 写入 Makefile
+    with open(makefile_path, 'w') as f:
+        f.write(content)
+    print(f"已更新 Makefile：{makefile_path}")
     
-    # 彻底清理包以重新编译
-    package_name = os.path.basename(package_dir)
-    dirclean_cmd = ["make", f"package/feeds/small8/{package_name}/dirclean", "V=s"]
-    print(f"运行彻底清理命令: {' '.join(dirclean_cmd)}")
-    result_dirclean = subprocess.run(dirclean_cmd, shell=False, capture_output=True, text=True)
-    print(f"Dirclean stdout:\n{result_dirclean.stdout[-500:]}")
-    print(f"Dirclean stderr:\n{result_dirclean.stderr}")
-    
-    # 清理临时构建目录
-    build_dir = os.path.join("openwrt/build_dir/target-mipsel_24kc_musl", package_name)
+    # 清理构建环境
+    subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/dirclean", "V=s"], check=False)
+    build_dir = "~/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-mipsel_24kc_musl/luci-lib-taskd"
+    build_dir = os.path.expanduser(build_dir)
     if os.path.exists(build_dir):
-        subprocess.run(["rm", "-rf", build_dir], shell=False)
-        print(f"已删除构建目录：{build_dir}")
+        subprocess.run(["rm", "-rf", build_dir], check=False)
     
     return True
 def fix_lua_neturl_download(log_file):
