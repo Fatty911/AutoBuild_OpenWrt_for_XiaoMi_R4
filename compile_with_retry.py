@@ -594,66 +594,70 @@ def fix_metadata_errors():
     
     return True
 def fix_depends_format(log_file):
-    print("检测到依赖格式错误，尝试修复...")
-    
+    """自动修复 Makefile 中的无效依赖项"""
+    print("检测到依赖项错误，尝试自动修复...")
+
+    # 检查日志文件是否存在并读取内容
+    if not os.path.exists(log_file):
+        print(f"日志文件未找到：{log_file}")
+        return False
+
     with open(log_file, 'r', errors='replace') as f:
         log_content = f.read()
-    
-    # 检查是否存在依赖问题
-    if "does not exist" not in log_content or "syntax error near unexpected token" not in log_content:
+
+    # 检查日志中是否存在依赖项错误
+    if "has a dependency on" not in log_content or "which does not exist" not in log_content:
+        print("未检测到依赖项错误")
         return False
-    
-    # 定位 Makefile
-    makefile_path = "~/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/feeds/small8/luci-lib-taskd/Makefile"
-    makefile_path = os.path.expanduser(makefile_path)
-    
+
+    # 定位 Makefile 路径（根据你的 OpenWrt 目录结构调整）
+    makefile_path = os.path.expanduser("~/openwrt/feeds/small8/luci-lib-taskd/Makefile")
     if not os.path.exists(makefile_path):
         print(f"Makefile 未找到：{makefile_path}")
         return False
-    
+
     print(f"找到 Makefile：{makefile_path}")
-    
-    # 读取 Makefile
+
+    # 读取 Makefile 内容
     with open(makefile_path, 'r') as f:
         content = f.read()
-    
-    # 查找 DEPENDS
+
+    # 查找 DEPENDS 行
     depends_match = re.search(r'DEPENDS:=(.+?)(?:\n|$)', content, re.DOTALL)
     if not depends_match:
         print("未找到 DEPENDS 定义")
         return False
-    
+
     depends_line = depends_match.group(1).strip()
-    print(f"原始依赖项：{depends_line}")
-    
-    # 清理无效依赖项
+    print(f"原始 DEPENDS: {depends_line}")
+
+    # 清理 DEPENDS：移除版本约束和无效项
     depends_list = re.split(r'\s+', depends_line)
     cleaned_depends = []
     for dep in depends_list:
-        # 移除前缀并检查有效性
+        # 移除前缀（如 +、@）
         dep = dep.lstrip('+@')
-        if re.match(r'^[a-zA-Z0-9._-]+$', dep) and dep not in ['=taskd', '(>=1.0.3-1)']:
+        # 移除版本约束，保留包名
+        dep = re.split(r'[>=<]', dep)[0].strip()
+        # 仅保留合法包名
+        if dep and re.match(r'^[a-zA-Z0-9._-]+$', dep):
             cleaned_depends.append(f'+{dep}')
-        else:
-            print(f"跳过无效依赖项：{dep}")
-    
-    # 更新 DEPENDS
-    new_depends_line = ' '.join(cleaned_depends)
-    print(f"清理后的依赖项：{new_depends_line}")
+
+    # 去重并生成新的 DEPENDS 行
+    unique_depends = list(dict.fromkeys(cleaned_depends))
+    new_depends_line = ' '.join(unique_depends)
+    print(f"清理后的 DEPENDS: {new_depends_line}")
+
+    # 更新 Makefile
     content = content.replace(depends_match.group(0), f"DEPENDS:={new_depends_line}")
-    
-    # 写入 Makefile
     with open(makefile_path, 'w') as f:
         f.write(content)
     print(f"已更新 Makefile：{makefile_path}")
-    
-    # 清理构建环境
+
+    # 清理构建目录
+    print("清理构建目录...")
     subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/dirclean", "V=s"], check=False)
-    build_dir = "~/AutoBuild_OpenWrt_for_XiaoMi_R4/openwrt/build_dir/target-mipsel_24kc_musl/luci-lib-taskd"
-    build_dir = os.path.expanduser(build_dir)
-    if os.path.exists(build_dir):
-        subprocess.run(["rm", "-rf", build_dir], check=False)
-    
+
     return True
 def fix_lua_neturl_download(log_file):
     """修复 lua-neturl 下载问题"""
