@@ -637,29 +637,30 @@ def fix_depends_format(log_file):
     depends_line = depends_match.group(2).strip()
     print(f"原始依赖项 ({depends_key})：{depends_line}")
     
-    # 解析依赖列表，保留版本约束并去重
+    # 解析依赖列表，保留有效的包名和版本约束
     depends_list = re.split(r'\s+', depends_line.strip())
-    depends_dict = {}  # 使用字典保存每个包的最具体依赖
+    cleaned_depends = []
     for dep in depends_list:
-        # 移除前缀（如 + 或 @）
+        # 移除 OpenWrt 特定的前缀（如 + 或 @）
         dep = re.sub(r'^[+\@]', '', dep)
         if not dep:
             continue
-        # 分离包名和版本约束
-        if '>=' in dep or '<=' in dep or '=' in dep or '>' in dep or '<' in dep:
-            pkg_name = re.split(r'[>=<]', dep)[0].strip()
-            # 如果包名已存在，保留带版本约束的版本
-            if pkg_name not in depends_dict or '>=' in dep or '<=' in dep or '=' in dep:
-                depends_dict[pkg_name] = dep
+        # 验证依赖项是否为有效包名或包名加版本约束
+        if re.match(r'^[a-zA-Z0-9._+-]+(?:>=|<=|=|>|<)[a-zA-Z0-9._+-]+$', dep) or re.match(r'^[a-zA-Z0-9._+-]+$', dep):
+            cleaned_depends.append(dep)
         else:
-            pkg_name = dep
-            # 仅在无版本约束时添加
-            if pkg_name not in depends_dict:
-                depends_dict[pkg_name] = dep
+            print(f"警告：跳过无效依赖项 '{dep}'")
     
-    # 生成清理后的依赖列表
-    cleaned_depends = list(depends_dict.values())
-    new_depends_line = ' '.join(cleaned_depends)
+    # 去重，保留首次出现的依赖项
+    seen = set()
+    unique_depends = []
+    for dep in cleaned_depends:
+        pkg_name = re.split(r'[>=<]', dep)[0].strip()
+        if pkg_name not in seen:
+            seen.add(pkg_name)
+            unique_depends.append(dep)
+    
+    new_depends_line = ' '.join(unique_depends)
     print(f"清理后的依赖项：{new_depends_line}")
     
     # 更新 Makefile
@@ -668,22 +669,22 @@ def fix_depends_format(log_file):
         with open(makefile_path, 'w') as f:
             f.write(content)
         print(f"已更新 Makefile：{makefile_path}")
-        
-        # 彻底清理包以重新编译
-        dirclean_cmd = ["make", f"{package_dir}/dirclean", "V=s"]
-        print(f"运行彻底清理命令: {' '.join(dirclean_cmd)}")
-        result_dirclean = subprocess.run(dirclean_cmd, shell=False, capture_output=True, text=True)
-        print(f"Dirclean stdout:\n{result_dirclean.stdout[-500:]}")
-        print(f"Dirclean stderr:\n{result_dirclean.stderr}")
-        return True
-    else:
-        print("依赖项无需修改，尝试彻底清理并重试。")
-        dirclean_cmd = ["make", f"{package_dir}/dirclean", "V=s"]
-        print(f"运行彻底清理命令: {' '.join(dirclean_cmd)}")
-        result_dirclean = subprocess.run(dirclean_cmd, shell=False, capture_output=True, text=True)
-        print(f"Dirclean stdout:\n{result_dirclean.stdout[-500:]}")
-        print(f"Dirclean stderr:\n{result_dirclean.stderr}")
-        return True
+    
+    # 彻底清理包以重新编译
+    package_name = os.path.basename(package_dir)
+    dirclean_cmd = ["make", f"package/feeds/small8/{package_name}/dirclean", "V=s"]
+    print(f"运行彻底清理命令: {' '.join(dirclean_cmd)}")
+    result_dirclean = subprocess.run(dirclean_cmd, shell=False, capture_output=True, text=True)
+    print(f"Dirclean stdout:\n{result_dirclean.stdout[-500:]}")
+    print(f"Dirclean stderr:\n{result_dirclean.stderr}")
+    
+    # 清理临时构建目录
+    build_dir = os.path.join("openwrt/build_dir/target-mipsel_24kc_musl", package_name)
+    if os.path.exists(build_dir):
+        subprocess.run(["rm", "-rf", build_dir], shell=False)
+        print(f"已删除构建目录：{build_dir}")
+    
+    return True
 def fix_lua_neturl_download(log_file):
     """修复 lua-neturl 下载问题"""
     if "neturl" not in open(log_file, 'r', errors='replace').read():
