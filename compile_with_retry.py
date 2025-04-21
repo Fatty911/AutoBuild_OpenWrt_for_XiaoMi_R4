@@ -935,98 +935,195 @@ def fix_luci_lib_taskd_makefile():
         with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
         
-        # 定义清理依赖项的函数
-        def clean_depends(depends_line):
-            # 分割依赖项
-            deps = depends_line.strip().split()
-            # 移除重复项，保持顺序
-            unique_deps = []
-            seen = set()
-            for dep in deps:
-                # 提取包名（去除版本约束）
-                pkg_name = re.sub(r'[>=<][^\\s]*$', '', dep).strip()
-                if pkg_name not in seen:
-                    # 添加不带版本约束的依赖
-                    unique_deps.append(pkg_name)
-                    seen.add(pkg_name)
-            return ' '.join(unique_deps)
-        
-        # 修复各种可能的依赖项定义
+        # 1. 检查并修正 Makefile 中的依赖声明
         modified = False
         
-        # 情况1: LUCI_DEPENDS 包含依赖
-        depends_match = re.search(r'(LUCI_DEPENDS\s*:=\s*)([^\n]+)', content)
-        if depends_match:
-            old_deps = depends_match.group(2)
-            new_deps = clean_depends(old_deps)
-            if old_deps != new_deps:
-                content = content.replace(depends_match.group(0), f"{depends_match.group(1)}{new_deps}")
-                modified = True
-                print(f"✅ 已修复 LUCI_DEPENDS: '{old_deps}' -> '{new_deps}'")
+        # 检查各种可能的依赖声明格式
+        for dep_var in ['LUCI_DEPENDS', 'DEPENDS', 'PKG_DEPENDS']:
+            pattern = re.compile(f'{dep_var}\\s*:=\\s*([^\\n]+)', re.MULTILINE)
+            match = pattern.search(content)
+            if match:
+                old_deps = match.group(1)
+                # 清理重复的依赖项，移除版本约束
+                deps = []
+                seen = set()
+                for dep in old_deps.split():
+                    # 去掉 +、@前缀和版本约束
+                    base_dep = re.sub(r'^[+@]', '', dep)
+                    base_dep = re.sub(r'[<>=].+$', '', base_dep)
+                    if base_dep not in seen:
+                        deps.append(f"+{base_dep}")  # 保持 + 前缀
+                        seen.add(base_dep)
+                
+                new_deps = ' '.join(deps)
+                if new_deps != old_deps:
+                    content = content.replace(match.group(0), f"{dep_var}:={new_deps}")
+                    modified = True
+                    print(f"✅ 已修复 {dep_var}: '{old_deps}' -> '{new_deps}'")
         
-        # 情况2: DEPENDS 包含依赖
-        depends_match = re.search(r'(DEPENDS\s*:=\s*)([^\n]+)', content)
-        if depends_match:
-            old_deps = depends_match.group(2)
-            new_deps = clean_depends(old_deps)
-            if old_deps != new_deps:
-                content = content.replace(depends_match.group(0), f"{depends_match.group(1)}{new_deps}")
-                modified = True
-                print(f"✅ 已修复 DEPENDS: '{old_deps}' -> '{new_deps}'")
+        # 2. 尝试直接修改构建过程中生成的临时文件
+        # 这是一个后备措施，以防 Makefile 修改不够
+        apk_cmd_path = None
+        for path in ["tmp/.luci-lib-taskd-apk-cmd", "tmp/apk-cmd-luci-lib-taskd"]:
+            if os.path.exists(path):
+                apk_cmd_path = path
+                break
         
-        # 情况3: 处理 PKG_DEPENDS
-        depends_match = re.search(r'(PKG_DEPENDS\s*:=\s*)([^\n]+)', content)
-        if depends_match:
-            old_deps = depends_match.group(2)
-            new_deps = clean_depends(old_deps)
-            if old_deps != new_deps:
-                content = content.replace(depends_match.group(0), f"{depends_match.group(1)}{new_deps}")
-                modified = True
-                print(f"✅ 已修复 PKG_DEPENDS: '{old_deps}' -> '{new_deps}'")
+        if apk_cmd_path:
+            with open(apk_cmd_path, 'r') as f:
+                cmd_content = f.read()
+            
+            # 修复依赖项参数
+            if "depends:" in cmd_content:
+                # 提取并修复依赖项
+                depends_match = re.search(r'--info\s+"depends:([^"]+)"', cmd_content)
+                if depends_match:
+                    old_deps = depends_match.group(1)
+                    deps = []
+                    seen = set()
+                    for dep in old_deps.split():
+                        # 去掉版本约束
+                        base_dep = re.sub(r'[<>=].+$', '', dep)
+                        if base_dep not in seen:
+                            deps.append(base_dep)
+                            seen.add(base_dep)
+                    
+                    new_deps = ' '.join(deps)
+                    new_cmd = re.sub(
+                        r'--info\s+"depends:[^"]+"', 
+                        f'--info "depends:{new_deps}"', 
+                        cmd_content
+                    )
+                    
+                    with open(apk_cmd_path, 'w') as f:
+                        f.write(new_cmd)
+                    
+                    print(f"✅ 已修复临时命令文件中的依赖项: '{old_deps}' -> '{new_deps}'")
+                    modified = True
         
-        # 如果修改了文件，写回并清理构建目录
+        # 3. 最直接的方法：修改 feeds/luci/luci.mk 文件
+        luci_mk_paths = ["feeds/luci/luci.mk", "package/feeds/luci/luci.mk"]
+        luci_mk_path = None
+        for path in luci_mk_paths:
+            if os.path.exists(path):
+                luci_mk_path = path
+                break
+        
+        if luci_mk_path:
+            with open(luci_mk_path, 'r', encoding='utf-8', errors='replace') as f:
+                luci_mk_content = f.read()
+            
+            # 在 luci.mk 中查找和修改处理依赖的部分
+            # 这是一个更激进的修改，可能会影响其他包的构建
+            if 'staging_dir/host/bin/apk mkpkg' in luci_mk_content:
+                # 增加处理依赖的函数
+                if '# OpenWrt dependency cleaner' not in luci_mk_content:
+                    cleaner_function = '''
+# OpenWrt dependency cleaner
+define CleanDependencies
+  $(shell echo $(1) | tr ' ' '\\n' | sort -u | grep -v ">=\\|<=\\|>" | tr '\\n' ' ')
+endef
+'''
+                    # 插入到文件前部
+                    luci_mk_content = cleaner_function + luci_mk_content
+                    modified = True
+                
+                # 修改生成依赖参数的部分
+                old_depends_line = re.search(r'--info "depends:([^"]+)"', luci_mk_content)
+                if old_depends_line:
+                    # 替换为使用清理函数
+                    new_content = re.sub(
+                        r'--info "depends:([^"]+)"', 
+                        r'--info "depends:$(call CleanDependencies,\1)"',
+                        luci_mk_content
+                    )
+                    
+                    if new_content != luci_mk_content:
+                        with open(luci_mk_path, 'w', encoding='utf-8') as f:
+                            f.write(new_content)
+                        print(f"✅ 已修复 {luci_mk_path} 中的依赖处理逻辑")
+                        modified = True
+        
+        # 如果进行了任何修改，需要重新配置
         if modified:
-            with open(makefile_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+            # 保存修改后的 Makefile
+            if 'content' in locals() and makefile_path:
+                with open(makefile_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
             
-            print("🧹 清理和重新安装 luci-lib-taskd 相关包...")
+            # 清理构建缓存
+            print("🧹 清理构建缓存...")
+            cmds = [
+                ["make", "package/feeds/small8/luci-lib-taskd/clean", "V=s"],
+                ["rm", "-f", "bin/packages/mipsel_24kc/small8/luci-lib-taskd-1.0.23.apk"]
+            ]
+            for cmd in cmds:
+                try:
+                    subprocess.run(cmd, check=False)
+                except Exception as e:
+                    print(f"⚠️ 运行命令 {' '.join(cmd)} 时出错: {e}")
             
-            # 清理构建目录
-            subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/clean", "V=s"], check=False)
+            # 最直接的方法：手动创建正确的依赖文件
+            pkg_info_dir = "staging_dir/target-mipsel_24kc_musl/pkginfo"
+            if os.path.exists(pkg_info_dir):
+                # 创建正确的依赖描述文件
+                depends_content = "libc taskd luci-lib-xterm luci-lua-runtime"
+                try:
+                    with open(os.path.join(pkg_info_dir, "luci-lib-taskd.depends"), 'w') as f:
+                        f.write(depends_content)
+                    print(f"✅ 已创建正确的依赖文件: {os.path.join(pkg_info_dir, 'luci-lib-taskd.depends')}")
+                except Exception as e:
+                    print(f"⚠️ 创建依赖文件时出错: {e}")
             
-            # 删除可能存在的有问题的 provides 文件，使用通配符查找
-            for base_dir in ["staging_dir/target-mipsel_24kc_musl/pkginfo", "staging_dir/target-*/pkginfo"]:
-                if os.path.exists(base_dir):
-                    for filename in os.listdir(base_dir):
-                        if ("(" in filename or ")" in filename or ">" in filename or "<" in filename) and ".provides" in filename:
-                            file_path = os.path.join(base_dir, filename)
-                            try:
-                                os.remove(file_path)
-                                print(f"✅ 已删除问题文件: {file_path}")
-                            except:
-                                print(f"⚠️ 无法删除: {file_path}")
-            
-            # 更新 feeds 缓存
-            subprocess.run(["./scripts/feeds", "update", "-i"], check=False)
-            subprocess.run(["./scripts/feeds", "install", "-a"], check=False)
-            
-            print("✅ 已完成 luci-lib-taskd 的 Makefile 修复")
             return True
         else:
-            print("⚠️ 未发现需要修复的依赖行，检查其他问题...")
+            print("⚠️ 未检测到需要修改的依赖项")
             
-            # 作为后备方案，检查 .apk 文件是否存在，并删除它以触发重新编译
-            apk_file = "bin/packages/mipsel_24kc/small8/luci-lib-taskd-1.0.23.apk"
-            if os.path.exists(apk_file):
-                os.remove(apk_file)
-                print(f"✅ 已删除旧的 APK 文件 {apk_file}")
-                return True
+            # 4. 直接修改命令行参数
+            # 这是最后的手段：创建一个包装脚本来覆盖 apk 命令
+            
+            print("🔧 创建 apk 命令包装器修复依赖格式...")
+            wrapper_path = "staging_dir/host/bin/apk.real"
+            
+            # 如果原始命令尚未被备份，则创建备份
+            if not os.path.exists(wrapper_path) and os.path.exists("staging_dir/host/bin/apk"):
+                try:
+                    os.rename("staging_dir/host/bin/apk", wrapper_path)
+                    
+                    # 创建包装脚本
+                    with open("staging_dir/host/bin/apk", 'w') as f:
+                        f.write('''#!/bin/sh
+# APK wrapper to fix dependency format issues
+if [ "$1" = "mkpkg" ]; then
+    # Find and fix the depends argument
+    fixed_args=""
+    for arg in "$@"; do
+        if echo "$arg" | grep -q "^depends:"; then
+            # Remove duplicates and version constraints
+            fixed_deps=$(echo "$arg" | sed 's/^depends://' | tr ' ' '\\n' | sed 's/[<>=].*$//' | sort -u | tr '\\n' ' ' | sed 's/^/depends:/')
+            fixed_args="$fixed_args $fixed_deps"
+        else
+            fixed_args="$fixed_args $arg"
+        fi
+    done
+    
+    exec staging_dir/host/bin/apk.real $fixed_args
+else
+    exec staging_dir/host/bin/apk.real "$@"
+fi
+''')
+                    os.chmod("staging_dir/host/bin/apk", 0o755)
+                    print("✅ 已创建 apk 命令包装器")
+                    return True
+                except Exception as e:
+                    print(f"⚠️ 创建 apk 命令包装器时出错: {e}")
             
             return False
     
     except Exception as e:
-        print(f"❌ 修复 Makefile 时出错: {e}")
+        print(f"❌ 修复出错: {e}")
         return False
+
 
 
 def main():
