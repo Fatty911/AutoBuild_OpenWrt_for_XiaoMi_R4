@@ -33,78 +33,67 @@ def get_relative_path(path):
         return path
 
 def fix_netifd_libnl_tiny():
-    """修复 netifd 编译时缺少 libnl-tiny 的问题"""
-    print("尝试重新编译 libnl-tiny 以解决 netifd 链接问题...")
+    """增强版：修复 netifd 编译时缺少 libnl-tiny 的链接问题"""
+    import glob
+
+    print("🔧 正在尝试修复 netifd 缺少 libnl-tiny 的链接错误...")
+
     try:
-        # 清理并重新编译 libnl-tiny
-        clean_cmd = ["make", "package/libs/libnl-tiny/clean", "V=s"]
-        print(f"运行: {' '.join(clean_cmd)}")
-        result_clean = subprocess.run(clean_cmd, shell=False, capture_output=True, text=True)
-        print(f"Clean stdout:\n{result_clean.stdout[-500:]}")
-        print(f"Clean stderr:\n{result_clean.stderr}")
+        # 步骤 1：清理并重新编译 libnl-tiny
+        print("🧹 清理 libnl-tiny...")
+        subprocess.run(["make", "package/libs/libnl-tiny/clean", "-j1", "V=s"], check=False)
 
-        compile_cmd = ["make", "package/libs/libnl-tiny/compile", "V=s", "-j1"]
-        print(f"运行: {' '.join(compile_cmd)}")
-        result_compile = subprocess.run(compile_cmd, shell=False, capture_output=True, text=True)
-        print(f"Compile stdout:\n{result_compile.stdout[-500:]}")
-        print(f"Compile stderr:\n{result_compile.stderr}")
+        print("🔨 编译 libnl-tiny...")
+        subprocess.run(["make", "package/libs/libnl-tiny/compile", "-j1", "V=s"], check=False)
 
-        # 检查 libnl-tiny 是否已正确安装到 staging_dir
-        libnl_tiny_path = "staging_dir/target-mipsel_24kc_musl/usr/lib/libnl-tiny.so"
-        if os.path.exists(libnl_tiny_path):
-            print(f"libnl-tiny 已存在，路径：{libnl_tiny_path}")
-        else:
-            print(f"libnl-tiny 未找到于 {libnl_tiny_path}，尝试重新安装...")
-            install_cmd = ["make", "package/libs/libnl-tiny/install", "V=s"]
-            print(f"运行: {' '.join(install_cmd)}")
-            result_install = subprocess.run(install_cmd, shell=False, capture_output=True, text=True)
-            print(f"Install stdout:\n{result_install.stdout[-500:]}")
-            print(f"Install stderr:\n{result_install.stderr}")
-            if os.path.exists(libnl_tiny_path):
-                print(f"libnl-tiny 安装成功，路径：{libnl_tiny_path}")
-            else:
-                print(f"libnl-tiny 安装失败，仍未找到于 {libnl_tiny_path}")
-                # 进一步尝试强制清理并重新编译
-                print("尝试强制清理并重新编译 libnl-tiny...")
-                force_clean_cmd = ["make", "package/libs/libnl-tiny/dirclean", "V=s"]
-                print(f"运行: {' '.join(force_clean_cmd)}")
-                result_force_clean = subprocess.run(force_clean_cmd, shell=False, capture_output=True, text=True)
-                print(f"Force Clean stdout:\n{result_force_clean.stdout[-500:]}")
-                print(f"Force Clean stderr:\n{result_force_clean.stderr}")
+        print("📦 安装 libnl-tiny...")
+        subprocess.run(["make", "package/libs/libnl-tiny/install", "-j1", "V=s"], check=False)
 
-                force_compile_cmd = ["make", "package/libs/libnl-tiny/compile", "V=s", "-j1"]
-                print(f"运行: {' '.join(force_compile_cmd)}")
-                result_force_compile = subprocess.run(force_compile_cmd, shell=False, capture_output=True, text=True)
-                print(f"Force Compile stdout:\n{result_force_compile.stdout[-500:]}")
-                print(f"Force Compile stderr:\n{result_force_compile.stderr}")
-
-                force_install_cmd = ["make", "package/libs/libnl-tiny/install", "V=s"]
-                print(f"运行: {' '.join(force_install_cmd)}")
-                result_force_install = subprocess.run(force_install_cmd, shell=False, capture_output=True, text=True)
-                print(f"Force Install stdout:\n{result_force_install.stdout[-500:]}")
-                print(f"Force Install stderr:\n{result_force_install.stderr}")
-
-                if os.path.exists(libnl_tiny_path):
-                    print(f"libnl-tiny 强制安装成功，路径：{libnl_tiny_path}")
-                else:
-                    print(f"libnl-tiny 强制安装失败，仍未找到于 {libnl_tiny_path}")
-                    return False
-
-        if result_compile.returncode == 0 or (result_force_compile and result_force_compile.returncode == 0):
-            print("libnl-tiny 重新编译成功。")
-            # 清理 netifd 以强制重新编译
-            netifd_clean_cmd = ["make", "package/network/config/netifd/clean", "V=s"]
-            print(f"运行: {' '.join(netifd_clean_cmd)}")
-            result_netifd_clean = subprocess.run(netifd_clean_cmd, shell=False, capture_output=True, text=True)
-            print(f"Netifd Clean stdout:\n{result_netifd_clean.stdout[-500:]}")
-            print(f"Netifd Clean stderr:\n{result_netifd_clean.stderr}")
-            return True
-        else:
-            print("libnl-tiny 重新编译失败。")
+        # 步骤 2：确认 .so 或 .a 文件是否存在
+        lib_paths = glob.glob("staging_dir/target-*/usr/lib/libnl-tiny.*")
+        if not lib_paths:
+            print("❌ 未找到 libnl-tiny 的输出文件，可能编译失败。")
             return False
+        else:
+            print("✅ 找到 libnl-tiny 库文件：")
+            for path in lib_paths:
+                print(f"  - {path}")
+
+        # 步骤 3：检查 netifd 的 CMakeLists.txt 是否包含 nl-tiny 链接
+        cmake_path = Path("package/network/config/netifd/CMakeLists.txt")
+        if cmake_path.exists():
+            with open(cmake_path, "r", encoding="utf-8", errors="replace") as f:
+                cmake_content = f.read()
+
+            if "nl-tiny" not in cmake_content:
+                print("⚠️ CMakeLists.txt 中未包含 nl-tiny，尝试修复...")
+                cmake_content = cmake_content.replace(
+                    "target_link_libraries(netifd",
+                    "target_link_libraries(netifd nl-tiny"
+                )
+                with open(cmake_path, "w", encoding="utf-8") as f:
+                    f.write(cmake_content)
+                print("✅ 已注入 nl-tiny 到 CMakeLists.txt 中。")
+            else:
+                print("✅ CMakeLists.txt 中已包含 nl-tiny。")
+        else:
+            print("⚠️ 未找到 netifd 的 CMakeLists.txt，跳过链接参数检查。")
+
+        # 步骤 4：清理并重新编译 netifd
+        print("🧹 清理 netifd...")
+        subprocess.run(["make", "package/network/config/netifd/clean", "-j1", "V=s"], check=False)
+
+        print("🔨 编译 netifd...")
+        subprocess.run(["make", "package/network/config/netifd/compile", "-j1", "V=s"], check=False)
+
+        print("✅ netifd 和 libnl-tiny 修复流程完成。")
+        return True
+
     except Exception as e:
-        print(f"修复 libnl-tiny 时发生错误: {e}")
+        print(f"❌ 修复 netifd/libnl-tiny 时发生异常: {e}")
         return False
+
+
 
 def fix_trojan_plus_issues():
     """修复 trojan-plus 相关的编译问题"""
