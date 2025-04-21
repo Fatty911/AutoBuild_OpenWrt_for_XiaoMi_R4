@@ -583,10 +583,9 @@ def fix_metadata_errors():
     
     return True
 def fix_depends_format(log_file):
-    """自动修复 Makefile 中的无效依赖项"""
-    print("检测到依赖项错误，尝试自动修复...")
+    """自动修复 Makefile 中的无效依赖项，包括非法版本约束"""
+    print("🔧 检测到依赖项错误，尝试自动修复 Makefile 中的 DEPENDS 字段...")
 
-    # 检查日志文件是否存在并读取内容
     if not os.path.exists(log_file):
         print(f"日志文件未找到：{log_file}")
         return False
@@ -594,60 +593,60 @@ def fix_depends_format(log_file):
     with open(log_file, 'r', errors='replace') as f:
         log_content = f.read()
 
-    # 检查日志中是否存在依赖项错误
+    # 检查是否包含依赖格式错误
     if "has a dependency on" not in log_content or "which does not exist" not in log_content:
-        print("未检测到依赖项错误")
+        if "syntax error near unexpected token" in log_content and ".provides" in log_content:
+            print("⚠️ 检测到非法字符导致的 shell 命令错误，尝试修复依赖格式...")
+        else:
+            print("未检测到依赖项错误")
+            return False
+
+    # 搜索所有 Makefile
+    fixed_count = 0
+    for makefile_path in Path(".").rglob("Makefile"):
+        if "build_dir" in str(makefile_path) or "staging_dir" in str(makefile_path):
+            continue
+
+        with open(makefile_path, 'r', errors='replace') as f:
+            content = f.read()
+
+        # 查找 DEPENDS 行
+        depends_match = re.search(r'^DEPENDS:=(.*)$', content, re.MULTILINE)
+        if not depends_match:
+            continue
+
+        depends_line = depends_match.group(1).strip()
+        depends_list = re.split(r'\s+', depends_line)
+
+        cleaned_depends = []
+        for dep in depends_list:
+            dep = dep.strip()
+            if not dep:
+                continue
+            dep = dep.lstrip('+@')
+            dep = re.split(r'[>=<]', dep)[0].strip()  # 移除版本约束
+            if re.match(r'^[a-zA-Z0-9._-]+$', dep):
+                cleaned_depends.append(f'+{dep}')
+
+        unique_depends = list(dict.fromkeys(cleaned_depends))
+        new_depends_line = 'DEPENDS:=' + ' '.join(unique_depends)
+
+        if new_depends_line != depends_match.group(0):
+            print(f"✅ 修复 {makefile_path}:")
+            print(f"  原始: {depends_match.group(0)}")
+            print(f"  修复: {new_depends_line}")
+            content = content.replace(depends_match.group(0), new_depends_line)
+            with open(makefile_path, 'w') as f:
+                f.write(content)
+            fixed_count += 1
+
+    if fixed_count > 0:
+        print(f"✅ 共修复 {fixed_count} 个 Makefile 中的依赖格式问题。")
+        return True
+    else:
+        print("未发现需要修复的 DEPENDS 字段。")
         return False
 
-    # 定位 Makefile 路径（根据你的 OpenWrt 目录结构调整）
-    makefile_path = os.path.expanduser("feeds/small8/luci-lib-taskd/Makefile")
-    if not os.path.exists(makefile_path):
-        print(f"Makefile 未找到：{makefile_path}")
-        return False
-
-    print(f"找到 Makefile：{makefile_path}")
-
-    # 读取 Makefile 内容
-    with open(makefile_path, 'r') as f:
-        content = f.read()
-
-    # 查找 DEPENDS 行
-    depends_match = re.search(r'DEPENDS:=(.+?)(?:\n|$)', content, re.DOTALL)
-    if not depends_match:
-        print("未找到 DEPENDS 定义")
-        return False
-
-    depends_line = depends_match.group(1).strip()
-    print(f"原始 DEPENDS: {depends_line}")
-
-    # 清理 DEPENDS：移除版本约束和无效项
-    depends_list = re.split(r'\s+', depends_line)
-    cleaned_depends = []
-    for dep in depends_list:
-        # 移除前缀（如 +、@）
-        dep = dep.lstrip('+@')
-        # 移除版本约束，保留包名
-        dep = re.split(r'[>=<]', dep)[0].strip()
-        # 仅保留合法包名
-        if dep and re.match(r'^[a-zA-Z0-9._-]+$', dep):
-            cleaned_depends.append(f'+{dep}')
-
-    # 去重并生成新的 DEPENDS 行
-    unique_depends = list(dict.fromkeys(cleaned_depends))
-    new_depends_line = ' '.join(unique_depends)
-    print(f"清理后的 DEPENDS: {new_depends_line}")
-
-    # 更新 Makefile
-    content = content.replace(depends_match.group(0), f"DEPENDS:={new_depends_line}")
-    with open(makefile_path, 'w') as f:
-        f.write(content)
-    print(f"已更新 Makefile：{makefile_path}")
-
-    # 清理构建目录
-    print("清理构建目录...")
-    subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/dirclean", "V=s"], check=False)
-
-    return True
     
 def fix_lua_neturl_download(log_file):
     """修复 lua-neturl 下载问题"""
