@@ -914,9 +914,20 @@ def fix_luci_lib_taskd_makefile():
     
     print("🔧 修复 luci-lib-taskd Makefile 中的依赖格式问题...")
     
-    makefile_path = "package/feeds/small8/luci-lib-taskd/Makefile"
-    if not os.path.exists(makefile_path):
-        print(f"❌ 找不到 Makefile 文件: {makefile_path}")
+    # 查找所有可能的 Makefile 路径
+    makefile_paths = [
+        "package/feeds/small8/luci-lib-taskd/Makefile",
+        "feeds/small8/luci-lib-taskd/Makefile"
+    ]
+    
+    makefile_path = None
+    for path in makefile_paths:
+        if os.path.exists(path):
+            makefile_path = path
+            break
+    
+    if not makefile_path:
+        print(f"❌ 找不到 luci-lib-taskd 的 Makefile 文件")
         return False
     
     try:
@@ -924,80 +935,99 @@ def fix_luci_lib_taskd_makefile():
         with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
         
-        # 使用正则表达式匹配连在一起的依赖行和版本约束
-        pattern = r'(LUCI_DEPENDS:=.+?)([A-Za-z0-9_-]+)(LUCI_EXTRA_DEPENDS:=.+?$>=[\d\.]+(-\d+)?$)'
-        match = re.search(pattern, content)
+        # 定义清理依赖项的函数
+        def clean_depends(depends_line):
+            # 分割依赖项
+            deps = depends_line.strip().split()
+            # 移除重复项，保持顺序
+            unique_deps = []
+            seen = set()
+            for dep in deps:
+                # 提取包名（去除版本约束）
+                pkg_name = re.sub(r'[>=<][^\\s]*$', '', dep).strip()
+                if pkg_name not in seen:
+                    # 添加不带版本约束的依赖
+                    unique_deps.append(pkg_name)
+                    seen.add(pkg_name)
+            return ' '.join(unique_deps)
         
-        if match:
-            # 分离依赖行，移除版本约束
-            depends_part = match.group(1) + match.group(2)
-            extra_depends_part = re.sub(r'$>=[\d\.]+(-\d+)?$', '', match.group(3))
-            
-            fixed_content = content.replace(
-                match.group(0),
-                f"{depends_part}\n{extra_depends_part}"
-            )
-            
-            # 写回修复后的内容
+        # 修复各种可能的依赖项定义
+        modified = False
+        
+        # 情况1: LUCI_DEPENDS 包含依赖
+        depends_match = re.search(r'(LUCI_DEPENDS\s*:=\s*)([^\n]+)', content)
+        if depends_match:
+            old_deps = depends_match.group(2)
+            new_deps = clean_depends(old_deps)
+            if old_deps != new_deps:
+                content = content.replace(depends_match.group(0), f"{depends_match.group(1)}{new_deps}")
+                modified = True
+                print(f"✅ 已修复 LUCI_DEPENDS: '{old_deps}' -> '{new_deps}'")
+        
+        # 情况2: DEPENDS 包含依赖
+        depends_match = re.search(r'(DEPENDS\s*:=\s*)([^\n]+)', content)
+        if depends_match:
+            old_deps = depends_match.group(2)
+            new_deps = clean_depends(old_deps)
+            if old_deps != new_deps:
+                content = content.replace(depends_match.group(0), f"{depends_match.group(1)}{new_deps}")
+                modified = True
+                print(f"✅ 已修复 DEPENDS: '{old_deps}' -> '{new_deps}'")
+        
+        # 情况3: 处理 PKG_DEPENDS
+        depends_match = re.search(r'(PKG_DEPENDS\s*:=\s*)([^\n]+)', content)
+        if depends_match:
+            old_deps = depends_match.group(2)
+            new_deps = clean_depends(old_deps)
+            if old_deps != new_deps:
+                content = content.replace(depends_match.group(0), f"{depends_match.group(1)}{new_deps}")
+                modified = True
+                print(f"✅ 已修复 PKG_DEPENDS: '{old_deps}' -> '{new_deps}'")
+        
+        # 如果修改了文件，写回并清理构建目录
+        if modified:
             with open(makefile_path, 'w', encoding='utf-8') as f:
-                f.write(fixed_content)
+                f.write(content)
             
-            print("✅ 已修复 Makefile 中的依赖格式")
+            print("🧹 清理和重新安装 luci-lib-taskd 相关包...")
             
-            # 清理构建目录和缓存，强制重新构建
-            print("🧹 清理 luci-lib-taskd 构建缓存...")
+            # 清理构建目录
             subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/clean", "V=s"], check=False)
             
             # 删除可能存在的有问题的 provides 文件，使用通配符查找
-            pkginfo_dir = "staging_dir/target-mipsel_24kc_musl/pkginfo"
-            if os.path.exists(pkginfo_dir):
-                for filename in os.listdir(pkginfo_dir):
-                    if "(" in filename and ")" in filename and ".provides" in filename:
-                        file_path = os.path.join(pkginfo_dir, filename)
-                        os.remove(file_path)
-                        print(f"✅ 已删除问题文件: {file_path}")
+            for base_dir in ["staging_dir/target-mipsel_24kc_musl/pkginfo", "staging_dir/target-*/pkginfo"]:
+                if os.path.exists(base_dir):
+                    for filename in os.listdir(base_dir):
+                        if ("(" in filename or ")" in filename or ">" in filename or "<" in filename) and ".provides" in filename:
+                            file_path = os.path.join(base_dir, filename)
+                            try:
+                                os.remove(file_path)
+                                print(f"✅ 已删除问题文件: {file_path}")
+                            except:
+                                print(f"⚠️ 无法删除: {file_path}")
             
+            # 更新 feeds 缓存
+            subprocess.run(["./scripts/feeds", "update", "-i"], check=False)
+            subprocess.run(["./scripts/feeds", "install", "-a"], check=False)
+            
+            print("✅ 已完成 luci-lib-taskd 的 Makefile 修复")
             return True
         else:
-            # 尝试更宽松的匹配
-            patterns = [
-                # 匹配 LUCI_DEPENDS 和 LUCI_EXTRA_DEPENDS 在一行的情况
-                r'(LUCI_DEPENDS:=.+?)(LUCI_EXTRA_DEPENDS:=.+?)([\r\n])',
-                # 匹配任何包含版本约束的依赖行
-                r'(LUCI_[A-Z_]+DEPENDS:=.+?)($>=[\d\.]+(-\d+)?$)'
-            ]
+            print("⚠️ 未发现需要修复的依赖行，检查其他问题...")
             
-            modified = False
-            for pattern in patterns:
-                if re.search(pattern, content):
-                    if "(>=" in pattern:
-                        # 移除版本约束
-                        fixed_content = re.sub(pattern, r'\1', content)
-                    else:
-                        # 分行
-                        fixed_content = re.sub(pattern, r'\1\n\2\3', content)
-                    
-                    content = fixed_content
-                    modified = True
-            
-            if modified:
-                with open(makefile_path, 'w', encoding='utf-8') as f:
-                    f.write(content)
-                
-                print("✅ 已使用通用修复规则修复 Makefile")
-                
-                # 清理构建目录
-                print("🧹 清理 luci-lib-taskd 构建缓存...")
-                subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/clean", "V=s"], check=False)
-                
+            # 作为后备方案，检查 .apk 文件是否存在，并删除它以触发重新编译
+            apk_file = "bin/packages/mipsel_24kc/small8/luci-lib-taskd-1.0.23.apk"
+            if os.path.exists(apk_file):
+                os.remove(apk_file)
+                print(f"✅ 已删除旧的 APK 文件 {apk_file}")
                 return True
-            else:
-                print("⚠️ 未找到需要修复的依赖行，检查 Makefile 是否已被修改")
-                return False
+            
+            return False
     
     except Exception as e:
         print(f"❌ 修复 Makefile 时出错: {e}")
         return False
+
 
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
@@ -1218,28 +1248,64 @@ def main():
                 print("尝试修复元数据/依赖问题失败。")
                 last_fix_applied = "fix_metadata_errors"
                 consecutive_fix_failures += 1
-        elif "ERROR: info field 'depends' has invalid value" in log_content:
+        elif "ERROR: info field 'depends' has invalid value" in log_content or "dependency format is invalid" in log_content:
             print("检测到 APK 依赖格式错误...")
-            if last_fix_applied == "fix_depends_format":
+            if last_fix_applied == "fix_luci_lib_taskd_makefile":
+                print("上次已尝试修复 Makefile 依赖格式，但仍失败。")
+                # 如果 fix_luci_lib_taskd_makefile 失败，尝试通用的 fix_depends_format
+                if last_fix_applied != "fix_depends_format":
+                    temp_current_log = f"{args.log_file}.current_depends_check.log"
+                    try:
+                        with open(temp_current_log, 'w') as tmp_f:
+                            tmp_f.write(log_content)
+                        if fix_depends_format(temp_current_log):
+                            print("已尝试修复 APK 依赖格式问题。")
+                            fix_applied_this_iteration = True
+                            last_fix_applied = "fix_depends_format"
+                            consecutive_fix_failures = 0
+                        else:
+                            consecutive_fix_failures += 1
+                    finally:
+                        if os.path.exists(temp_current_log):
+                            os.remove(temp_current_log)
+                else:
+                    consecutive_fix_failures += 1
+            elif last_fix_applied == "fix_depends_format":
                 print("上次已尝试修复 APK 依赖格式，但仍失败。")
-                consecutive_fix_failures += 1
+                # 如果通用修复失败，尝试更具体的 fix_luci_lib_taskd_makefile
+                if fix_luci_lib_taskd_makefile():
+                    print("已修复 Makefile 中的依赖格式问题。")
+                    fix_applied_this_iteration = True
+                    last_fix_applied = "fix_luci_lib_taskd_makefile"
+                    consecutive_fix_failures = 0
+                else:
+                    consecutive_fix_failures += 1
             else:
-                temp_current_log = f"{args.log_file}.current_depends_check.log"
-                try:
-                    with open(temp_current_log, 'w') as tmp_f:
-                        tmp_f.write(log_content)
-                    if fix_depends_format(temp_current_log):
-                        print("已尝试修复 APK 依赖格式问题。")
-                        fix_applied_this_iteration = True
-                        last_fix_applied = "fix_depends_format"
-                        consecutive_fix_failures = 0
-                    else:
-                        print("尝试修复 APK 依赖格式失败或未找到修复点。")
-                        last_fix_applied = "fix_depends_format"
-                        consecutive_fix_failures += 1
-                finally:
-                    if os.path.exists(temp_current_log):
-                        os.remove(temp_current_log)
+                # 首先尝试更具体的修复方法
+                if fix_luci_lib_taskd_makefile():
+                    print("已修复 Makefile 中的依赖格式问题。")
+                    fix_applied_this_iteration = True
+                    last_fix_applied = "fix_luci_lib_taskd_makefile"
+                    consecutive_fix_failures = 0
+                else:
+                    # 如果失败，尝试通用修复方法
+                    temp_current_log = f"{args.log_file}.current_depends_check.log"
+                    try:
+                        with open(temp_current_log, 'w') as tmp_f:
+                            tmp_f.write(log_content)
+                        if fix_depends_format(temp_current_log):
+                            print("已尝试修复 APK 依赖格式问题。")
+                            fix_applied_this_iteration = True
+                            last_fix_applied = "fix_depends_format"
+                            consecutive_fix_failures = 0
+                        else:
+                            print("尝试修复 APK 依赖格式失败或未找到修复点。")
+                            last_fix_applied = "fix_depends_format"
+                            consecutive_fix_failures += 1
+                    finally:
+                        if os.path.exists(temp_current_log):
+                            os.remove(temp_current_log)
+
         elif (re.search(r'syntax error near unexpected token [`\'"]?\(', log_content) or
               re.search(r'staging_dir/[^:]+/pkginfo/$[^)]+$[^:]*\.provides', log_content) or
               re.search(r'bash: -c: .*?: syntax error.*unexpected.*\(', log_content)):
@@ -1257,7 +1323,7 @@ def main():
                     print("尝试修复 Makefile 中的依赖格式失败。")
                     last_fix_applied = "fix_luci_lib_taskd_makefile"
                     consecutive_fix_failures += 1
-
+        
 
         # 7. 通用错误模式
         elif re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE):
