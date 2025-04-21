@@ -1119,6 +1119,103 @@ def fix_apk_depends_problem():
     return fix_luci_lib_taskd_makefile()
 
 
+def fix_apk_wrapper_syntax():
+    """修复 APK 包装器脚本中的语法错误"""
+    print("🔧 修复 APK 包装器脚本语法错误...")
+    
+    wrapper_path = "staging_dir/host/bin/apk"
+    real_path = "staging_dir/host/bin/apk.real"
+    
+    if os.path.exists(wrapper_path) and os.path.exists(real_path):
+        try:
+            # 读取当前的包装器脚本
+            with open(wrapper_path, 'r') as f:
+                content = f.read()
+            
+            # 如果这是我们创建的包装器，移除它并恢复原始命令
+            if "APK wrapper" in content:
+                print("⚠️ 检测到有问题的 APK 包装器，恢复原始命令...")
+                os.remove(wrapper_path)
+                os.rename(real_path, wrapper_path)
+                print("✅ 已恢复原始 APK 命令")
+                
+                # 尝试直接修改 toolchain 的 Makefile
+                toolchain_mk = "package/libs/toolchain/Makefile"
+                if os.path.exists(toolchain_mk):
+                    print("📝 尝试直接修改 toolchain Makefile 中的依赖处理...")
+                    with open(toolchain_mk, 'r') as f:
+                        mk_content = f.read()
+                    
+                    # 在 Makefile 中修改依赖项处理方式，清理引号和特殊字符
+                    if not "# Fix dependency format" in mk_content:
+                        # 添加自定义的依赖处理函数
+                        if "define Package/libgcc" in mk_content:
+                            new_content = mk_content.replace(
+                                "define Package/libgcc",
+                                """# Fix dependency format
+define CleanDepends
+  $(shell echo $(1) | tr ' ' '\\n' | sort -u | tr '\\n' ' ')
+endef
+
+define Package/libgcc"""
+                            )
+                            
+                            # 修改所有 depends 参数
+                            new_content = re.sub(
+                                r'--info "depends:([^"]*)"', 
+                                r'--info "depends:$(call CleanDepends,\1)"', 
+                                new_content
+                            )
+                            
+                            with open(toolchain_mk, 'w') as f:
+                                f.write(new_content)
+                            
+                            print("✅ 已修改 toolchain Makefile 中的依赖处理")
+                            
+                            # 清理 toolchain 构建
+                            print("🧹 清理 toolchain 构建...")
+                            subprocess.run(["make", "package/libs/toolchain/clean"], check=False)
+                            return True
+                
+                return True
+            else:
+                print("❌ 无法识别当前的 APK 包装器脚本内容")
+                return False
+        except Exception as e:
+            print(f"❌ 修复 APK 包装器脚本时出错: {e}")
+            return False
+    else:
+        print("⚠️ 找不到 APK 包装器或原始命令")
+        
+        # 尝试直接创建正确的依赖参数
+        print("📝 尝试直接修改 toolchain Makefile...")
+        toolchain_mk = "package/libs/toolchain/Makefile"
+        if os.path.exists(toolchain_mk):
+            try:
+                with open(toolchain_mk, 'r') as f:
+                    content = f.read()
+                
+                # 替换依赖参数生成方式
+                if '--info "depends:' in content:
+                    fixed_content = re.sub(
+                        r'--info "depends:([^"]*)"', 
+                        r'--info "depends:"', 
+                        content
+                    )
+                    
+                    with open(toolchain_mk, 'w') as f:
+                        f.write(fixed_content)
+                    
+                    print("✅ 已修复 toolchain Makefile 中的依赖参数")
+                    
+                    # 清理构建
+                    print("🧹 清理 toolchain 构建...")
+                    subprocess.run(["make", "package/libs/toolchain/clean"], check=False)
+                    return True
+            except Exception as e:
+                print(f"❌ 修改 toolchain Makefile 时出错: {e}")
+        
+        return False
 
 
 def main():
@@ -1387,6 +1484,23 @@ def main():
                 else:
                     print("综合解决方案修复 APK 依赖格式失败，将在下次尝试单独修复方法。")
                     last_fix_applied = "fix_apk_depends_problem"
+                    consecutive_fix_failures += 1
+        # 在 main() 函数中添加检测语法错误的条件
+        elif ("Syntax error: Unterminated quoted string" in log_content or 
+              "Syntax error:" in log_content and "bin/apk" in log_content):
+            print("检测到 APK 包装器脚本语法错误...")
+            if last_fix_applied == "fix_apk_wrapper_syntax":
+                print("上次已尝试修复 APK 包装器语法，但仍失败。")
+                consecutive_fix_failures += 1
+            else:
+                if fix_apk_wrapper_syntax():
+                    print("已修复 APK 包装器脚本语法错误。")
+                    fix_applied_this_iteration = True
+                    last_fix_applied = "fix_apk_wrapper_syntax"
+                    consecutive_fix_failures = 0
+                else:
+                    print("尝试修复 APK 包装器脚本语法错误失败。")
+                    last_fix_applied = "fix_apk_wrapper_syntax"
                     consecutive_fix_failures += 1
 
 
