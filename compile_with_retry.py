@@ -907,6 +907,97 @@ def fix_lua_neturl_download(log_file):
     time.sleep(3)
     
     return True
+    
+def fix_luci_lib_taskd_makefile():
+    """修复 luci-lib-taskd Makefile 中的依赖格式问题"""
+    import re
+    
+    print("🔧 修复 luci-lib-taskd Makefile 中的依赖格式问题...")
+    
+    makefile_path = "package/feeds/small8/luci-lib-taskd/Makefile"
+    if not os.path.exists(makefile_path):
+        print(f"❌ 找不到 Makefile 文件: {makefile_path}")
+        return False
+    
+    try:
+        # 读取原 Makefile 内容
+        with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        
+        # 使用正则表达式匹配连在一起的依赖行和版本约束
+        pattern = r'(LUCI_DEPENDS:=.+?)([A-Za-z0-9_-]+)(LUCI_EXTRA_DEPENDS:=.+?$>=[\d\.]+(-\d+)?$)'
+        match = re.search(pattern, content)
+        
+        if match:
+            # 分离依赖行，移除版本约束
+            depends_part = match.group(1) + match.group(2)
+            extra_depends_part = re.sub(r'$>=[\d\.]+(-\d+)?$', '', match.group(3))
+            
+            fixed_content = content.replace(
+                match.group(0),
+                f"{depends_part}\n{extra_depends_part}"
+            )
+            
+            # 写回修复后的内容
+            with open(makefile_path, 'w', encoding='utf-8') as f:
+                f.write(fixed_content)
+            
+            print("✅ 已修复 Makefile 中的依赖格式")
+            
+            # 清理构建目录和缓存，强制重新构建
+            print("🧹 清理 luci-lib-taskd 构建缓存...")
+            subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/clean", "V=s"], check=False)
+            
+            # 删除可能存在的有问题的 provides 文件，使用通配符查找
+            pkginfo_dir = "staging_dir/target-mipsel_24kc_musl/pkginfo"
+            if os.path.exists(pkginfo_dir):
+                for filename in os.listdir(pkginfo_dir):
+                    if "(" in filename and ")" in filename and ".provides" in filename:
+                        file_path = os.path.join(pkginfo_dir, filename)
+                        os.remove(file_path)
+                        print(f"✅ 已删除问题文件: {file_path}")
+            
+            return True
+        else:
+            # 尝试更宽松的匹配
+            patterns = [
+                # 匹配 LUCI_DEPENDS 和 LUCI_EXTRA_DEPENDS 在一行的情况
+                r'(LUCI_DEPENDS:=.+?)(LUCI_EXTRA_DEPENDS:=.+?)([\r\n])',
+                # 匹配任何包含版本约束的依赖行
+                r'(LUCI_[A-Z_]+DEPENDS:=.+?)($>=[\d\.]+(-\d+)?$)'
+            ]
+            
+            modified = False
+            for pattern in patterns:
+                if re.search(pattern, content):
+                    if "(>=" in pattern:
+                        # 移除版本约束
+                        fixed_content = re.sub(pattern, r'\1', content)
+                    else:
+                        # 分行
+                        fixed_content = re.sub(pattern, r'\1\n\2\3', content)
+                    
+                    content = fixed_content
+                    modified = True
+            
+            if modified:
+                with open(makefile_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                print("✅ 已使用通用修复规则修复 Makefile")
+                
+                # 清理构建目录
+                print("🧹 清理 luci-lib-taskd 构建缓存...")
+                subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/clean", "V=s"], check=False)
+                
+                return True
+            else:
+                print("⚠️ 未找到需要修复的依赖行，检查 Makefile 是否已被修改")
+                return False
+    
+    except Exception as e:
+        print(f"❌ 修复 Makefile 时出错: {e}")
+        return False
 
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
@@ -1149,6 +1240,25 @@ def main():
                 finally:
                     if os.path.exists(temp_current_log):
                         os.remove(temp_current_log)
+        elif (re.search(r'syntax error near unexpected token [`\'"]?\(', log_content) or
+              re.search(r'staging_dir/[^:]+/pkginfo/$[^)]+$[^:]*\.provides', log_content) or
+              re.search(r'bash: -c: .*?: syntax error.*unexpected.*\(', log_content)):
+            print("检测到依赖格式问题或特殊字符文件名问题...")
+            if last_fix_applied == "fix_luci_lib_taskd_makefile":
+                print("上次已尝试修复 Makefile 中的依赖格式，但仍失败。")
+                consecutive_fix_failures += 1
+            else:
+                if fix_luci_lib_taskd_makefile():
+                    print("已修复 Makefile 中的依赖格式问题。")
+                    fix_applied_this_iteration = True
+                    last_fix_applied = "fix_luci_lib_taskd_makefile"
+                    consecutive_fix_failures = 0
+                else:
+                    print("尝试修复 Makefile 中的依赖格式失败。")
+                    last_fix_applied = "fix_luci_lib_taskd_makefile"
+                    consecutive_fix_failures += 1
+
+
         # 7. 通用错误模式
         elif re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE):
             matched_pattern = re.search(args.error_pattern, log_content, re.IGNORECASE | re.MULTILINE)
