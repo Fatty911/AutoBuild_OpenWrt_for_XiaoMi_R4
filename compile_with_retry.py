@@ -65,33 +65,191 @@ def fix_netifd_libnl_tiny():
             with open(cmake_path, "r", encoding="utf-8", errors="replace") as f:
                 cmake_content = f.read()
 
-            if "nl-tiny" not in cmake_content:
+            # 版本1：检查 target_link_libraries 中是否包含 nl-tiny
+            if "nl-tiny" not in cmake_content and "libnl-tiny" not in cmake_content and "libnl_tiny" not in cmake_content:
                 print("⚠️ CMakeLists.txt 中未包含 nl-tiny，尝试修复...")
-                cmake_content = cmake_content.replace(
-                    "target_link_libraries(netifd",
-                    "target_link_libraries(netifd nl-tiny"
-                )
+                
+                # 尝试不同的写法，确保至少一种能成功
+                new_content = cmake_content
+                
+                # 方式1：在 target_link_libraries 行添加 nl-tiny
+                if "target_link_libraries(netifd" in new_content:
+                    new_content = new_content.replace(
+                        "target_link_libraries(netifd",
+                        "target_link_libraries(netifd nl-tiny"
+                    )
+                    
+                # 方式2：添加一个完整的新 target_link_libraries 行
+                elif "add_executable(netifd" in new_content and "target_link_libraries" not in new_content:
+                    new_content = new_content.replace(
+                        "add_executable(netifd",
+                        "add_executable(netifd\ntarget_link_libraries(netifd nl-tiny)"
+                    )
+                
+                # 方式3：添加 find_library 和链接命令
+                if new_content != cmake_content:
+                    # 在文件顶部添加 find_library 命令
+                    new_content = "find_library(NL_TINY_LIBRARY NAMES nl-tiny libnl-tiny libnl_tiny)\n" + new_content
+                
                 with open(cmake_path, "w", encoding="utf-8") as f:
-                    f.write(cmake_content)
+                    f.write(new_content)
                 print("✅ 已注入 nl-tiny 到 CMakeLists.txt 中。")
             else:
-                print("✅ CMakeLists.txt 中已包含 nl-tiny。")
+                print("✅ CMakeLists.txt 中已包含 nl-tiny 或其变体。")
+                
+            # 添加一个备用解决方案：创建链接文件到 lib 目录
+            target_dirs = glob.glob("build_dir/target-*")
+            if target_dirs:
+                target_dir = target_dirs[0]
+                netifd_build_dir = glob.glob(f"{target_dir}/netifd-*/")
+                if netifd_build_dir:
+                    print("📂 在 netifd 构建目录中创建链接文件...")
+                    ln_commands = [
+                        f"cp -f staging_dir/target-*/usr/lib/libnl-tiny.so {netifd_build_dir[0]}/ || true",
+                        f"ln -sf ../../staging_dir/target-*/usr/lib/libnl-tiny.so {netifd_build_dir[0]}/libnl-tiny.so || true",
+                        f"ln -sf ../../staging_dir/target-*/usr/lib/libnl-tiny.so {netifd_build_dir[0]}/libnl_tiny.so || true"
+                    ]
+                    for cmd in ln_commands:
+                        subprocess.run(cmd, shell=True, check=False)
+                
         else:
-            print("⚠️ 未找到 netifd 的 CMakeLists.txt，跳过链接参数检查。")
+            print("⚠️ 未找到 netifd 的 CMakeLists.txt，尝试直接修改链接命令...")
+            
+            # 尝试创建临时 CMake 模块文件来强制链接 libnl-tiny
+            module_dir = Path("package/network/config/netifd/cmake")
+            module_dir.mkdir(exist_ok=True)
+            
+            with open(module_dir / "FindLibnlTiny.cmake", "w") as f:
+                f.write("""
+# FindLibnlTiny.cmake - 强制链接 libnl-tiny 库
+find_path(LIBNL_TINY_INCLUDE_DIR NAMES netlink/netlink.h PATH_SUFFIXES libnl-tiny)
+find_library(LIBNL_TINY_LIBRARY NAMES nl-tiny libnl-tiny libnl_tiny)
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(LibnlTiny DEFAULT_MSG LIBNL_TINY_LIBRARY LIBNL_TINY_INCLUDE_DIR)
+mark_as_advanced(LIBNL_TINY_INCLUDE_DIR LIBNL_TINY_LIBRARY)
+""")
+        
+        # 步骤 4：尝试直接修改 staging_dir 中的链接命令
+        # 创建软链接确保库可以被正确查找
+        staging_lib_dirs = glob.glob("staging_dir/target-*/usr/lib")
+        for lib_dir in staging_lib_dirs:
+            if os.path.exists(f"{lib_dir}/libnl-tiny.so"):
+                if not os.path.exists(f"{lib_dir}/libnl_tiny.so"):
+                    os.symlink("libnl-tiny.so", f"{lib_dir}/libnl_tiny.so")
+                if not os.path.exists(f"{lib_dir}/libnl.so"):
+                    os.symlink("libnl-tiny.so", f"{lib_dir}/libnl.so")
+                print(f"✅ 在 {lib_dir} 创建了库软链接")
 
-        # 步骤 4：清理并重新编译 netifd
+        # 步骤 5：修改构建系统配置，确保链接 libnl-tiny
+        make_conf = "package/network/config/netifd/Makefile"
+        if os.path.exists(make_conf):
+            with open(make_conf, "r", encoding="utf-8", errors="replace") as f:
+                makefile_content = f.read()
+            
+            # 添加 LDFLAGS 到 Makefile
+            if "PKG_FIXUP:=autoreconf" in makefile_content and "LDFLAGS" not in makefile_content:
+                new_makefile = makefile_content.replace(
+                    "PKG_FIXUP:=autoreconf",
+                    "PKG_FIXUP:=autoreconf\nTARGET_LDFLAGS += -lnl-tiny"
+                )
+                with open(make_conf, "w", encoding="utf-8") as f:
+                    f.write(new_makefile)
+                print("✅ 已在 Makefile 中添加 LDFLAGS 链接 libnl-tiny")
+            
+            # 确保 libnl-tiny 在依赖列表中
+            if "DEPENDS:=" in makefile_content and "libnl-tiny" not in makefile_content:
+                new_makefile = makefile_content.replace(
+                    "DEPENDS:=",
+                    "DEPENDS:=+libnl-tiny "
+                )
+                with open(make_conf, "w", encoding="utf-8") as f:
+                    f.write(new_makefile)
+                print("✅ 已在 Makefile 依赖中添加 libnl-tiny")
+
+        # 步骤 6：清理并重新编译 netifd
         print("🧹 清理 netifd...")
         subprocess.run(["make", "package/network/config/netifd/clean", "-j1", "V=s"], check=False)
 
+        # 最极端的方法：复制 libnl-tiny 源码到 netifd 源码目录中
+        target_dirs = glob.glob("build_dir/target-*")
+        if target_dirs:
+            target_dir = target_dirs[0]
+            netifd_dirs = glob.glob(f"{target_dir}/netifd-*/")
+            libnl_dirs = glob.glob(f"{target_dir}/libnl-tiny-*/")
+            
+            if netifd_dirs and libnl_dirs:
+                netifd_dir = netifd_dirs[0]
+                libnl_dir = libnl_dirs[0]
+                print(f"📁 复制 libnl-tiny 源码到 netifd 目录...")
+                
+                # 复制头文件
+                subprocess.run(f"cp -rf {libnl_dir}/include/* {netifd_dir}/", shell=True, check=False)
+                
+                # 复制源文件和创建一个简单的包含文件
+                os.makedirs(f"{netifd_dir}/libnl_tiny", exist_ok=True)
+                subprocess.run(f"cp -rf {libnl_dir}/*.c {libnl_dir}/*.h {netifd_dir}/libnl_tiny/", shell=True, check=False)
+                
+                with open(f"{netifd_dir}/libnl_tiny.h", "w") as f:
+                    f.write("""
+#ifndef _LIBNL_TINY_H_
+#define _LIBNL_TINY_H_
+#include "libnl_tiny/nl.h"
+#include "libnl_tiny/msg.h"
+#include "libnl_tiny/attr.h"
+#include "libnl_tiny/netlink.h"
+#include "libnl_tiny/socket.h"
+#include "libnl_tiny/genl.h"
+#endif
+""")
+        
         print("🔨 编译 netifd...")
-        subprocess.run(["make", "package/network/config/netifd/compile", "-j1", "V=s"], check=False)
-
+        result = subprocess.run(["make", "package/network/config/netifd/compile", "-j1", "V=s"], 
+                                check=False, capture_output=True, text=True)
+        
+        # 检查编译结果
+        if "Error 1" in result.stdout or "Error 1" in result.stderr:
+            print("❌ netifd 编译失败，尝试最后的手动链接方法...")
+            
+            # 尝试找到编译命令并直接添加库
+            build_line = None
+            for line in result.stdout.split('\n'):
+                if "gcc" in line and "netifd" in line and "-o netifd" in line:
+                    build_line = line
+                    break
+            
+            if build_line:
+                # 修改链接命令，添加 -lnl-tiny 到命令末尾
+                new_build_line = build_line.strip() + " -lnl-tiny"
+                print(f"🔧 尝试手动链接: {new_build_line}")
+                
+                # 查找 build 目录下的 build.ninja 文件
+                ninja_files = glob.glob("build_dir/target-*/netifd-*/build.ninja")
+                if ninja_files:
+                    with open(ninja_files[0], "r", encoding="utf-8", errors="replace") as f:
+                        ninja_content = f.read()
+                    
+                    # 修改链接命令
+                    new_ninja = ninja_content.replace(
+                        " -o netifd ", 
+                        " -o netifd -lnl-tiny "
+                    )
+                    
+                    with open(ninja_files[0], "w", encoding="utf-8") as f:
+                        f.write(new_ninja)
+                    
+                    print("✅ 已修改 build.ninja 文件，添加 -lnl-tiny 到链接命令")
+                    
+                    # 再次尝试编译
+                    print("🔨 再次尝试编译 netifd...")
+                    subprocess.run(["make", "package/network/config/netifd/compile", "-j1", "V=s"], check=False)
+        
         print("✅ netifd 和 libnl-tiny 修复流程完成。")
         return True
 
     except Exception as e:
         print(f"❌ 修复 netifd/libnl-tiny 时发生异常: {e}")
         return False
+
 
 
 
@@ -866,7 +1024,11 @@ def main():
                     consecutive_fix_failures += 1
 
         # 2. Netifd libnl-tiny 相关错误
-        elif "undefined reference to `nlmsg_alloc_simple`" in log_content or "undefined reference to `nla_put`" in log_content:
+        # 在 main() 函数中修改 netifd 错误检测的部分
+        elif ("undefined reference to `nlmsg_alloc_simple`" in log_content or 
+              "undefined reference to `nla_put`" in log_content or 
+              "undefined reference to `nlmsg_append`" in log_content or
+              ("netifd" in log_content and "undefined reference" in log_content)):
             print("检测到 netifd 编译错误，缺少 libnl-tiny 符号。尝试修复...")
             if last_fix_applied == "fix_netifd_libnl_tiny":
                 print("上次已尝试修复 netifd libnl-tiny 问题，但仍失败。停止重试。")
@@ -881,6 +1043,7 @@ def main():
                     print("尝试修复 netifd libnl-tiny 问题失败。")
                     last_fix_applied = "fix_netifd_libnl_tiny"
                     consecutive_fix_failures += 1
+
 
         # 3. Lua Neturl 下载错误
         elif 'lua-neturl' in log_content and ('No more mirrors to try' in log_content or 'Download failed' in log_content or 'Hash mismatch' in log_content):
