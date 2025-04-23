@@ -1830,27 +1830,34 @@ def fix_apk_wrapper_syntax():
 
 def get_error_signature(log_content):
     """从日志内容中提取一个更准确的错误签名 (v3)"""
+    if not log_content: return "no_log_content"
     # 1. APK 依赖格式错误 (更精确地定位)
     # 查找 Error 99 及其上下文
-    apk_error_match = re.search(r"make\[\d+\]: \*\*\* .*?luci\.mk:\d+: (.*?\.apk)\] Error 99", log_content)
+    apk_add_invalid_format_match = re.search(
+        r"ERROR: ('([^=]+)=' is not a valid world dependency).*?make\[\d+\]: \*\*\* .*?package/install.* Error 99",
+        log_content, re.DOTALL
+    )
+    if apk_add_invalid_format_match:
+        invalid_package = apk_add_invalid_format_match.group(2) # Extract the package name (e.g., base-files)
+        return f"apk_add_invalid_dep_format:{invalid_package}"
+    apk_error_match = re.search(r"make\[\d+\]: \*\*\* .*?luci\.mk:\d+.*?\[(.*?/([^/]+?)(?:_\d[^/]*?)?\.apk)\] Error 99", log_content)
     if apk_error_match:
-        apk_path = apk_error_match.group(1)
-        # 从 apk 路径推断包名
-        pkg_name_match = re.search(r"/([^/]+?)-\d+.*\.apk$", apk_path)
-        pkg_name = pkg_name_match.group(1) if pkg_name_match else "unknown_pkg_from_apk"
-        return f"apk_depends_invalid:{pkg_name}"
+        pkg_name = apk_error_match.group(2)
+        # Avoid confusion with the new signature if it's base-files failing here (less likely)
+        if pkg_name != "base-files":
+             return f"apk_depends_invalid:{pkg_name}"
 
     # 2. Makefile 依赖缺失警告 (取第一个作为代表)
-    warning_match = re.search(r"WARNING: Makefile '([^']+)' has a dependency on '([^']*)', which does not exist", log_content)
-    if warning_match:
-        makefile_path = warning_match.group(1)
-        bad_dep = warning_match.group(2)
-        pkg_name_match = re.search(r'(?:package|feeds)/[^/]+/([^/]+)/Makefile', makefile_path)
-        pkg_name = pkg_name_match.group(1) if pkg_name_match else os.path.basename(os.path.dirname(makefile_path))
-        # 过滤掉明显无意义的坏依赖报告
-        if bad_dep and len(bad_dep) > 1 and bad_dep != 'p,,gst1-mod-)': # 过滤掉噪音
-            return f"makefile_dep_missing:{pkg_name}:{bad_dep}"
-
+    dep_warning_match = re.search(r"WARNING: Makefile '([^']+)' has a dependency on '([^']*)', which does not exist", log_content)
+    if dep_warning_match:
+        # ... (existing logic for dep_warning_match) ...
+        # Check if the real error was already identified
+        if apk_add_invalid_format_match: # Don't let warning override the real error
+             pass # Ignore this warning if the apk_add error was found
+        else:
+             # ... (extract pkg_name and bad_dep as before) ...
+             if bad_dep and bad_dep.lower() not in ['perl_tests', ''] and not bad_dep.startswith(('p,', '(virtual)', '$')):
+                 return f"makefile_dep_missing:{pkg_name}:{bad_dep}"
     # 3. APK Wrapper 语法错误
     if "Syntax error:" in log_content and "bin/apk" in log_content:
          return "apk_wrapper_syntax"
@@ -1909,7 +1916,57 @@ def get_error_signature(log_content):
 
     return "unknown_error"
 
+def fix_apk_add_base_files_issue(log_content):
+    """修复 apk add 时 base-files= 或类似包版本缺失导致的 Error 99"""
+    print("🔧 检测到 apk add 无效依赖格式错误 (通常由 base-files 版本缺失引起)。")
 
+    # Extract package name from signature if possible
+    match = re.search(r"apk_add_invalid_dep_format:(\S+)", get_error_signature(log_content))
+    pkg_name = match.group(1) if match else "base-files" # Default to base-files
+    print(f"  尝试清理问题包 '{pkg_name}' 和 tmp 目录...")
+
+    fixed = False
+
+    # 1. Clean the specific package (e.g., base-files)
+    pkg_path = Path(f"package/{pkg_name}")
+    # Handle potential locations (core vs feeds) - base-files is usually core
+    if not pkg_path.exists():
+         pkg_path = Path(f"package/system/{pkg_name}") # Common location for base-files
+    if not pkg_path.exists():
+         pkg_path = Path(f"package/base-files") # Explicit path just in case
+
+    if pkg_path.exists() and (pkg_path / "Makefile").exists():
+        pkg_rel_path = get_relative_path(str(pkg_path))
+        print(f"  🧹 清理包: make {pkg_rel_path}/clean V=s")
+        try:
+            subprocess.run(["make", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True, timeout=60)
+            fixed = True # Mark as attempted
+        except subprocess.TimeoutExpired:
+            print(f"  ⚠️ 清理 {pkg_rel_path} 超时。")
+        except Exception as e:
+            print(f"  ⚠️ 清理 {pkg_rel_path} 时出错: {e}")
+    else:
+        print(f"  ⚠️ 未找到包目录 {pkg_path} 进行清理。")
+
+    # 2. Clean the tmp directory (often helps resolve version issues)
+    tmp_dir = Path("tmp")
+    if tmp_dir.exists():
+        print(f"  🧹 清理目录: {get_relative_path(str(tmp_dir))}")
+        try:
+            shutil.rmtree(tmp_dir)
+            print(f"  ✅ {tmp_dir} 已清理。")
+            fixed = True # Mark as attempted
+        except Exception as e:
+            print(f"  ⚠️ 清理 {tmp_dir} 失败: {e}")
+    else:
+        print(f"  ℹ️ {tmp_dir} 不存在，无需清理。")
+
+    if fixed:
+        print("✅ 清理操作完成，请重试编译。")
+    else:
+        print("❌ 未执行有效的清理操作。")
+
+    return fixed # Return True if any clean operation was attempted
 
 
 
@@ -2067,19 +2124,25 @@ def main():
 
         # --- 根据错误签名选择修复函数 ---
         fix_applied_this_iteration = False # 重置本轮修复标记
-        if "makefile_dep_missing" in current_error_signature:
+
+        if current_error_signature == "unknown_error" or current_error_signature == "no_log_content":
+            print("❓ 未知错误或无日志内容。无法应用自动修复。")
+        elif "apk_add_invalid_dep_format" in current_error_signature:
+             print("⚡️ 触发修复: apk add 无效依赖格式 (通常是 base-files)")
+             if fix_apk_add_base_files_issue(log_content_global):
+                 fix_applied_this_iteration = True
+
+        elif "apk_depends_invalid" in current_error_signature:
+            print("⚡️ 触发修复: APK 依赖格式无效 (mkpkg 阶段)")
+            if fix_apk_depends_problem():
+                fix_applied_this_iteration = True
+        elif "makefile_dep_missing" in current_error_signature:
             print("⚡️ 触发修复: Makefile 依赖项缺失或格式错误")
             if fix_depends_format(log_content):
                 fix_applied_this_iteration = True
             else:
                 print("❌ 修复 Makefile 依赖项失败或未找到修复点。")
             # 注意：即使修复了依赖警告，可能仍然存在其他错误，所以继续检查
-        if current_error_signature == "apk_depends_invalid:luci-lib-taskd":
-            print("⚡️ 触发修复: APK 依赖格式无效 (luci-lib-taskd)")
-            if fix_apk_depends_problem(): # 调用 v8 版本，优先修复特定 Makefile
-                fix_applied_this_iteration = True
-            else:
-                print("❌ 修复 APK 依赖格式失败。")
         elif current_error_signature == "apk_wrapper_syntax":
             print("⚡️ 触发修复: APK wrapper 语法错误")
             if fix_apk_wrapper_syntax(): # 这个函数内部会尝试 fix_apk_directly
