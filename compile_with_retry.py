@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-compile_with_retry.py
-用于修复 OpenWrt 编译中的常见错误
-用法: python3 compile_with_retry.py <make_command> <log_file> [--max-retry N] [--error-pattern PATTERN]
-"""
-
 import argparse
 import os
 import re
@@ -18,17 +12,42 @@ from pathlib import Path
 import glob
 import hashlib
 
-# Try importing optional dependencies, fail gracefully if not found
 try:
     import requests
     from bs4 import BeautifulSoup
+    LIBS_AVAILABLE = True
 except ImportError:
-    requests = None
-    BeautifulSoup = None
-    print("警告: 'requests' 和 'beautifulsoup4' 未安装，某些修复功能（如 lua-neturl 下载）将不可用。")
-    print("请运行: pip install requests beautifulsoup4")
+    LIBS_AVAILABLE = False
+    print("警告: 未安装 requests 和 beautifulsoup4，lua-neturl 下载修复不可用")
 
+# OOM 高风险包列表（来自版本 2）
+OOM_PRONE_PACKAGE_PATTERNS = [
+    r'/gcc-\d+', r'/llvm-\d+', r'/qt5base-\d+', r'/webkitgtk-\d+', r'/linux-\d+'
+]
 
+# 错误签名检测（结合版本 1 和 2）
+def get_error_signature(log_content):
+    if not log_content: return "no_log_content"
+    if re.search(r'Killed|signal 9|Error 137', log_content): return "oom_detected"
+    if "undefined reference to" in log_content and "netifd" in log_content: return "netifd_link_error"
+    if "missing separator" in log_content: return "makefile_separator"
+    if "Patch failed" in log_content: return "patch_failed"
+    if LIBS_AVAILABLE and "lua-neturl" in log_content and "Download failed" in log_content: return "lua_neturl_download"
+    if "trojan-plus" in log_content and "buffer-cast" in log_content: return "trojan_plus_buffer_cast"
+    if "mkdir: cannot create directory" in log_content: return "directory_conflict"
+    if "ln: failed to create symbolic link" in log_content: return "symlink_conflict"
+    if "toolchain" in log_content and "provides" in log_content: return "toolchain_provides_syntax"
+    if "luci-lib-taskd" in log_content: return "luci_lib_taskd_depends"
+    if "base-files=" in log_content and "Error 99" in log_content: return "apk_add_base_files"
+    return "unknown_error"
+
+# OOM 处理（结合版本 1 和 2）
+def handle_oom(current_jobs, log_content):
+    for pattern in OOM_PRONE_PACKAGE_PATTERNS:
+        if re.search(pattern, log_content):
+            print("检测到 OOM 高风险包，强制使用 -j1")
+            return 1
+    return max(1, current_jobs // 2)  # 版本 1 的减半策略
 def get_relative_path(path):
     """获取相对路径"""
     current_pwd = os.getcwd()
@@ -2011,351 +2030,87 @@ def fix_apk_add_base_files_issue(log_content):
 
     # Return True to indicate a fix strategy was determined
     return True
-
-
-
-# --- Main Execution Logic ---
-log_content_global = "" # 用于在函数间传递日志内容
+# 主逻辑
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
-    # (Keep arguments from v9/v10)
-    parser.add_argument('make_command', help='基础编译命令，例如 "make V=s" (会自动添加 -j 参数)')
-    parser.add_argument('log_file', help='主日志文件路径，例如 "compile.log"')
-    parser.add_argument('--max-retry', type=int, default=8, help='最大重试次数 (默认: 8)')
-    parser.add_argument('--error-pattern',
-                        default=r'error:|failed|invalid|Cannot find dependency|No rule to make target|fatal error:|collect2: error: ld returned 1 exit status|syntax error|missing separator|Makefile:\d+: \*\*\*',
-                        help='通用错误模式正则表达式')
-    parser.add_argument('--jobs', '-j', type=int, default=0, help='并行任务数 (0=自动检测, 1=强制单线程)')
+    parser.add_argument('make_command', help='编译命令，如 "make V=s"')
+    parser.add_argument('log_file', help='日志文件路径')
+    parser.add_argument('--max-retry', type=int, default=8, help='最大重试次数')
+    parser.add_argument('--jobs', type=int, default=0, help='初始并行任务数')
+    args = parser.parse_args()
 
-    args, unknown = parser.parse_known_args()
+    base_cmd = re.sub(r'\s-j\s*\d+', '', args.make_command).strip()
+    jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 1)
+    retry = 1
+    log_content_global = ""
+    last_error = None
+    same_error_count = 0
 
-    base_make_command = args.make_command
-    base_make_command = re.sub(r'\s-j\s*\d+\s?', ' ', base_make_command)
-    base_make_command = re.sub(r'\s-j\s*$', '', base_make_command).strip()
+    while retry <= args.max_retry:
+        cmd = f"{base_cmd} -j{jobs}"
+        print(f"尝试 {retry}/{args.max_retry} 次: {cmd}")
+        log_file = f"{Path(args.log_file).stem}.run.{retry}.log"
+        
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        with open(log_file, 'w', encoding='utf-8') as f:
+            for line in process.stdout:
+                sys.stdout.write(line)
+                f.write(line)
+        status = process.wait()
+        with open(log_file, 'r', encoding='utf-8') as f:
+            log_content_global = f.read()
 
-    initial_jobs = args.jobs
-    if initial_jobs == 0:
-        try:
-            initial_jobs = os.cpu_count() or 1
-        except NotImplementedError:
-            initial_jobs = 1
-        print(f"自动检测到 CPU 核心数: {initial_jobs}")
-    elif initial_jobs < 1:
-        print("警告: --jobs 参数无效，将使用单线程 (-j1)")
-        initial_jobs = 1
+        if status == 0:
+            print("编译成功！")
+            return 0
+        
+        error = get_error_signature(log_content_global)
+        print(f"错误: {error}")
 
-    print("--------------------------------------------------")
-    print(f"基础编译命令: {base_make_command}")
-    print(f"主日志文件: {args.log_file}")
-    print(f"最大重试: {args.max_retry}")
-    print(f"并行数 (-j): {initial_jobs}")
-    print(f"错误模式: {args.error_pattern}")
-    print("--------------------------------------------------")
-
-    retry_count = 1
-    metadata_fixed = False
-    consecutive_fix_failures = 0
-    last_error_signature = None
-    # fix_attempted_last_iteration = False # We don't need this for -j1 forcing anymore
-    global log_content_global
-    global needs_base_files_precompute # Use the global flag
-
-    log_dir = os.path.dirname(args.log_file) or "."
-    # (Keep log dir creation and cleaning)
-    print(f"日志目录: {log_dir}")
-    if not os.path.exists(log_dir):
-        try:
-            os.makedirs(log_dir)
-            print(f"创建日志目录: {log_dir}")
-        except OSError as e:
-            print(f"错误: 无法创建日志目录 {log_dir}: {e}")
-            return 1
-    if os.path.exists(args.log_file):
-        print(f"清理旧的主日志文件: {args.log_file}")
-        try:
-            os.remove(args.log_file)
-        except OSError as e:
-            print(f"警告: 清理主日志文件失败: {e}")
-
-
-    while retry_count <= args.max_retry:
-        print("==================================================")
-        # Use initial_jobs for all runs now
-        current_jobs = initial_jobs
-        print(f"尝试编译: 第 {retry_count} / {args.max_retry} 次 (使用 -j{current_jobs})...")
-
-        # --- Pre-computation Step ---
-        if needs_base_files_precompute:
-            print("⚙️ 执行 base-files 预处理...")
-            precompute_success = False
-            tmp_dir = Path("tmp")
-            pkg_name = "base-files" # Hardcoded for this specific fix
-            pkg_path = Path(f"package/{pkg_name}") # Assume standard path
-
-            if pkg_path.exists() and (pkg_path / "Makefile").exists():
-                pkg_rel_path = get_relative_path(str(pkg_path))
-                # 1. Compile
-                print(f"  编译: make {pkg_rel_path}/compile V=s")
-                compile_cmd = ["make", f"{pkg_rel_path}/compile", "V=s"]
-                try:
-                    # Ensure tmp exists
-                    tmp_dir.mkdir(exist_ok=True)
-                    result = subprocess.run(compile_cmd, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=240)
-                    if result.returncode == 0:
-                        print(f"    ✅ 编译 {pkg_rel_path} 成功。")
-                        # 2. Rename
-                        source_ver_file = tmp_dir / f".ver-{pkg_name}"
-                        dest_ver_file = tmp_dir / f"{pkg_name}.version"
-                        print(f"  修复文件名: {source_ver_file} -> {dest_ver_file}")
-                        if source_ver_file.exists():
-                            try:
-                                shutil.copy2(source_ver_file, dest_ver_file)
-                                print(f"      ✅ 已将 {source_ver_file.name} 复制为 {dest_ver_file.name}")
-                                precompute_success = True # Mark success only after rename
-                            except Exception as e:
-                                print(f"      ❌ 复制/重命名版本文件失败: {e}")
-                        elif dest_ver_file.exists():
-                            print(f"      ℹ️ 目标版本文件 {dest_ver_file.name} 已存在。")
-                            precompute_success = True # Assume okay if exists
-                        else:
-                            print(f"      ❌ 未找到源版本文件 {source_ver_file.name}。")
-                    else:
-                        print(f"    ⚠️ 编译 {pkg_rel_path} 失败。")
-                        print(f"STDERR:\n{(result.stderr or '')[-1000:]}")
-                except Exception as e:
-                    print(f"  ⚠️ 执行预处理编译/重命名时出错: {e}")
-            else:
-                print(f"  ⚠️ 找不到 {pkg_path} 进行预处理。")
-
-            if precompute_success:
-                print("  ✅ base-files 预处理完成。")
-                needs_base_files_precompute = False # Reset flag
-                # Optional: Clean index after successful precompute?
-                print("  🧹 清理包索引: make package/index V=s")
-                try:
-                    subprocess.run(["make", "package/index", "V=s"], check=False, capture_output=True, timeout=180)
-                except Exception: pass # Ignore index errors here
-            else:
-                print("  ❌ base-files 预处理失败，可能无法解决问题。")
-                # Keep the flag set? Or maybe stop? For now, let it continue.
-                # needs_base_files_precompute = False # Reset flag anyway to avoid loop?
-
-        # --- Construct and Run Main Command ---
-        full_make_command = f"{base_make_command} -j{current_jobs}"
-        print(f"命令: {full_make_command}")
-        print("==================================================")
-
-        fix_applied_this_iteration = False # This flag now only means "a fix was *triggered*"
-        current_log_file = os.path.join(log_dir, f"{Path(args.log_file).stem}.current_run.{retry_count}.log")
-        print(f"执行编译命令，输出到临时日志: {current_log_file}")
-        compile_status = -1
-        log_content=""
-
-        # (Keep subprocess.Popen and log reading/appending logic)
-        try:
-            with open(current_log_file, 'w', encoding='utf-8', errors='replace') as f_log:
-                process = subprocess.Popen(
-                    full_make_command,
-                    shell=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    encoding='utf-8',
-                    errors='replace'
-                )
-                for line in process.stdout:
-                    sys.stdout.write(line)
-                    sys.stdout.flush()
-                    f_log.write(line)
-                compile_status = process.wait()
-        except Exception as e:
-            print(f"\n!!! 执行编译命令时发生异常: {e} !!!")
-            compile_status = 999
-            try:
-                 with open(current_log_file, 'a', encoding='utf-8', errors='replace') as f_log:
-                     f_log.write(f"\n!!! Script Error during Popen: {e} !!!\n")
-            except Exception: pass
-        finally:
-            if os.path.exists(current_log_file):
-                try:
-                    with open(current_log_file, 'r', encoding='utf-8', errors='replace') as temp_f:
-                        log_content = temp_f.read()
-                except Exception as read_e:
-                    print(f"警告: 读取临时日志 {current_log_file} 失败: {read_e}")
-                    log_content = f"!!! Failed to read temporary log file: {current_log_file} !!!\n"
-
-            try:
-                with open(args.log_file, 'a', encoding='utf-8', errors='replace') as main_log:
-                    main_log.write(f"\n--- Attempt {retry_count} (-j{current_jobs}) Log Start ---\n")
-                    main_log.write(log_content)
-                    main_log.write(f"--- Attempt {retry_count} Log End (Exit Code: {compile_status}) ---\n")
-            except Exception as log_e:
-                print(f"警告: 写入主日志文件 {args.log_file} 失败: {log_e}")
-
-        log_content_global = log_content
-
-        # --- Check Compile Result ---
-        if compile_status == 0:
-             print("--------------------------------------------------")
-             print("✅ 编译成功！")
-             print("--------------------------------------------------")
-             if os.path.exists(current_log_file):
-                 try: os.remove(current_log_file)
-                 except OSError: pass
-             return 0
-
-        print(f"编译失败 (退出码: {compile_status}) 或在日志中检测到错误。开始分析错误...")
-
-        # --- Error Analysis and Fix Trigger ---
-        current_error_signature = get_error_signature(log_content)
-        print(f"ℹ️ 检测到的错误签名: {current_error_signature}")
-
-        # Check consecutive failures (less critical now, but still a safety)
-        if current_error_signature == last_error_signature and needs_base_files_precompute: # If the *same* error occurs *after* precompute was triggered
-            consecutive_fix_failures += 1
-            print(f"⚠️ 错误签名 '{current_error_signature}' 在预处理后仍然出现。连续失败次数: {consecutive_fix_failures}")
-            if consecutive_fix_failures >= 1: # Fail after one failed precompute attempt
-                print(f"🚫 预处理未能解决错误 '{current_error_signature}'，停止重试。")
-                if os.path.exists(current_log_file):
-                    try: os.remove(current_log_file)
-                    except OSError: pass
-                return 1
-        elif current_error_signature != last_error_signature:
-            consecutive_fix_failures = 0
-
-        last_error_signature = current_error_signature
-        fix_applied_this_iteration = False # Reset flag
-
-        # --- Trigger Fixes Based on Signature ---
-        if current_error_signature == "unknown_error" or current_error_signature == "no_log_content":
-            print("❓ 未知错误或无日志内容。无法应用自动修复。")
-        elif "apk_add_invalid_dep_format" in current_error_signature:
-             print("⚡️ 触发修复: apk add 无效依赖格式 (设置预处理标志)")
-             if fix_apk_add_base_files_issue(log_content_global): # Use the v11 flag-setting function
-                 fix_applied_this_iteration = True
-        elif "apk_depends_invalid" in current_error_signature:
-            print("⚡️ 触发修复: APK 依赖格式无效 (mkpkg 阶段)")
-            if fix_apk_depends_problem():
-                fix_applied_this_iteration = True
-        elif "makefile_dep_missing" in current_error_signature:
-            print("⚡️ 触发修复: Makefile 依赖项缺失或格式错误")
-            if fix_depends_format(log_content):
-                fix_applied_this_iteration = True
-            else:
-                print("❌ 修复 Makefile 依赖项失败或未找到修复点。")
-            # 注意：即使修复了依赖警告，可能仍然存在其他错误，所以继续检查
-        elif current_error_signature == "apk_wrapper_syntax":
-            print("⚡️ 触发修复: APK wrapper 语法错误")
-            if fix_apk_wrapper_syntax(): # 这个函数内部会尝试 fix_apk_directly
-                fix_applied_this_iteration = True
-            else:
-                print("❌ 修复 APK wrapper 语法失败。")
-
-        elif "apk_depends_invalid" in current_error_signature:
-            print("⚡️ 触发修复: APK 依赖格式无效")
-            if fix_apk_depends_problem(): # 这个函数优先尝试 fix_apk_directly
-                fix_applied_this_iteration = True
-            else:
-                print("❌ 修复 APK 依赖格式失败。")
-
-        elif "netifd_link_error" in current_error_signature:
-            print("⚡️ 触发修复: netifd 链接错误")
-            if fix_netifd_libnl_tiny():
-                fix_applied_this_iteration = True
-            else:
-                print("❌ 修复 netifd 链接错误失败。")
-
-        elif "makefile_separator" in current_error_signature:
-             print("⚡️ 触发修复: Makefile missing separator")
-             temp_current_log = f"{args.log_file}.current_separator_check.log"
-             try:
-                 with open(temp_current_log, 'w') as tmp_f:
-                     tmp_f.write(log_content)
-                 if fix_makefile_separator(temp_current_log):
-                     fix_applied_this_iteration = True
-                 else:
-                     print("❌ 修复 Makefile separator 失败或未找到修复点。")
-             finally:
-                 if os.path.exists(temp_current_log): os.remove(temp_current_log)
-
-        elif "patch_failed" in current_error_signature:
-             print("⚡️ 触发修复: 补丁应用失败")
-             temp_current_log = f"{args.log_file}.current_patch_check.log"
-             try:
-                 with open(temp_current_log, 'w') as tmp_f:
-                     tmp_f.write(log_content)
-                 if fix_patch_application(temp_current_log):
-                     fix_applied_this_iteration = True
-                 else:
-                     print("❌ 修复补丁应用失败或未进行修复。")
-             finally:
-                 if os.path.exists(temp_current_log): os.remove(temp_current_log)
-
-        elif current_error_signature == "lua_neturl_download":
-             print("⚡️ 触发修复: lua-neturl 下载错误")
-             if LIBS_AVAILABLE:
-                 if fix_lua_neturl_download(log_content):
-                     fix_applied_this_iteration = True
-                 else:
-                     print("❌ 修复 lua-neturl 下载失败。")
-             else:
-                 print("⚠️ 跳过 lua-neturl 下载修复，缺少依赖库。")
-
-        elif current_error_signature == "trojan_plus_buffer_cast":
-             print("⚡️ 触发修复: trojan-plus 相关错误")
-             if fix_trojan_plus_issues():
-                 fix_applied_this_iteration = True
-             else:
-                 print("❌ 修复 trojan-plus 问题失败。")
-
-        # 可以继续添加其他错误签名的处理...
-
-        # 元数据/依赖问题 (通用性较高，谨慎使用)
-        elif not metadata_fixed and ("Collected errors:" in log_content or "Cannot satisfy dependencies" in log_content or "check_data_file_clashes" in log_content):
-             print("⚡️ 触发修复: 元数据/依赖/文件冲突 (通用)")
-             if fix_metadata_errors():
-                 fix_applied_this_iteration = True
-                 metadata_fixed = True # 标记已修复过一次
-             else:
-                 print("❌ 修复元数据/依赖问题失败。")
-
+        if error == last_error:
+            same_error_count += 1
+            if same_error_count >= 2:
+                print("连续两次相同错误，停止重试")
+                break
         else:
-            print(f"⚠️ 未针对错误签名 '{current_error_signature}' 找到特定的修复程序。")
+            same_error_count = 0
 
+        last_error = error
 
-        # 更新上一轮是否尝试修复的标记
-        fix_attempted_last_iteration = fix_applied_this_iteration
+        if error == "oom_detected":
+			jobs = handle_oom(jobs, log_content_global)
+		elif error == "netifd_link_error":
+			fix_netifd_libnl_tiny()
+		elif error == "lua_neturl_download":
+			fix_lua_neturl_download(log_content_global)
+		elif error == "trojan_plus_buffer_cast":
+			fix_trojan_plus_issues()
+		elif error == "patch_failed":
+			fix_patch_application(log_content_global)
+		elif error == "makefile_separator":
+			fix_makefile_separator(log_content_global)
+		elif error == "directory_conflict":
+			fix_directory_conflict(log_content_global)
+		elif error == "symlink_conflict":
+			fix_symbolic_link_conflict(log_content_global)
+		elif error == "toolchain_provides_syntax":
+			fix_toolchain_provides_syntax(log_content_global)
+		elif error == "luci_lib_taskd_depends":
+			fix_luci_lib_taskd_extra_depends()
+		elif error == "apk_add_base_files":
+			fix_apk_add_base_files_issue(log_content_global)
+		elif error == "makefile_dep_missing":
+			fix_depends_format(log_content_global)
+		elif error == "unknown_error":
+			print("未知错误，无法自动修复")
+		else:
+			print(f"未处理的错误类型: {error}")
 
-        # --- 循环控制 ---
-        retry_count += 1
-        if retry_count <= args.max_retry:
-            if fix_applied_this_iteration:
-                 print("✅ 已应用修复，准备重试...")
-                 wait_time = 3
-            else:
-                 # 如果没有应用修复，并且错误不是未知类型，可能意味着修复逻辑无效或问题无法自动修复
-                 fix_attempted_last_iteration = False
-                 print(f"ℹ️ 未应用修复或修复失败，准备重试 (下次将使用 -j{initial_jobs})...")
-                 wait_time = 1
-            print(f"等待 {wait_time} 秒...")
-            time.sleep(wait_time)
+        retry += 1
+        time.sleep(3 if error != "unknown_error" else 1)
 
-        if os.path.exists(current_log_file):
-            try:
-                os.remove(current_log_file)
-            except OSError as e:
-                print(f"警告: 删除临时日志 {current_log_file} 失败: {e}")
-
-    print("--------------------------------------------------")
-    print(f"达到最大重试次数 ({args.max_retry}) 或连续修复失败，编译最终失败。")
-    print("--------------------------------------------------")
-    print(f"最后检测到的错误签名: {last_error_signature}")
-    print(f"请检查完整日志: {args.log_file}")
+    print("编译失败，达到最大重试次数或连续相同错误")
     return 1
+
 if __name__ == "__main__":
-    # Ensure CWD is the OpenWrt root directory for relative paths to work
-    if not Path("include/toplevel.mk").exists() or not Path("scripts/feeds").exists():
-         print("错误：请在 OpenWrt 源代码的根目录下运行此脚本。")
-         sys.exit(2)
     sys.exit(main())
