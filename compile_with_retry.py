@@ -2078,33 +2078,33 @@ def main():
         last_error = error
 
         if error == "oom_detected":
-			jobs = handle_oom(jobs, log_content_global)
-		elif error == "netifd_link_error":
-			fix_netifd_libnl_tiny()
-		elif error == "lua_neturl_download":
-			fix_lua_neturl_download(log_content_global)
-		elif error == "trojan_plus_buffer_cast":
-			fix_trojan_plus_issues()
-		elif error == "patch_failed":
-			fix_patch_application(log_content_global)
-		elif error == "makefile_separator":
-			fix_makefile_separator(log_content_global)
-		elif error == "directory_conflict":
-			fix_directory_conflict(log_content_global)
-		elif error == "symlink_conflict":
-			fix_symbolic_link_conflict(log_content_global)
-		elif error == "toolchain_provides_syntax":
-			fix_toolchain_provides_syntax(log_content_global)
-		elif error == "luci_lib_taskd_depends":
-			fix_luci_lib_taskd_extra_depends()
-		elif error == "apk_add_base_files":
-			fix_apk_add_base_files_issue(log_content_global)
-		elif error == "makefile_dep_missing":
-			fix_depends_format(log_content_global)
-		elif error == "unknown_error":
-			print("未知错误，无法自动修复")
-		else:
-			print(f"未处理的错误类型: {error}")
+            jobs = handle_oom(jobs, log_content_global)
+        elif error == "netifd_link_error":
+            fix_netifd_libnl_tiny()
+        elif error == "lua_neturl_download":
+            fix_lua_neturl_download(log_content_global)
+        elif error == "trojan_plus_buffer_cast":
+            fix_trojan_plus_issues()
+        elif error == "patch_failed":
+            fix_patch_application(log_content_global)
+        elif error == "makefile_separator":
+            fix_makefile_separator(log_content_global)
+        elif error == "directory_conflict":
+            fix_directory_conflict(log_content_global)
+        elif error == "symlink_conflict":
+            fix_symbolic_link_conflict(log_content_global)
+        elif error == "toolchain_provides_syntax":
+            fix_toolchain_provides_syntax(log_content_global)
+        elif error == "luci_lib_taskd_depends":
+            fix_luci_lib_taskd_extra_depends()
+        elif error == "apk_add_base_files":
+            fix_apk_add_base_files_issue(log_content_global)
+        elif error == "makefile_dep_missing":
+            fix_depends_format(log_content_global)
+        elif error == "unknown_error":
+            print("未知错误，无法自动修复")
+        else:
+            print(f"未处理的错误类型: {error}")
 
         retry += 1
         time.sleep(3 if error != "unknown_error" else 1)
