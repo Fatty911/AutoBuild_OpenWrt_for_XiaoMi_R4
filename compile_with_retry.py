@@ -28,17 +28,92 @@ OOM_PRONE_PACKAGE_PATTERNS = [
 # 错误签名检测（结合版本 1 和 2）
 def get_error_signature(log_content):
     if not log_content: return "no_log_content"
+    apk_version_error_match = re.search(
+        r"ERROR: info field 'version' has invalid value: package version is invalid.*?make\[\d+\]: \*\*\* .*? ([^ ]+\.apk)\] Error 99",
+        log_content, re.DOTALL
+    )
+    if apk_version_error_match:
+        apk_filename = os.path.basename(apk_version_error_match.group(1))
+        # Try to extract package name from filename (e.g., lua-neturl-1.2-1-r3.apk -> lua-neturl)
+        pkg_name_match = re.match(r'^([a-zA-Z0-9_-]+)-', apk_filename)
+        pkg_name = pkg_name_match.group(1) if pkg_name_match else "unknown_pkg_from_apk"
+        # Also try to find the package dir from "Leaving directory" line
+        leaving_dir_match = re.search(r"make\[\d+\]: Leaving directory .*?/([^/']+)'", log_content)
+        if leaving_dir_match and pkg_name == "unknown_pkg_from_apk":
+             pkg_name = leaving_dir_match.group(1) # More reliable if filename parsing fails
+
+        return f"apk_invalid_version_format:{pkg_name}"
+    apk_add_invalid_format_match = re.search(
+        r"ERROR: ('([^=]+)=' is not a valid world dependency).*?make\[\d+\]: \*\*\* .*?package/install.* Error 99",
+        log_content, re.DOTALL
+    )
+    if apk_add_invalid_format_match:
+        invalid_package = apk_add_invalid_format_match.group(2)
+        invalid_package = os.path.basename(invalid_package)
+        # Check if it's the base-files issue specifically
+        if "base-files=" in apk_add_invalid_format_match.group(1):
+             return "apk_add_base_files" # Keep specific signature for base-files
+        else:
+             return f"apk_add_invalid_dep_format:{invalid_package}" 
     if re.search(r'Killed|signal 9|Error 137', log_content): return "oom_detected"
-    if "undefined reference to" in log_content and "netifd" in log_content: return "netifd_link_error"
-    if "missing separator" in log_content: return "makefile_separator"
-    if "Patch failed" in log_content: return "patch_failed"
-    if LIBS_AVAILABLE and "lua-neturl" in log_content and "Download failed" in log_content: return "lua_neturl_download"
-    if "trojan-plus" in log_content and "buffer-cast" in log_content: return "trojan_plus_buffer_cast"
-    if "mkdir: cannot create directory" in log_content: return "directory_conflict"
-    if "ln: failed to create symbolic link" in log_content: return "symlink_conflict"
-    if "toolchain" in log_content and "provides" in log_content: return "toolchain_provides_syntax"
-    if "luci-lib-taskd" in log_content: return "luci_lib_taskd_depends"
-    if "base-files=" in log_content and "Error 99" in log_content: return "apk_add_base_files"
+    if "undefined reference to" in log_content and re.search(r'netifd|toolchain.*netifd', log_content):
+        ref_match = re.search(r"undefined reference to `([^']+)'", log_content)
+        ref = ref_match.group(1) if ref_match else "unknown_symbol"
+        return f"netifd_link_error:{ref}"
+    if "missing separator" in log_content and ("Stop." in log_content or "***" in log_content):
+         makefile_match = re.search(r'^([^:]+):\d+: \*\*\* missing separator', log_content, re.MULTILINE)
+         makefile = makefile_match.group(1) if makefile_match else "unknown_makefile"
+         return f"makefile_separator:{makefile}"
+    if ("Patch failed" in log_content or "Only garbage was found" in log_content or "unexpected end of file in patch" in log_content):
+         patch_match = re.search(r'Applying (.+\.patch)', log_content)
+         patch = os.path.basename(patch_match.group(1)) if patch_match else "unknown_patch"
+         pkg_match = re.search(r"make\[\d+\]: Entering directory .*?/([^/']+)", log_content) # Try to get package from context dir
+         if not pkg_match: # Fallback to error message if context dir doesn't work
+             pkg_match = re.search(r"ERROR: package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+) failed to build", log_content)
+         pkg_name = pkg_match.group(1) if pkg_match else "unknown_pkg"
+         return f"patch_failed:{pkg_name}:{patch}"
+    if LIBS_AVAILABLE and 'lua-neturl' in log_content and ('Download failed' in log_content or 'Hash mismatch' in log_content or 'No more mirrors to try' in log_content):
+        return "lua_neturl_download"
+    if 'trojan-plus' in log_content and 'buffer-cast' in log_content:
+        return "trojan_plus_buffer_cast"
+    if "mkdir: cannot create directory" in log_content and "File exists" in log_content: return "directory_conflict"
+    if "ln: failed to create symbolic link" in log_content and "File exists" in log_content: return "symlink_conflict"
+    if "toolchain" in log_content and "provides" in log_content and "syntax error" in log_content: return "toolchain_provides_syntax" # Make more specific if possible
+    if "luci-lib-taskd" in log_content and "Error 1" in log_content: return "luci_lib_taskd_depends" # Might need refinement
+    # APK Wrapper Syntax Error
+    if "Syntax error:" in log_content and "bin/apk" in log_content:
+         return "apk_wrapper_syntax"
+
+    # Makefile Dependency Missing Warning (treat as lower priority)
+    dep_warning_match = re.search(r"WARNING: Makefile '([^']+)' has a dependency on '([^']*)', which does not exist", log_content)
+    if dep_warning_match:
+        makefile_path = dep_warning_match.group(1)
+        bad_dep = dep_warning_match.group(2)
+        # Extract package name from makefile path heuristic
+        pkg_name = Path(makefile_path).parent.name
+        if bad_dep and bad_dep.lower() not in ['perl_tests', ''] and not bad_dep.startswith(('p,', '(virtual)', '$')):
+             # Only return if no higher priority error was found yet
+             return f"makefile_dep_missing:{pkg_name}:{bad_dep}"
+
+    # Generic Build Fail (if specific package failed message exists)
+    generic_fail_match = re.search(r"ERROR: package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+) failed to build", log_content)
+    if generic_fail_match:
+        return f"generic_build_fail:{generic_fail_match.group(1)}"
+
+    # Generic Error (lowest priority)
+    generic_error_match = re.search(r'(error:|failed|fatal error:|collect2: error: ld returned 1 exit status)', log_content, re.IGNORECASE)
+    if generic_error_match:
+        error_keyword = generic_error_match.group(1).lower().split(':')[0].replace(' ', '_')
+        context_line = ""
+        # Find the line containing the keyword, clean it up
+        for line in reversed(log_content.splitlines()):
+             if generic_error_match.group(1).lower() in line.lower():
+                 context_line = re.sub(r'\x1b\[[0-9;]*[mK]', '', line).strip() # Remove ANSI codes
+                 context_line = re.sub(r'[^a-zA-Z0-9\s\._\-\+=:]', '', context_line)[:80] # Keep relevant chars
+                 break
+        return f"generic_error:{error_keyword}:{context_line}"
+
+
     return "unknown_error"
 
 # OOM 处理（结合版本 1 和 2）
@@ -1847,135 +1922,6 @@ def fix_apk_wrapper_syntax():
         return fix_apk_directly()
 
 
-def get_error_signature(log_content):
-    """从日志内容中提取一个更准确的错误签名 (v3)"""
-    if not log_content: return "no_log_content"
-    apk_add_invalid_format_match = re.search(
-        r"ERROR: ('([^=]+)=' is not a valid world dependency).*?make\[\d+\]: \*\*\* .*?package/install.* Error 99",
-        log_content, re.DOTALL
-    )
-    if apk_add_invalid_format_match:
-        invalid_package = apk_add_invalid_format_match.group(2)
-        # Ensure absolute path isn't captured if present in some logs
-        invalid_package = os.path.basename(invalid_package)
-        return f"apk_add_invalid_dep_format:{invalid_package}"
-    if apk_error_match:
-        pkg_name = apk_error_match.group(2)
-        # Avoid confusion with the new signature if it's base-files failing here (less likely)
-        if pkg_name != "base-files":
-             return f"apk_depends_invalid:{pkg_name}"
-
-    # 2. Makefile 依赖缺失警告 (取第一个作为代表)
-    dep_warning_match = re.search(r"WARNING: Makefile '([^']+)' has a dependency on '([^']*)', which does not exist", log_content)
-    if dep_warning_match:
-        # ... (existing logic for dep_warning_match) ...
-        # Check if the real error was already identified
-        if apk_add_invalid_format_match: # Don't let warning override the real error
-             pass # Ignore this warning if the apk_add error was found
-        else:
-             # ... (extract pkg_name and bad_dep as before) ...
-             if bad_dep and bad_dep.lower() not in ['perl_tests', ''] and not bad_dep.startswith(('p,', '(virtual)', '$')):
-                 return f"makefile_dep_missing:{pkg_name}:{bad_dep}"
-    # 3. APK Wrapper 语法错误
-    if "Syntax error:" in log_content and "bin/apk" in log_content:
-         return "apk_wrapper_syntax"
-
-    # 4. Netifd 链接错误
-    if "undefined reference to" in log_content and re.search(r'netifd|toolchain.*netifd', log_content):
-        # ... (保持之前的 netifd 签名逻辑) ...
-        ref_match = re.search(r"undefined reference to `([^']+)'", log_content)
-        ref = ref_match.group(1) if ref_match else "unknown_symbol"
-        if "netifd" in log_content: # 简单检查
-             return f"netifd_link_error:{ref}"
-
-
-    # 5. Makefile 分隔符错误
-    if "missing separator" in log_content and ("Stop." in log_content or "***" in log_content):
-         # ... (保持之前的 separator 签名逻辑) ...
-         makefile_match = re.search(r'^([^:]+):\d+: \*\*\* missing separator', log_content, re.MULTILINE)
-         makefile = makefile_match.group(1) if makefile_match else "unknown_makefile"
-         return f"makefile_separator:{makefile}"
-
-    # 6. Patch 失败
-    if ("Patch failed" in log_content or "Only garbage was found" in log_content or "unexpected end of file in patch" in log_content):
-         # ... (保持之前的 patch 签名逻辑) ...
-         patch_match = re.search(r'Applying (.+\.patch)', log_content)
-         patch = os.path.basename(patch_match.group(1)) if patch_match else "unknown_patch"
-         pkg_match = re.search(r"make\[\d+\]: Entering directory .*?/([^/']+)", log_content)
-         pkg_name = pkg_match.group(1) if pkg_match else "unknown_pkg"
-         return f"patch_failed:{pkg_name}:{patch}"
-
-
-    # 7. Lua Neturl 下载错误
-    if LIBS_AVAILABLE and 'lua-neturl' in log_content and ('Download failed' in log_content or 'Hash mismatch' in log_content or 'No more mirrors to try' in log_content):
-        return "lua_neturl_download"
-
-    # 8. Trojan Plus 错误
-    if 'trojan-plus' in log_content and 'buffer-cast' in log_content:
-        return "trojan_plus_buffer_cast"
-
-    # 9. 通用构建失败 (提取包名)
-    generic_fail_match = re.search(r"ERROR: package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/|)?([^/]+) failed to build", log_content)
-    if generic_fail_match:
-        return f"generic_build_fail:{generic_fail_match.group(1)}" # group(1) 是包名
-
-    # 10. 通用错误信息 (提取关键字和上下文)
-    generic_error_match = re.search(r'(error:|failed|fatal error:|collect2: error: ld returned 1 exit status)', log_content, re.IGNORECASE)
-    if generic_error_match:
-        # ... (保持之前的通用错误签名逻辑) ...
-        error_keyword = generic_error_match.group(1).lower().split(':')[0]
-        context_line = ""
-        for line in reversed(log_content.splitlines()):
-             if error_keyword in line.lower():
-                 context_line = re.sub(r'\x1b\[[0-9;]*[mK]', '', line).strip()[:80]
-                 break
-        return f"generic_error:{error_keyword}:{context_line}"
-
-
-    return "unknown_error"
-
-
-import re
-import subprocess
-import shutil
-from pathlib import Path
-import os # Ensure os is imported
-
-# Make sure get_relative_path is defined or imported if used here
-# Assuming get_relative_path function exists as before
-
-def get_error_signature(log_content):
-    # Assuming get_error_signature function exists as before
-    # Make sure it correctly returns "apk_add_invalid_dep_format:base-files"
-    # For this specific log
-    if not log_content: return "no_log_content"
-    apk_add_invalid_format_match = re.search(
-        r"ERROR: ('([^=]+)=' is not a valid world dependency).*?make\[\d+\]: \*\*\* .*?package/install.* Error 99",
-        log_content, re.DOTALL
-    )
-    if apk_add_invalid_format_match:
-        invalid_package = apk_add_invalid_format_match.group(2)
-        # Ensure absolute path isn't captured if present in some logs
-        invalid_package = os.path.basename(invalid_package)
-        return f"apk_add_invalid_dep_format:{invalid_package}"
-    # Add other signature detections here if needed
-    return "unknown_error"
-
-
-import re
-import subprocess
-import shutil
-from pathlib import Path
-import os
-
-# Assuming get_relative_path function exists as before
-# Assuming get_error_signature function exists and works as before
-
-import re
-import subprocess
-import shutil
-from pathlib import Path
-import os
 
 # Assuming get_relative_path function exists as before
 # Assuming get_error_signature function exists and works as before
@@ -2042,72 +1988,166 @@ def main():
     base_cmd = re.sub(r'\s-j\s*\d+', '', args.make_command).strip()
     jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 1)
     retry = 1
-    log_content_global = ""
+    log_content_global = "" # Initialize log_content_global
     last_error = None
     same_error_count = 0
+    needs_base_files_precompute = False # Ensure this is initialized if used
 
     while retry <= args.max_retry:
+        # --- Pre-computation Step (e.g., for base-files) ---
+        if needs_base_files_precompute:
+            print("🚀 执行预处理步骤：编译 base-files...")
+            precompute_cmd = f"{base_cmd} package/base-files/compile V=s -j1" # Compile base-files specifically
+            print(f"运行: {precompute_cmd}")
+            pre_log = f"{Path(args.log_file).stem}.pre.{retry}.log"
+            pre_status = subprocess.run(precompute_cmd, shell=True, stdout=open(pre_log, 'w'), stderr=subprocess.STDOUT).returncode
+            if pre_status == 0:
+                print("✅ base-files 预编译成功。")
+                # Find and rename the apk file if necessary (optional but safer)
+                try:
+                    staging_pkg_dir = next(Path("staging_dir/packages").glob("*"), None) # Guess package arch dir
+                    if staging_pkg_dir:
+                        base_files_apks = list(staging_pkg_dir.glob("base-files_*.apk"))
+                        for apk_path in base_files_apks:
+                            if "=" not in apk_path.name:
+                                version_match = re.search(r'_([\d.-]+(?:_r\d+)?)-', apk_path.name)
+                                if version_match:
+                                    version = version_match.group(1)
+                                    new_name = f"base-files={version}.apk"
+                                    new_path = apk_path.with_name(new_name)
+                                    print(f"  🏷️ 重命名 base-files APK: {apk_path.name} -> {new_path.name}")
+                                    apk_path.rename(new_path)
+                                else:
+                                     print(f"  ⚠️ 无法从 {apk_path.name} 提取版本以重命名。")
+                except Exception as e:
+                    print(f"  ⚠️ 重命名 base-files APK 时出错: {e}")
+            else:
+                print(f"❌ base-files 预编译失败 (日志: {pre_log})，继续尝试主编译...")
+            needs_base_files_precompute = False # Reset flag
+
+        # --- Main Compile Step ---
         cmd = f"{base_cmd} -j{jobs}"
         print(f"尝试 {retry}/{args.max_retry} 次: {cmd}")
         log_file = f"{Path(args.log_file).stem}.run.{retry}.log"
-        
-        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+
+        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
         with open(log_file, 'w', encoding='utf-8') as f:
             for line in process.stdout:
                 sys.stdout.write(line)
                 f.write(line)
         status = process.wait()
-        with open(log_file, 'r', encoding='utf-8') as f:
-            log_content_global = f.read()
+
+        # Read log content AFTER process finishes
+        try:
+            with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
+                log_content_global = f.read()
+        except FileNotFoundError:
+             print(f"❌ 无法读取日志文件: {log_file}")
+             log_content_global = "" # Reset log content
 
         if status == 0:
             print("编译成功！")
             return 0
-        
+
         error = get_error_signature(log_content_global)
         print(f"错误: {error}")
 
-        if error == last_error:
+        if error == last_error and error != "no_log_content": # Avoid loop on no log
             same_error_count += 1
-            if same_error_count >= 2:
+            # Increase tolerance for metadata/dep errors as fixes might take >1 cycle
+            if error.startswith("apk_") or error.startswith("makefile_dep_missing"):
+                 if same_error_count >= 3:
+                      print("连续三次相同 APK/依赖 错误，停止重试")
+                      break
+            elif same_error_count >= 2:
                 print("连续两次相同错误，停止重试")
                 break
         else:
             same_error_count = 0
 
         last_error = error
+        fixed_something = False # Flag to track if a fix was attempted
 
         if error == "oom_detected":
             jobs = handle_oom(jobs, log_content_global)
-        elif error == "netifd_link_error":
-            fix_netifd_libnl_tiny()
+            fixed_something = True # Adjusting jobs is a fix attempt
+        elif error.startswith("netifd_link_error"):
+            fixed_something = fix_netifd_libnl_tiny()
         elif error == "lua_neturl_download":
-            fix_lua_neturl_download(log_content_global)
+            fixed_something = fix_lua_neturl_download(log_content_global)
+        # --- Handle APK Invalid Version Format ---
+        elif error.startswith("apk_invalid_version_format:"):
+            print("🔧 检测到无效的包版本格式错误 (apk mkpkg)。")
+            # This error is caused by incorrect PKG_VERSION/PKG_RELEASE in a Makefile.
+            # fix_metadata_errors() should correct this.
+            fixed_something = fix_metadata_errors()
+            # Optionally clean the specific package that failed
+            pkg_name = error.split(":")[-1]
+            if pkg_name != "unknown_pkg_from_apk":
+                print(f"🧹 尝试清理包 '{pkg_name}' 以应用元数据修复...")
+                # Find makefile path (reuse logic if available or implement basic search)
+                pkg_makefile_paths = list(Path(".").glob(f"package/**/{pkg_name}/Makefile")) + \
+                                     list(Path(".").glob(f"feeds/**/{pkg_name}/Makefile"))
+                if pkg_makefile_paths:
+                    # Use relative path for make command
+                    try:
+                        pkg_rel_path = pkg_makefile_paths[0].parent.relative_to(Path.cwd())
+                        clean_cmd = ["make", f"{pkg_rel_path}/clean", "V=s"]
+                        print(f"  运行: {' '.join(clean_cmd)}")
+                        subprocess.run(clean_cmd, check=False, capture_output=True)
+                    except ValueError: # Handle case where path is outside CWD (less likely here)
+                        print(f"  ⚠️ 无法获取 {pkg_name} 的相对路径进行清理。")
+                else:
+                    print(f"  ⚠️ 未找到包 '{pkg_name}' 的 Makefile 进行清理。")
+            # If metadata fix was done, assume it might help, set fixed_something
+            if fixed_something: print("✅ 已尝试元数据修复。")
+
         elif error == "trojan_plus_buffer_cast":
-            fix_trojan_plus_issues()
-        elif error == "patch_failed":
-            fix_patch_application(log_content_global)
-        elif error == "makefile_separator":
-            fix_makefile_separator(log_content_global)
+            fixed_something = fix_trojan_plus_issues()
+        elif error.startswith("patch_failed"):
+            fixed_something = fix_patch_application(log_content_global)
+        elif error.startswith("makefile_separator"):
+            fixed_something = fix_makefile_separator(log_content_global)
         elif error == "directory_conflict":
-            fix_directory_conflict(log_content_global)
+            fixed_something = fix_directory_conflict(log_content_global)
         elif error == "symlink_conflict":
-            fix_symbolic_link_conflict(log_content_global)
+            fixed_something = fix_symbolic_link_conflict(log_content_global)
         elif error == "toolchain_provides_syntax":
-            fix_toolchain_provides_syntax(log_content_global)
+            fixed_something = fix_toolchain_provides_syntax(log_content_global)
         elif error == "luci_lib_taskd_depends":
-            fix_luci_lib_taskd_extra_depends()
+             # Try specific fix first
+             fixed_something = fix_luci_lib_taskd_extra_depends()
+             # If that didn't work or wasn't applicable, try the general depends fix
+             if not fixed_something:
+                  print("  ➡️ luci-lib-taskd 特定修复无效，尝试通用依赖修复...")
+                  fixed_something = fix_depends_format(log_content_global)
         elif error == "apk_add_base_files":
-            fix_apk_add_base_files_issue(log_content_global)
-        elif error == "makefile_dep_missing":
-            fix_depends_format(log_content_global)
+            fixed_something = fix_apk_add_base_files_issue(log_content_global) # Sets flag
+        elif error.startswith("makefile_dep_missing"):
+            fixed_something = fix_depends_format(log_content_global)
+        elif error.startswith("apk_depends_invalid"): # Handle general APK depends errors (like from luci.mk)
+             fixed_something = fix_apk_depends_problem() # Use the consolidated function
+             # If the primary fix (luci.mk or specific package) didn't work, try global format fix
+             if not fixed_something:
+                  print("  ➡️ APK 依赖修复无效，尝试通用依赖格式修复...")
+                  fixed_something = fix_depends_format(log_content_global)
+        elif error == "apk_wrapper_syntax":
+             fixed_something = fix_apk_wrapper_syntax()
         elif error == "unknown_error":
             print("未知错误，无法自动修复")
+            # Consider adding a fallback here, e.g., 'make clean' or deeper clean of tmp/staging
+            # Or maybe just reduce jobs as a last resort?
+            # jobs = max(1, jobs // 2)
+            # print(f"尝试减少 jobs 到 {jobs} 作为后备措施")
+            # fixed_something = True # Count reducing jobs as a fix attempt
         else:
-            print(f"未处理的错误类型: {error}")
+            # Handle other specific error types if needed
+             print(f"未处理的错误类型: {error}")
 
         retry += 1
-        time.sleep(3 if error != "unknown_error" else 1)
+        # Add a slightly longer sleep if a fix was attempted, shorter otherwise
+        time.sleep(5 if fixed_something else 2)
+
 
     print("编译失败，达到最大重试次数或连续相同错误")
     return 1
