@@ -129,6 +129,11 @@ jobs:
         id: compile_packages
         run: |
           cd openwrt
+          echo "尝试编译 dnsmasq 及其常见依赖，看具体是哪个环节出错"
+          make package/libs/ubus/compile V=s || echo "ubus compile failed"
+          make package/system/uci/compile V=s || echo "uci compile failed"
+          make package/network/config/libnl-tiny/compile V=s || echo "libnl-tiny compile failed" # dnsmasq 可能依赖
+          make package/network/services/dnsmasq/compile V=s -j1 # 单线程编译 dnsmasq，看详细错误
           cp ../compile_with_retry.py .
           # echo "先尝试编译容易失败的lua-neturl"
           # cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/feeds/small8/lua-neturl/compile V=s" "packages.log" 8
