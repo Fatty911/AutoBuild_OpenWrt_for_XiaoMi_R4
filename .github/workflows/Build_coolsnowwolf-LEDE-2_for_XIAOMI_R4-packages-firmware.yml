@@ -94,9 +94,12 @@ jobs:
         run: |
           tar -xzf ${{ env.SOURCE }}.tar.gz
           
-      - name: 编译Luci-base
+      - name: 检查编译环境
         run: |
           cd openwrt
+          make -j$(nproc) toolchain/install V=s || make -j1 toolchain/install V=s
+          make -j$(nproc) tools/install V=s || make -j1 tools/install V=s
+          make -j$(nproc) target/linux/prepare V=s || make -j1 target/linux/prepare V=s
           make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
 
       - name: Compile  Batman-adv
