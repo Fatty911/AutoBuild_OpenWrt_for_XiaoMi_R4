@@ -59,18 +59,7 @@ def run_command(cmd, capture_output=True, shell=True, timeout=7200):
         logger.error(f"执行命令失败: {cmd}, 错误: {e}")
         return 1, "", str(e)
 
-def extract_error_block(log_file):
-    """提取日志文件中的错误块"""
-    logger.info(f"--- 最近 300 行日志 ({log_file}) ---")
-    try:
-        with open(log_file, 'r', errors='replace') as f:
-            lines = f.readlines()
-            for line in lines[-300:]:
-                print(line.rstrip())
-    except Exception as e:
-        logger.error(f"读取日志文件失败: {e}")
-        print("日志文件为空或不存在")
-    logger.info("--- 日志结束 ---")
+
 
 def check_openwrt_root():
     """检查当前目录是否为OpenWrt根目录"""
@@ -489,7 +478,72 @@ def check_build_interrupted(log_content):
         return True
     
     return False
+def process_config(path):
+    """
+    读取 .config 文件，进行必要的处理 (目前仅记录信息)。
+    """
+    if not os.path.exists(path):
+        logging.error(f".config file not found at '{path}'. Cannot proceed.")
+        return False
 
+    logging.info(f"Processing config file: {path}")
+    try:
+        with open(path, 'r') as f:
+            lines = f.readlines()
+
+        new_lines = []
+        modified = False # 跟踪是否有实际修改
+
+        for line in lines:
+            stripped_line = line.strip()
+
+            # --- 移除禁用 batman-adv 和 batctl-full 的逻辑 ---
+            # 我们不再需要检查和注释这些行，因为 batman-adv 是必需的。
+            # 让它们保持原样，由 OpenWrt 的依赖系统处理。
+            # if any(pkg in stripped_line for pkg in packages_to_disable):
+            #     if not stripped_line.startswith('#'):
+            #         new_line = f"# {stripped_line} # Disabled by fix script\n"
+            #         logging.info(f"Commenting out: {stripped_line}")
+            #         new_lines.append(new_line)
+            #         modified = True
+            #         continue # 处理下一行
+            #     else:
+            #         # 如果已经是注释，保持不变
+            #         logging.debug(f"Already commented out: {stripped_line}")
+            #         new_lines.append(line)
+            #         continue
+
+            # 检查 kmod-batman-adv 是否被选中 (仅用于记录信息)
+            if 'CONFIG_PACKAGE_kmod-batman-adv=y' in stripped_line:
+                 logging.info("Found 'CONFIG_PACKAGE_kmod-batman-adv=y'. Keeping it enabled as required for EasyMesh.")
+            elif '# CONFIG_PACKAGE_kmod-batman-adv is not set' in stripped_line:
+                 logging.info("Found '# CONFIG_PACKAGE_kmod-batman-adv is not set'. Build system dependency resolution should handle enabling it if EasyMesh is selected.")
+
+            # 检查 batctl-full 是否被选中 (仅用于记录信息)
+            if 'CONFIG_PACKAGE_batctl-full=y' in stripped_line:
+                 logging.info("Found 'CONFIG_PACKAGE_batctl-full=y'. Keeping it enabled.")
+            elif '# CONFIG_PACKAGE_batctl-full is not set' in stripped_line:
+                 logging.info("Found '# CONFIG_PACKAGE_batctl-full is not set'.")
+
+
+            # 将原始行添加到新列表中 (除非上面有特殊处理)
+            new_lines.append(line)
+
+
+        # 只有在确实进行了修改时才写回文件 (在这个版本中，modified 应该总是 False)
+        # if modified:
+        #     with open(path, 'w') as f:
+        #         f.writelines(new_lines)
+        #     logging.info(f"Successfully modified '{path}'.")
+        # else:
+        #     logging.info(f"No modifications needed for batman-adv/batctl in '{path}'.")
+        logging.info(f"Finished processing '{path}'. No changes made by this script regarding batman-adv/batctl.")
+
+        return True # 表示处理完成
+
+    except Exception as e:
+        logging.error(f"Error processing config file '{path}': {e}")
+        return False
 def main():
     """主函数"""
     args = parse_arguments()
@@ -532,6 +586,13 @@ def main():
         try:
             with open(tmp_log_file, 'w') as f:
                 ret_code = subprocess.call(make_command, shell=True, stdout=f, stderr=subprocess.STDOUT, timeout=7200)
+                success = process_config(config_path)
+                if success:
+                    logging.info("Script finished successfully.")
+                    sys.exit(0) # 成功退出
+                else:
+                    logging.error("Script encountered errors.")
+                    #sys.exit(1) # 失败退出
         except subprocess.TimeoutExpired:
             logger.error("编译命令超时，可能是系统资源不足或编译卡住")
             ret_code = 124
@@ -552,7 +613,7 @@ def main():
             sys.exit(0)
         else:
             logger.info(f"编译失败 (退出码: {ret_code})，检查错误...")
-            extract_error_block(tmp_log_file)
+
         
         # 错误检测和修复逻辑
         fix_applied = False
@@ -696,7 +757,6 @@ def main():
     logger.info("--------------------------------------------------")
     logger.info(f"达到最大重试次数 ({max_retry})，编译最终失败。")
     logger.info("--------------------------------------------------")
-    extract_error_block(log_file)
     logger.info(f"请检查完整日志: {log_file}")
     sys.exit(1)
 
