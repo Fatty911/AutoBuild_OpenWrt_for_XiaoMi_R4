@@ -21,6 +21,7 @@ from pathlib import Path
 BATMAN_ADV_COMMIT = "5437d2c91fd9f15e06fbea46677abb529ed3547c"  # 已知兼容的 batman-adv/routing feed commit
 FEED_ROUTING_NAME = "routing"  # feeds.conf[.default] 中的 routing feed 名称
 FEED_ROUTING_URL = "https://github.com/coolsnowwolf/routing.git"  # routing feed 的 URL
+config_path="./.config"
 
 # 配置日志记录
 logging.basicConfig(
