@@ -207,7 +207,8 @@ jobs:
           fi
 
       - name: Upload firmware
-        if: steps.check_bin_final.conclusion == 'success'
+        # if: steps.check_bin_final.conclusion == 'success'
+        if: env.FINAL_BIN_EXISTS == 'true'
         uses: actions/upload-artifact@master
         with:
           name: openwrt-firmware
