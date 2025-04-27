@@ -20,136 +20,206 @@ except ImportError:
     LIBS_AVAILABLE = False
     print("警告: 未安装 requests 和 beautifulsoup4，lua-neturl 下载修复不可用")
 
-# OOM 高风险包列表（来自版本 2）
+# OOM 高风险包列表
 OOM_PRONE_PACKAGE_PATTERNS = [
     r'/gcc-\d+', r'/llvm-\d+', r'/qt5base-\d+', r'/webkitgtk-\d+', r'/linux-\d+'
 ]
 
-# 错误签名检测（结合版本 1 和 2）
+# --- Global variable to store log content for fix functions ---
+# While not ideal OOP, it simplifies passing log data to many fix functions.
+log_content_global = ""
+# --- Global flag for pre-computation steps ---
+needs_base_files_precompute = False
+
+
+def get_relative_path(path):
+    """获取相对路径，优先相对于当前工作目录"""
+    current_pwd = os.getcwd()
+    try:
+        # Ensure path is absolute first
+        abs_path = Path(path).resolve()
+        # Check if it's within the current working directory
+        if abs_path.is_relative_to(current_pwd):
+            return str(abs_path.relative_to(current_pwd))
+        else:
+            # Return absolute path if outside CWD
+            return str(abs_path)
+    except (ValueError, OSError, Exception): # Handle various errors like non-existence or cross-drive issues
+        # Fallback to the original path string if resolution/relpath fails
+        return str(path)
+
+# --- Error Signature Detection ---
 def get_error_signature(log_content):
+    """Detects a specific error signature from the build log."""
     if not log_content: return "no_log_content"
+
+    # --- High Priority Errors ---
+    # APK Version Format Error (Error 99 from mkpkg)
     apk_version_error_match = re.search(
         r"ERROR: info field 'version' has invalid value: package version is invalid.*?make\[\d+\]: \*\*\* .*? ([^ ]+\.apk)\] Error 99",
         log_content, re.DOTALL
     )
     if apk_version_error_match:
         apk_filename = os.path.basename(apk_version_error_match.group(1))
-        # Try to extract package name from filename (e.g., lua-neturl-1.2-1-r3.apk -> lua-neturl)
-        pkg_name_match = re.match(r'^([a-zA-Z0-9_-]+)-', apk_filename)
+        pkg_name_match = re.match(r'^([a-zA-Z0-9._-]+?)(?:=[\d.-]+)?(?:_\d+)?\.apk$', apk_filename) # Improved regex for name
         pkg_name = pkg_name_match.group(1) if pkg_name_match else "unknown_pkg_from_apk"
-        # Also try to find the package dir from "Leaving directory" line
+        # Try to get package name from "Leaving directory" as fallback
         leaving_dir_match = re.search(r"make\[\d+\]: Leaving directory .*?/([^/']+)'", log_content)
         if leaving_dir_match and pkg_name == "unknown_pkg_from_apk":
-             pkg_name = leaving_dir_match.group(1) # More reliable if filename parsing fails
-
+             pkg_name = leaving_dir_match.group(1)
         return f"apk_invalid_version_format:{pkg_name}"
+
+    # APK Add Invalid Dependency Format (Error 99 from apk add) - often base-files
     apk_add_invalid_format_match = re.search(
         r"ERROR: ('([^=]+)=' is not a valid world dependency).*?make\[\d+\]: \*\*\* .*?package/install.* Error 99",
         log_content, re.DOTALL
     )
     if apk_add_invalid_format_match:
         invalid_package = apk_add_invalid_format_match.group(2)
-        invalid_package = os.path.basename(invalid_package)
-        # Check if it's the base-files issue specifically
         if "base-files=" in apk_add_invalid_format_match.group(1):
-             return "apk_add_base_files" # Keep specific signature for base-files
+             return "apk_add_base_files" # Specific signature for base-files issue
         else:
-             return f"apk_add_invalid_dep_format:{invalid_package}" 
+             return f"apk_add_invalid_dep_format:{invalid_package}"
+
+    # Out Of Memory (OOM)
     if re.search(r'Killed|signal 9|Error 137', log_content): return "oom_detected"
-    if "undefined reference to" in log_content and re.search(r'netifd|toolchain.*netifd', log_content):
-        ref_match = re.search(r"undefined reference to `([^']+)'", log_content)
-        ref = ref_match.group(1) if ref_match else "unknown_symbol"
-        return f"netifd_link_error:{ref}"
+
+    # Filesystem Conflicts
+    if "mkdir: cannot create directory" in log_content and "File exists" in log_content: return "directory_conflict"
+    if "ln: failed to create symbolic link" in log_content and "File exists" in log_content: return "symlink_conflict" # <-- Your specific error
+
+    # Patching Failures
+    if ("Patch failed" in log_content or "Only garbage was found" in log_content or "unexpected end of file in patch" in log_content or "can't find file to patch" in log_content):
+         patch_match = re.search(r'Applying (.+\.patch)', log_content)
+         patch = os.path.basename(patch_match.group(1)) if patch_match else "unknown_patch"
+         pkg_match = re.search(r"make\[\d+\]: Entering directory .*?/([^/']+)", log_content)
+         if not pkg_match:
+             pkg_match = re.search(r"ERROR: package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+) failed to build", log_content)
+         pkg_name = pkg_match.group(1) if pkg_match else "unknown_pkg"
+         return f"patch_failed:{pkg_name}:{patch}"
+
+    # Makefile Syntax Errors
     if "missing separator" in log_content and ("Stop." in log_content or "***" in log_content):
          makefile_match = re.search(r'^([^:]+):\d+: \*\*\* missing separator', log_content, re.MULTILINE)
          makefile = makefile_match.group(1) if makefile_match else "unknown_makefile"
          return f"makefile_separator:{makefile}"
-    if ("Patch failed" in log_content or "Only garbage was found" in log_content or "unexpected end of file in patch" in log_content):
-         patch_match = re.search(r'Applying (.+\.patch)', log_content)
-         patch = os.path.basename(patch_match.group(1)) if patch_match else "unknown_patch"
-         pkg_match = re.search(r"make\[\d+\]: Entering directory .*?/([^/']+)", log_content) # Try to get package from context dir
-         if not pkg_match: # Fallback to error message if context dir doesn't work
-             pkg_match = re.search(r"ERROR: package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+) failed to build", log_content)
-         pkg_name = pkg_match.group(1) if pkg_match else "unknown_pkg"
-         return f"patch_failed:{pkg_name}:{patch}"
-    if LIBS_AVAILABLE and 'lua-neturl' in log_content and ('Download failed' in log_content or 'Hash mismatch' in log_content or 'No more mirrors to try' in log_content):
-        return "lua_neturl_download"
-    if 'trojan-plus' in log_content and 'buffer-cast' in log_content:
-        return "trojan_plus_buffer_cast"
-    if "mkdir: cannot create directory" in log_content and "File exists" in log_content: return "directory_conflict"
-    if "ln: failed to create symbolic link" in log_content and "File exists" in log_content: return "symlink_conflict"
-    if "toolchain" in log_content and "provides" in log_content and "syntax error" in log_content: return "toolchain_provides_syntax" # Make more specific if possible
-    if "luci-lib-taskd" in log_content and "Error 1" in log_content: return "luci_lib_taskd_depends" # Might need refinement
+
+    # Toolchain Provides Syntax Error (trailing space)
+    if "toolchain" in log_content and 'provides' in log_content and 'syntax error' in log_content and '--info "provides:' in log_content:
+        return "toolchain_provides_syntax"
+
     # APK Wrapper Syntax Error
-    if "Syntax error:" in log_content and "bin/apk" in log_content:
+    if "Syntax error:" in log_content and "bin/apk" in log_content and "staging_dir/host/bin/apk" in log_content:
          return "apk_wrapper_syntax"
 
-    # Makefile Dependency Missing Warning (treat as lower priority)
+    # --- Specific Package/Linker Errors ---
+    # Netifd linking error (missing libnl-tiny)
+    if "undefined reference to" in log_content and re.search(r'netifd|toolchain.*netifd', log_content) and 'nl_' in log_content:
+        ref_match = re.search(r"undefined reference to `([^']+)'", log_content)
+        ref = ref_match.group(1) if ref_match else "unknown_symbol"
+        return f"netifd_link_error:{ref}"
+
+    # Lua-neturl download failure
+    if LIBS_AVAILABLE and 'lua-neturl' in log_content and ('Download failed' in log_content or 'Hash mismatch' in log_content or 'No more mirrors to try' in log_content):
+        return "lua_neturl_download"
+
+    # Trojan-plus specific build error
+    if 'trojan-plus' in log_content and ('buffer-cast' in log_content or 'std::span' in log_content): # Broaden trigger slightly
+        return "trojan_plus_build_error"
+
+    # Luci-lib-taskd specific dependency issue (often manifests as Error 1 or Error 99)
+    if ('luci-lib-taskd' in log_content or 'taskd' in log_content) and ('Error 1' in log_content or 'Error 99' in log_content) and ('apk' in log_content or 'depends' in log_content):
+        return "luci_lib_taskd_depends"
+
+    # --- Lower Priority / More General Errors ---
+    # Makefile Dependency Warning (missing package)
     dep_warning_match = re.search(r"WARNING: Makefile '([^']+)' has a dependency on '([^']*)', which does not exist", log_content)
     if dep_warning_match:
-        makefile_path = dep_warning_match.group(1)
+        makefile_path_str = dep_warning_match.group(1)
         bad_dep = dep_warning_match.group(2)
-        # Extract package name from makefile path heuristic
-        pkg_name = Path(makefile_path).parent.name
-        if bad_dep and bad_dep.lower() not in ['perl_tests', ''] and not bad_dep.startswith(('p,', '(virtual)', '$')):
-             # Only return if no higher priority error was found yet
-             return f"makefile_dep_missing:{pkg_name}:{bad_dep}"
+        # Filter out common noisy/ignorable warnings
+        if bad_dep and bad_dep.lower() not in ['perl_tests', ''] and not bad_dep.startswith(('p,', '(virtual)', '$', 'gst1-mod-')) and '=>' not in bad_dep:
+             try:
+                pkg_name = Path(makefile_path_str).parent.name
+             except Exception:
+                pkg_name = "unknown_pkg"
+             return f"makefile_dep_missing:{pkg_name}:{bad_dep}" # Return this only if no higher priority error found
 
     # Generic Build Fail (if specific package failed message exists)
     generic_fail_match = re.search(r"ERROR: package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+) failed to build", log_content)
     if generic_fail_match:
         return f"generic_build_fail:{generic_fail_match.group(1)}"
 
-    # Generic Error (lowest priority)
+    # Generic Error (lowest priority catch-all)
     generic_error_match = re.search(r'(error:|failed|fatal error:|collect2: error: ld returned 1 exit status)', log_content, re.IGNORECASE)
     if generic_error_match:
         error_keyword = generic_error_match.group(1).lower().split(':')[0].replace(' ', '_')
         context_line = ""
-        # Find the line containing the keyword, clean it up
         for line in reversed(log_content.splitlines()):
              if generic_error_match.group(1).lower() in line.lower():
                  context_line = re.sub(r'\x1b\[[0-9;]*[mK]', '', line).strip() # Remove ANSI codes
-                 context_line = re.sub(r'[^a-zA-Z0-9\s\._\-\+=:]', '', context_line)[:80] # Keep relevant chars
+                 context_line = re.sub(r'[^a-zA-Z0-9\s\._\-\+=:/]', '', context_line)[:80] # Keep relevant chars, allow path separators
                  break
         return f"generic_error:{error_keyword}:{context_line}"
 
-
     return "unknown_error"
 
-# OOM 处理（结合版本 1 和 2）
+
+# --- OOM Handling ---
 def handle_oom(current_jobs, log_content):
+    """Adjusts job count on OOM error."""
     for pattern in OOM_PRONE_PACKAGE_PATTERNS:
         if re.search(pattern, log_content):
             print("检测到 OOM 高风险包，强制使用 -j1")
             return 1
-    return max(1, current_jobs // 2)  # 版本 1 的减半策略
-def get_relative_path(path):
-    """获取相对路径"""
-    current_pwd = os.getcwd()
+    new_jobs = max(1, current_jobs // 2)
+    print(f"检测到 OOM，减少并行任务数: {current_jobs} -> {new_jobs}")
+    return new_jobs
 
-    if not os.path.isabs(path):
-        # Try resolving relative to current dir first
-        abs_path = os.path.abspath(path)
-        if os.path.exists(abs_path):
-            path = abs_path
-        else:
-            # If not found relative to cwd, return original path maybe it's inside build context
-             return path
 
+
+def fix_symbolic_link_conflict(log_content):
+    """修复符号链接冲突 (ln: failed to create symbolic link ...: File exists)"""
+    print("🔧 检测到符号链接冲突，尝试修复...")
+    conflict_match = re.search(r'ln: failed to create symbolic link [\'"]?([^\'"]+)[\'"]?: File exists', log_content)
+    if not conflict_match:
+        print("ℹ️ 未匹配到 'File exists' 符号链接冲突日志。")
+        return False
+
+    conflict_link_str = conflict_match.group(1).strip()
+    conflict_link = Path(conflict_link_str)
+    conflict_link_rel = get_relative_path(conflict_link_str) # For logging
+    print(f"冲突符号链接路径: {conflict_link_rel}")
+
+    # Safety check
+    critical_dirs = [Path.cwd(), Path.home(), Path("/"), Path("~"), Path("."), Path("..")]
     try:
-        # Check if path is inside current_pwd before making relative
-        if Path(path).is_relative_to(current_pwd):
-             return os.path.relpath(path, current_pwd)
-        else:
-            # If path is outside current working dir, return absolute path
-            return path
-    except ValueError: # Handle cases like different drives on Windows
-        return path
-    except Exception: # Generic fallback
-        return path
+        resolved_path = conflict_link.resolve()
+        if resolved_path in [p.resolve() for p in critical_dirs if p.exists()] or not conflict_link_str:
+            print(f"❌ 检测到关键目录或无效路径 ({conflict_link_rel})，拒绝删除！")
+            return False
+    except Exception: # Handle cases where resolve might fail (e.g., broken link)
+        pass
 
-# --- Fix Functions ---
+    if conflict_link.exists() or conflict_link.is_symlink(): # Check existence or if it's a broken symlink
+        print(f"尝试删除已存在的文件/目录/链接: {conflict_link_rel}")
+        try:
+            if conflict_link.is_dir() and not conflict_link.is_symlink():
+                 shutil.rmtree(conflict_link)
+                 print(f"✅ 成功删除冲突目录 {conflict_link_rel}。")
+            else:
+                 conflict_link.unlink() # Works for files and symlinks (including broken ones)
+                 print(f"✅ 成功删除冲突文件/链接 {conflict_link_rel}。")
+            return True
+        except Exception as e:
+            print(f"❌ 删除 {conflict_link_rel} 失败: {e}")
+            return False
+    else:
+        print(f"ℹ️ 冲突链接路径 {conflict_link_rel} 当前不存在，可能已被处理。")
+        return True # Conflict resolved
 
+# --- Placeholder for other fix functions ---
+# Add all your other fix functions here...
 def fix_netifd_libnl_tiny():
     """增强版：修复 netifd 编译时缺少 libnl-tiny 的链接问题"""
     import glob
@@ -165,7 +235,7 @@ def fix_netifd_libnl_tiny():
         # 清理 netifd 的 CMake 缓存（如果存在）
         cmake_cache_files = glob.glob("build_dir/target-*/netifd-*/CMakeCache.txt")
         for cache_file in cmake_cache_files:
-            print(f"🗑️ 删除 CMake 缓存: {cache_file}")
+            print(f"🗑️ 删除 CMake 缓存: {get_relative_path(cache_file)}")
             try:
                 os.remove(cache_file)
             except OSError as e:
@@ -193,12 +263,12 @@ def fix_netifd_libnl_tiny():
             print("❌ 未找到 libnl-tiny 的库文件 (libnl-tiny.so 或 libnl-tiny.a)，修复可能无效。")
             # return False # 即使找不到也可能通过后续步骤修复
         else:
-            print(f"✅ 找到 libnl-tiny 库文件: {lib_paths[0]}")
+            print(f"✅ 找到 libnl-tiny 库文件: {get_relative_path(lib_paths[0])}")
 
         # --- 修改 netifd 的 Makefile ---
         netifd_makefile = Path("package/network/config/netifd/Makefile")
         if netifd_makefile.exists():
-            print(f"🔧 检查并修改 {netifd_makefile}...")
+            print(f"🔧 检查并修改 {get_relative_path(str(netifd_makefile))}...")
             content_changed = False
             with open(netifd_makefile, "r", encoding="utf-8") as f:
                 lines = f.readlines()
@@ -235,18 +305,18 @@ def fix_netifd_libnl_tiny():
             if content_changed:
                 with open(netifd_makefile, "w", encoding="utf-8") as f:
                     f.writelines(new_lines)
-                print(f"✅ 已修改 {netifd_makefile}")
+                print(f"✅ 已修改 {get_relative_path(str(netifd_makefile))}")
                 fixed = True
             else:
-                print(f"ℹ️ {netifd_makefile} 无需修改。")
+                print(f"ℹ️ {get_relative_path(str(netifd_makefile))} 无需修改。")
         else:
-            print(f"⚠️ 未找到 {netifd_makefile}")
+            print(f"⚠️ 未找到 {get_relative_path(str(netifd_makefile))}")
 
         # --- 修改 netifd 的 CMakeLists.txt (作为补充) ---
         # CMake 通常会通过 DEPENDS 自动找到库，但以防万一
         cmake_path = Path("package/network/config/netifd/CMakeLists.txt")
         if cmake_path.exists():
-            print(f"🔧 检查并修改 {cmake_path}...")
+            print(f"🔧 检查并修改 {get_relative_path(str(cmake_path))}...")
             content_changed = False
             with open(cmake_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -286,12 +356,12 @@ def fix_netifd_libnl_tiny():
             if content_changed:
                 with open(cmake_path, "w", encoding="utf-8") as f:
                     f.write(new_content)
-                print(f"✅ 已修改 {cmake_path}")
+                print(f"✅ 已修改 {get_relative_path(str(cmake_path))}")
                 fixed = True
             else:
-                print(f"ℹ️ {cmake_path} 无需修改。")
+                print(f"ℹ️ {get_relative_path(str(cmake_path))} 无需修改。")
         else:
-            print(f"⚠️ 未找到 {cmake_path}")
+            print(f"⚠️ 未找到 {get_relative_path(str(cmake_path))}")
 
 
         # --- 再次清理 netifd 以确保更改生效 ---
@@ -306,6 +376,7 @@ def fix_netifd_libnl_tiny():
     except Exception as e:
         print(f"❌ 修复 netifd/libnl-tiny 时发生异常: {e}")
         return False
+
 def fix_trojan_plus_issues():
     """修复 trojan-plus 相关的编译问题"""
     print("🔧 检测到 trojan-plus 相关错误，尝试禁用...")
@@ -313,7 +384,7 @@ def fix_trojan_plus_issues():
     fixed_any = False
     for makefile_path in makefile_paths:
         try:
-            print(f"检查: {makefile_path}")
+            print(f"检查: {get_relative_path(str(makefile_path))}")
             with open(makefile_path, "r", encoding="utf-8", errors="replace") as f:
                 content = f.read()
             original_content = content
@@ -326,13 +397,13 @@ def fix_trojan_plus_issues():
             if content != original_content:
                 with open(makefile_path, "w", encoding="utf-8") as f:
                     f.write(content)
-                print(f"✅ 已修改 {makefile_path}")
+                print(f"✅ 已修改 {get_relative_path(str(makefile_path))}")
                 fixed_any = True
             else:
-                print(f"ℹ️ {makefile_path} 无需修改。")
+                print(f"ℹ️ {get_relative_path(str(makefile_path))} 无需修改。")
 
         except Exception as e:
-            print(f"❌ 处理 {makefile_path} 时出错: {e}")
+            print(f"❌ 处理 {get_relative_path(str(makefile_path))} 时出错: {e}")
 
     if fixed_any:
         # 清理 trojan-plus 包以确保修改生效
@@ -340,10 +411,15 @@ def fix_trojan_plus_issues():
         # Find the package path dynamically
         trojan_plus_paths = list(Path(".").glob("**/trojan-plus/Makefile"))
         for tp_path in trojan_plus_paths:
-            pkg_path = tp_path.parent.relative_to(Path.cwd())
-            clean_cmd = ["make", f"{pkg_path}/clean", "V=s"]
-            print(f"运行: {' '.join(clean_cmd)}")
-            subprocess.run(clean_cmd, check=False, capture_output=True)
+            try:
+                pkg_path = tp_path.parent.relative_to(Path.cwd())
+                clean_cmd = ["make", f"{pkg_path}/clean", "V=s"]
+                print(f"运行: {' '.join(clean_cmd)}")
+                subprocess.run(clean_cmd, check=False, capture_output=True)
+            except ValueError:
+                print(f"⚠️ 无法获取 {tp_path.parent} 的相对路径进行清理。")
+            except Exception as e:
+                print(f"⚠️ 执行清理命令时出错: {e}")
         return True
     else:
         print("ℹ️ 未找到需要修复的 trojan-plus 相关 Makefile。")
@@ -362,7 +438,7 @@ def fix_lua_neturl_directory():
 
     makefile_path = makefile_paths[0] # Assume first found is the correct one
     patch_dir = makefile_path.parent / "patches"
-    print(f"找到 Makefile: {makefile_path}")
+    print(f"找到 Makefile: {get_relative_path(str(makefile_path))}")
     modified = False
 
     try:
@@ -381,10 +457,11 @@ def fix_lua_neturl_directory():
             pkg_release = pkg_release_match.group(1).strip() if pkg_release_match else "1"
 
             # Derive expected dir name, e.g., neturl-1.2 or neturl-v1.2-1
-            # Try common patterns
             expected_subdir = f"neturl-{pkg_version}"
             if pkg_release and pkg_release != "1":
-                 expected_subdir += f"-{pkg_release}" # Less common but possible
+                 # Check if version already contains release-like suffix
+                 if not pkg_version.endswith(f"-{pkg_release}"):
+                      expected_subdir += f"-{pkg_release}" # Less common but possible
 
             # More robust: look at PKG_SOURCE name pattern like neturl-xxx.tar.gz
             source_base = Path(pkg_source).stem
@@ -447,8 +524,13 @@ def fix_lua_neturl_directory():
     if modified:
         print("✅ 已完成 lua-neturl 的 Makefile 和补丁修复。")
         # Clean the package to apply changes
-        pkg_rel_path = makefile_path.parent.relative_to(Path.cwd())
-        subprocess.run(["make", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True)
+        try:
+            pkg_rel_path = makefile_path.parent.relative_to(Path.cwd())
+            subprocess.run(["make", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True)
+        except ValueError:
+            print(f"⚠️ 无法获取 {makefile_path.parent} 的相对路径进行清理。")
+        except Exception as e:
+            print(f"⚠️ 执行清理命令时出错: {e}")
         return True
     else:
         print("ℹ️ lua-neturl 无需修复。")
@@ -466,15 +548,19 @@ def fix_patch_application(log_content):
         print("ℹ️ 未明确匹配到补丁失败日志。")
         return False
 
-    patch_file = patch_match.group(1).strip()
-    patch_file_path = Path(patch_file)
-    print(f"识别到可能失败的补丁文件: {patch_file}")
+    patch_file_str = patch_match.group(1).strip()
+    patch_file_path = Path(patch_file_str)
+    patch_file_rel = get_relative_path(patch_file_str) # For logging
+    print(f"识别到可能失败的补丁文件: {patch_file_rel}")
 
     if not patch_file_path.exists():
          # Try to find it relative to CWD if it's not absolute
-         patch_file_path = Path.cwd() / patch_file
-         if not patch_file_path.exists():
-             print(f"❌ 补丁文件 {patch_file} 未找到，无法修复。")
+         patch_file_path_abs = Path.cwd() / patch_file_str
+         if patch_file_path_abs.exists():
+             patch_file_path = patch_file_path_abs
+             patch_file_rel = get_relative_path(str(patch_file_path_abs)) # Update relative path
+         else:
+             print(f"❌ 补丁文件 {patch_file_rel} 未找到，无法修复。")
              return False
 
     # Specific fix for lua-neturl patch issues
@@ -483,7 +569,7 @@ def fix_patch_application(log_content):
         return fix_lua_neturl_directory() # This function handles both Makefile and patches
 
     # General fix: try removing the problematic patch
-    print(f"补丁应用失败，尝试移除补丁文件: {patch_file_path}")
+    print(f"补丁应用失败，尝试移除补丁文件: {patch_file_rel}")
     try:
         # Backup first
         backup_path = patch_file_path.with_suffix(patch_file_path.suffix + ".disabled")
@@ -495,7 +581,7 @@ def fix_patch_application(log_content):
         try:
             pkg_dir = patch_file_path.parent.parent # Go up from /patches
             if pkg_dir.exists() and (pkg_dir / "Makefile").exists():
-                 pkg_rel_path = pkg_dir.relative_to(Path.cwd())
+                 pkg_rel_path = get_relative_path(str(pkg_dir))
                  print(f"🧹 尝试清理相关包: {pkg_rel_path}")
                  subprocess.run(["make", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True)
             else:
@@ -505,7 +591,7 @@ def fix_patch_application(log_content):
 
         return True
     except Exception as e:
-        print(f"❌ 禁用补丁 {patch_file_path} 失败: {e}")
+        print(f"❌ 禁用补丁 {patch_file_rel} 失败: {e}")
         return False
 
 
@@ -514,8 +600,6 @@ def fix_makefile_separator(log_content):
     print("🔧 检测到 'missing separator' 错误，尝试修复...")
     fixed = False
 
-    # Regex to find the error line and capture file and line number
-    # Handle variations like "Makefile:123: *** missing separator. Stop." or "common.mk:45: *** missing separator."
     error_line_match = re.search(r'^([\/\w\.\-]+):(\d+):\s+\*\*\*\s+missing separator', log_content, re.MULTILINE)
 
     if not error_line_match:
@@ -539,14 +623,24 @@ def fix_makefile_separator(log_content):
         for i in range(error_line_index - 1, max(0, error_line_index - 50), -1):
             dir_match = re.search(r"make\[\d+\]: Entering directory '([^']+)'", log_lines[i])
             if dir_match:
-                context_dir = Path(dir_match.group(1))
-                print(f"找到上下文目录: {context_dir}")
-                break
+                # Resolve potential relative paths from log
+                potential_dir = Path(dir_match.group(1))
+                if potential_dir.is_dir():
+                    context_dir = potential_dir.resolve() # Use resolved absolute path
+                    print(f"找到上下文目录: {get_relative_path(str(context_dir))}")
+                    break
+                else: # If log path is not absolute, try relative to CWD
+                    potential_dir = Path.cwd() / dir_match.group(1)
+                    if potential_dir.is_dir():
+                        context_dir = potential_dir.resolve()
+                        print(f"找到上下文目录 (相对解析): {get_relative_path(str(context_dir))}")
+                        break
 
-    makefile_path = context_dir / makefile_name_from_err
+    # Construct absolute path to the makefile
+    makefile_path = (context_dir / makefile_name_from_err).resolve()
     makefile_path_rel = get_relative_path(str(makefile_path)) # For display
 
-    print(f"尝试修复文件: {makefile_path_rel} (绝对路径: {makefile_path})")
+    print(f"尝试修复文件: {makefile_path_rel}")
 
     if makefile_path.is_file():
         try:
@@ -555,19 +649,18 @@ def fix_makefile_separator(log_content):
 
             if 0 < line_num <= len(makefile_lines):
                 line_content = makefile_lines[line_num - 1]
-                original_line = line_content
 
-                # Check if the line starts with spaces but not a tab
                 if re.match(r'^[ ]+', line_content) and not line_content.startswith('\t'):
                     print(f"检测到第 {line_num} 行使用空格缩进，替换为 TAB...")
-                    # Backup the file
                     backup_path = makefile_path.with_suffix(makefile_path.suffix + ".bak")
-                    shutil.copy2(makefile_path, backup_path)
-                    print(f"创建备份: {get_relative_path(str(backup_path))}")
+                    try:
+                        shutil.copy2(makefile_path, backup_path)
+                        print(f"创建备份: {get_relative_path(str(backup_path))}")
+                    except Exception as backup_e:
+                        print(f"⚠️ 创建备份失败: {backup_e}")
+                        backup_path = None # Indicate backup failed
 
-                    # Replace leading spaces with a tab
                     makefile_lines[line_num - 1] = '\t' + line_content.lstrip(' ')
-
                     with open(makefile_path, 'w', encoding='utf-8') as f:
                         f.writelines(makefile_lines)
 
@@ -577,27 +670,29 @@ def fix_makefile_separator(log_content):
                     if fixed_lines[line_num - 1].startswith('\t'):
                          print(f"✅ 成功修复第 {line_num} 行缩进。")
                          fixed = True
-                         os.remove(backup_path) # Remove backup on success
+                         if backup_path and backup_path.exists(): os.remove(backup_path) # Remove backup on success
                     else:
                          print(f"❌ 修复失败，第 {line_num} 行内容仍为: '{fixed_lines[line_num-1].rstrip()}'")
-                         shutil.move(str(backup_path), makefile_path) # Restore backup
-                         print("已恢复备份。")
+                         if backup_path and backup_path.exists():
+                             shutil.move(str(backup_path), makefile_path) # Restore backup
+                             print("已恢复备份。")
 
-                # Handle cases where the error might be on an empty line with weird whitespace
                 elif not line_content.strip() and line_content != '\n':
                      print(f"第 {line_num} 行为非标准空行，尝试规范化为空行...")
                      backup_path = makefile_path.with_suffix(makefile_path.suffix + ".bak")
-                     shutil.copy2(makefile_path, backup_path)
+                     try:
+                         shutil.copy2(makefile_path, backup_path)
+                     except Exception: backup_path = None
+
                      makefile_lines[line_num - 1] = '\n'
                      with open(makefile_path, 'w', encoding='utf-8') as f:
                          f.writelines(makefile_lines)
                      print("✅ 已规范化空行。")
                      fixed = True
-                     os.remove(backup_path)
+                     if backup_path and backup_path.exists(): os.remove(backup_path)
 
                 else:
                     print(f"ℹ️ 第 {line_num} 行内容: '{line_content.rstrip()}'。看起来不是简单的空格缩进问题，可能需要手动检查或问题在 include 的文件中。")
-                    # Consider checking includes here if necessary, but keep it simple first.
 
             else:
                 print(f"❌ 行号 {line_num} 超出文件 {makefile_path_rel} 的范围 ({len(makefile_lines)} 行)。")
@@ -613,13 +708,12 @@ def fix_makefile_separator(log_content):
         pkg_dir = makefile_path.parent
         # Heuristic: Check if the parent dir looks like a package dir
         if pkg_dir.exists() and (pkg_dir / "Makefile").exists() and pkg_dir != Path.cwd():
-            pkg_rel_path = get_relative_path(str(pkg_dir))
-            print(f"🧹 尝试清理相关包目录: {pkg_rel_path}...")
             try:
+                pkg_rel_path = get_relative_path(str(pkg_dir))
+                print(f"🧹 尝试清理相关包目录: {pkg_rel_path}...")
                 # Use DIRCLEAN=1 for a deeper clean
                 subprocess.run(["make", f"{pkg_rel_path}/clean", "DIRCLEAN=1", "V=s"], check=False, capture_output=True)
-                print(f"✅ 清理命令已执行 (不保证成功)。")
-                # Setting fixed to True here means we *attempted* a fix (either edit or clean)
+                print(f"✅ 清理命令已执行。")
                 fixed = True # Indicate an action was taken for this error
             except Exception as e:
                 print(f"⚠️ 执行清理命令时出错: {e}")
@@ -645,73 +739,40 @@ def fix_directory_conflict(log_content):
 
     conflict_path_str = conflict_match.group(1).strip()
     conflict_path = Path(conflict_path_str)
-    print(f"冲突路径: {conflict_path}")
+    conflict_path_rel = get_relative_path(conflict_path_str) # For logging
+    print(f"冲突路径: {conflict_path_rel}")
 
     # Important safety check: Avoid deleting critical directories
     critical_dirs = [Path.cwd(), Path.home(), Path("/"), Path("~"), Path("."), Path("..")]
-    if conflict_path.resolve() in [p.resolve() for p in critical_dirs] or not conflict_path_str:
-        print(f"❌ 检测到关键目录或无效路径 ({conflict_path_str})，拒绝删除！")
-        return False
+    try:
+        resolved_path = conflict_path.resolve()
+        if resolved_path in [p.resolve() for p in critical_dirs if p.exists()] or not conflict_path_str:
+            print(f"❌ 检测到关键目录或无效路径 ({conflict_path_rel})，拒绝删除！")
+            return False
+    except Exception: # Handle cases where resolve might fail
+        pass
 
     # Check if it's a file or a directory
     if conflict_path.is_file():
-        print(f"冲突路径是一个文件，尝试删除文件: {conflict_path}")
+        print(f"冲突路径是一个文件，尝试删除文件: {conflict_path_rel}")
         try:
             conflict_path.unlink()
             print("✅ 成功删除冲突文件。")
             return True
         except Exception as e:
-            print(f"❌ 删除文件 {conflict_path} 失败: {e}")
+            print(f"❌ 删除文件 {conflict_path_rel} 失败: {e}")
             return False
     elif conflict_path.is_dir():
-         # Maybe it should be a symlink? Or maybe just needs removal.
-         # Let's try removing it first, as it's the direct cause of 'mkdir' failure.
-        print(f"冲突路径是一个目录，尝试删除目录: {conflict_path}")
+        print(f"冲突路径是一个目录，尝试删除目录: {conflict_path_rel}")
         try:
             shutil.rmtree(conflict_path)
             print("✅ 成功删除冲突目录。")
             return True
         except Exception as e:
-            print(f"❌ 删除目录 {conflict_path} 失败: {e}")
+            print(f"❌ 删除目录 {conflict_path_rel} 失败: {e}")
             return False
     else:
-        print(f"ℹ️ 冲突路径 {conflict_path} 当前不存在，可能已被处理。")
-        # Return True as the conflict state is resolved
-        return True
-
-def fix_symbolic_link_conflict(log_content):
-    """修复符号链接冲突 (ln: failed to create symbolic link ...: File exists)"""
-    print("🔧 检测到符号链接冲突，尝试修复...")
-    conflict_match = re.search(r'ln: failed to create symbolic link [\'"]?([^\'"]+)[\'"]?: File exists', log_content)
-    if not conflict_match:
-        print("ℹ️ 未匹配到 'File exists' 符号链接冲突日志。")
-        return False
-
-    conflict_link_str = conflict_match.group(1).strip()
-    conflict_link = Path(conflict_link_str)
-    print(f"冲突符号链接路径: {conflict_link}")
-
-    # Safety check
-    critical_dirs = [Path.cwd(), Path.home(), Path("/"), Path("~"), Path("."), Path("..")]
-    if conflict_link.resolve() in [p.resolve() for p in critical_dirs] or not conflict_link_str:
-        print(f"❌ 检测到关键目录或无效路径 ({conflict_link_str})，拒绝删除！")
-        return False
-
-    if conflict_link.exists(): # Check if it exists (could be file, dir, or existing link)
-        print(f"尝试删除已存在的文件/目录/链接: {conflict_link}")
-        try:
-            if conflict_link.is_dir() and not conflict_link.is_symlink():
-                 shutil.rmtree(conflict_link)
-                 print(f"✅ 成功删除冲突目录 {conflict_link}。")
-            else:
-                 conflict_link.unlink() # Works for files and symlinks
-                 print(f"✅ 成功删除冲突文件/链接 {conflict_link}。")
-            return True
-        except Exception as e:
-            print(f"❌ 删除 {conflict_link} 失败: {e}")
-            return False
-    else:
-        print(f"ℹ️ 冲突链接路径 {conflict_link} 当前不存在，可能已被处理。")
+        print(f"ℹ️ 冲突路径 {conflict_path_rel} 当前不存在，可能已被处理。")
         return True # Conflict resolved
 
 
@@ -720,20 +781,21 @@ def fix_pkg_version_format():
     print("🔧 修复 Makefile 中的 PKG_VERSION 和 PKG_RELEASE 格式...")
     changed_count = 0
     makefile_pattern = "**/Makefile" # Look for Makefiles everywhere except build/staging/tmp
-    ignore_dirs = ['build_dir', 'staging_dir', 'tmp', '.git']
+    ignore_dirs = ['build_dir', 'staging_dir', 'tmp', '.git', 'dl']
 
-    all_makefiles = list(Path('.').glob(makefile_pattern))
+    all_makefiles = []
+    for p in Path('.').rglob('Makefile'): # Use rglob for recursive search
+        # Check if the path is within an ignored directory
+        if not any(ignored in p.parts for ignored in ignore_dirs):
+            all_makefiles.append(p)
+
     print(f"找到 {len(all_makefiles)} 个潜在的 Makefile 文件进行检查...")
 
     processed_count = 0
     for makefile in all_makefiles:
         processed_count += 1
-        if processed_count % 100 == 0:
+        if processed_count % 200 == 0: # Adjust reporting frequency if needed
              print(f"已检查 {processed_count}/{len(all_makefiles)}...")
-
-        # Skip ignored directories
-        if any(part in makefile.parts for part in ignore_dirs):
-            continue
 
         try:
             with open(makefile, 'r', encoding='utf-8', errors='replace') as f:
@@ -798,7 +860,7 @@ def fix_pkg_version_format():
                         # Version contains release, split it
                         new_version_line = f"PKG_VERSION:={base_version}"
                         new_release_line = f"PKG_RELEASE:={release_part}"
-                        print(f"🔧 [{get_relative_path(str(makefile))}] 分离 PKG_VERSION/RELEASE: '{version_match_for_release.group(2)}{version_match_for_release.group(3)}' -> VERSION='{base_version}', RELEASE='{release_part}'")
+                        print(f"🔧 [{get_relative_path(str(makefile))}] 分离 PKG_VERSION/RELEASE: '{version_match_for_release.group(2)}{version_match_for_release.group(3) or ''}' -> VERSION='{base_version}', RELEASE='{release_part}'")
                         # Replace version line and insert release line after it
                         current_content = current_content.replace(current_version_line, f"{new_version_line}\n{new_release_line}", 1)
                         modified_in_file = True
@@ -849,7 +911,7 @@ def fix_metadata_errors():
         try:
             update_cmd = ["./scripts/feeds", "update", "-i"]
             print(f"运行: {' '.join(update_cmd)}")
-            result = subprocess.run(update_cmd, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            result = subprocess.run(update_cmd, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=180)
             if result.returncode != 0:
                 print(f"⚠️ feeds update -i 失败:\n{result.stderr[-500:]}")
             else:
@@ -857,12 +919,15 @@ def fix_metadata_errors():
             # Re-install might be needed if index changed significantly
             install_cmd = ["./scripts/feeds", "install", "-a"]
             print(f"运行: {' '.join(install_cmd)}")
-            result_install = subprocess.run(install_cmd, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            result_install = subprocess.run(install_cmd, check=False, capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=300)
             if result_install.returncode != 0:
                  print(f"⚠️ feeds install -a 失败:\n{result_install.stderr[-500:]}")
             else:
                  print("✅ feeds install -a 完成。")
 
+        except subprocess.TimeoutExpired:
+            print("❌ 执行 feeds update/install 时超时。")
+            metadata_changed = True # Assume change happened if timeout occurred
         except Exception as e:
             print(f"❌ 执行 feeds update/install 时出错: {e}")
             metadata_changed = True # Assume change happened if error occurred
@@ -885,18 +950,21 @@ def fix_metadata_errors():
 
     return metadata_changed
 
-
 def fix_depends_format(log_content):
     """自动修复 Makefile 中的无效依赖项 (增强版 v2)"""
     print("🔧 检测到依赖项格式错误，尝试自动修复 Makefile 中的 DEPENDS 字段...")
 
     reported_files = set()
+    # Regex to capture warnings like: WARNING: Makefile 'path/to/Makefile' has a dependency on 'bad-dep>=1.0', which does not exist
     warning_pattern = re.compile(r"WARNING: Makefile '([^']+)' has a dependency on '([^']*)', which does not exist")
     for match in warning_pattern.finditer(log_content):
         # 过滤掉一些已知的、可能无害或难以修复的警告
-        bad_dep = match.group(2)
-        if bad_dep != 'PERL_TESTS' and 'gst1-mod-' not in bad_dep: # 过滤已知噪音
-            reported_files.add(match.group(1))
+        bad_dep = match.group(2).strip()
+        makefile_path_str = match.group(1)
+        # Filter more aggressively: skip if bad_dep is empty, contains '$', '(', ')', '=>', or known noisy patterns
+        if bad_dep and '$' not in bad_dep and '(' not in bad_dep and ')' not in bad_dep and '=>' not in bad_dep \
+           and bad_dep.lower() not in ['perl_tests'] and not bad_dep.startswith('gst1-mod-'):
+            reported_files.add(makefile_path_str)
 
     fixed_count = 0
     processed_files = set()
@@ -908,31 +976,39 @@ def fix_depends_format(log_content):
         for makefile_path_str in reported_files:
             makefile_path = Path(makefile_path_str)
             if makefile_path.exists() and makefile_path.is_file():
-                if str(makefile_path.resolve()) not in processed_files:
+                resolved_path_str = str(makefile_path.resolve())
+                if resolved_path_str not in processed_files:
                     if fix_single_makefile_depends(makefile_path):
                         fixed_count += 1
-                        files_actually_fixed.append(makefile_path_str)
-                    processed_files.add(str(makefile_path.resolve()))
+                        files_actually_fixed.append(get_relative_path(makefile_path_str))
+                    processed_files.add(resolved_path_str)
             else:
-                print(f"  ⚠️ 报告的文件不存在或不是文件: {makefile_path_str}")
+                print(f"  ⚠️ 报告的文件不存在或不是文件: {get_relative_path(makefile_path_str)}")
 
     # --- (特定错误包处理逻辑 - 可选增强) ---
     # 如果 apk_depends_invalid 错误发生，也尝试修复那个包的 Makefile
-    apk_error_sig = get_error_signature(log_content)
-    if "apk_depends_invalid" in apk_error_sig:
+    apk_error_sig = get_error_signature(log_content) # Use local log_content here
+    if "apk_add_invalid_dep_format" in apk_error_sig: # Check specific error type
         failed_pkg_name = apk_error_sig.split(":")[-1]
         print(f"🎯 尝试修复导致 APK 错误的包 '{failed_pkg_name}' 的 Makefile...")
-        possible_makefile_paths = list(Path(".").glob(f"**/feeds/*/{failed_pkg_name}/Makefile")) + \
-                                  list(Path(".").glob(f"package/*/{failed_pkg_name}/Makefile"))
-        if possible_makefile_paths:
-            makefile_path = possible_makefile_paths[0]
-            if str(makefile_path.resolve()) not in processed_files:
-                print(f"  ➡️ 定位到 Makefile: {makefile_path}")
-                if fix_single_makefile_depends(makefile_path):
-                    if makefile_path not in files_actually_fixed: # 避免重复计数
+        # Search more broadly for the Makefile
+        possible_makefile_paths = list(Path(".").glob(f"**/{failed_pkg_name}/Makefile"))
+        found_makefile = None
+        for mf_path in possible_makefile_paths:
+            # Basic check to avoid build_dir etc.
+            if not any(ignored in mf_path.parts for ignored in ['build_dir', 'staging_dir', 'tmp', 'dl']):
+                found_makefile = mf_path
+                break
+
+        if found_makefile:
+            resolved_path_str = str(found_makefile.resolve())
+            if resolved_path_str not in processed_files:
+                print(f"  ➡️ 定位到 Makefile: {get_relative_path(str(found_makefile))}")
+                if fix_single_makefile_depends(found_makefile):
+                    if get_relative_path(str(found_makefile)) not in files_actually_fixed: # 避免重复计数
                          fixed_count += 1
-                         files_actually_fixed.append(str(makefile_path))
-                processed_files.add(str(makefile_path.resolve()))
+                         files_actually_fixed.append(get_relative_path(str(found_makefile)))
+                processed_files.add(resolved_path_str)
             else:
                  print(f"  ℹ️ 包 '{failed_pkg_name}' 的 Makefile 已处理过。")
         else:
@@ -942,12 +1018,16 @@ def fix_depends_format(log_content):
     if fixed_count > 0:
         print(f"✅ 共修复 {fixed_count} 个 Makefile 中的依赖格式问题: {files_actually_fixed}")
         print("  🔄 运行 './scripts/feeds update -i && ./scripts/feeds install -a' 来更新依赖...")
-        # ... (运行 feeds 命令的代码保持不变) ...
         try:
-            update_result = subprocess.run(["./scripts/feeds", "update", "-i"], check=False, capture_output=True, text=True, timeout=120)
-            # ... (处理 update 结果) ...
+            update_result = subprocess.run(["./scripts/feeds", "update", "-i"], check=False, capture_output=True, text=True, timeout=180)
+            if update_result.returncode != 0: print(f"  ⚠️ feeds update -i 失败:\n{update_result.stderr[-500:]}")
+            else: print("    ✅ feeds update -i 完成。")
+
             install_result = subprocess.run(["./scripts/feeds", "install", "-a"], check=False, capture_output=True, text=True, timeout=300)
-            # ... (处理 install 结果) ...
+            if install_result.returncode != 0: print(f"  ⚠️ feeds install -a 失败:\n{install_result.stderr[-500:]}")
+            else: print("    ✅ feeds install -a 完成。")
+        except subprocess.TimeoutExpired:
+             print("  ❌ 更新/安装 feeds 时超时。")
         except Exception as e:
             print(f"  ⚠️ 更新/安装 feeds 时出错: {e}")
         return True
@@ -955,162 +1035,56 @@ def fix_depends_format(log_content):
         print("ℹ️ 未发现或未成功修复需要处理的 DEPENDS 字段。")
         return False
 
-
-
 def fix_single_makefile_depends(makefile_path: Path):
-    """修复单个 Makefile 中的 DEPENDS 字段 (增强版 v2)"""
+    """修复单个 Makefile 中的 DEPENDS 字段 (增强版 v3 - 更精确替换)"""
     try:
-        with open(makefile_path, 'r', errors='replace') as f:
-            content = f.read()
-    except Exception as e:
-        print(f"  ❌ 读取 Makefile 出错 {makefile_path}: {e}")
-        return False
-
-    # 查找 DEPENDS 行 (支持 += 和多行定义)
-    # 使用 re.DOTALL 来匹配跨行的 DEPENDS
-    depends_match = re.search(r'^(DEPENDS\s*[:+]?=\s*)((?:.*?\\\n)*.*)$', content, re.MULTILINE | re.IGNORECASE | re.DOTALL)
-    if not depends_match:
-        return False # 没有 DEPENDS 行
-
-    original_block = depends_match.group(0) # 整个匹配块
-    prefix = depends_match.group(1)
-    depends_str_multiline = depends_match.group(2)
-
-    # 将多行合并为一行，并移除行尾的反斜杠
-    depends_str = depends_str_multiline.replace('\\\n', ' ').replace('\n', ' ').strip()
-
-    # 按空格分割依赖项
-    depends_list = re.split(r'\s+', depends_str)
-    cleaned_depends = []
-    modified = False
-
-    for dep in depends_list:
-        dep = dep.strip()
-        if not dep or dep == '\\': # 跳过空项和残留的反斜杠
-            continue
-
-        original_dep = dep
-
-        # 移除前缀 +@
-        dep_prefix = ""
-        if dep.startswith('+'):
-            dep_prefix = "+"
-            dep = dep[1:]
-        elif dep.startswith('@'):
-             dep_prefix = "@"
-             dep = dep[1:]
-
-        # 移除版本约束
-        dep_name = re.split(r'[<>=!~]', dep, 1)[0]
-
-        # 移除垃圾字符和模式 (更严格)
-        dep_name = re.sub(r'^(?:p|dependency|select|default|bool|tristate),+', '', dep_name, flags=re.IGNORECASE) # 移除更多前缀
-        dep_name = dep_name.replace(',)', '').replace(')', '').replace('(', '').replace(',', '') # 移除 ,) () ,
-        dep_name = dep_name.strip('\'" ') # 移除首尾引号和空格
-
-        # 再次移除可能引入的版本约束
-        dep_name = re.split(r'[<>=!~]', dep_name, 1)[0]
-
-        # 验证清理后的名称
-        if dep_name and re.match(r'^[a-zA-Z0-9._-]+$', dep_name) and dep_name != 'gst1-mod-':
-            cleaned_dep_str = f"{dep_prefix}{dep_name}"
-            cleaned_depends.append(cleaned_dep_str)
-            if cleaned_dep_str != original_dep:
-                modified = True
-                print(f"  🔧 清理依赖: '{original_dep}' -> '{cleaned_dep_str}' in {makefile_path}")
-        elif dep_name:
-             print(f"  ⚠️ 清理后的依赖 '{dep_name}' (来自 '{original_dep}') 格式无效，已丢弃。文件: {makefile_path}")
-             modified = True
-        else:
-             if original_dep:
-                 print(f"  🗑️ 丢弃无效依赖: '{original_dep}' in {makefile_path}")
-                 modified = True
-
-    if modified:
-        unique_depends = list(dict.fromkeys(cleaned_depends))
-        new_depends_str = ' '.join(unique_depends)
-        new_depends_line = f"{prefix}{new_depends_str}" # 使用原始前缀
-
-        # 使用 strip() 比较，但替换时要精确
-        original_line_to_replace = original_block.strip()
-        new_block_to_insert = new_depends_line # 修复后通常不需要多行
-
-        if new_block_to_insert.strip() != original_line_to_replace.strip():
-            print(f"  ✅ 修复 {makefile_path}:")
-            print(f"    原始块: {original_line_to_replace}")
-            print(f"    修复为: {new_block_to_insert.strip()}")
-            try:
-                # 直接替换整个匹配块
-                new_content = content.replace(original_block, new_block_to_insert, 1)
-                with open(makefile_path, 'w', encoding='utf-8') as f:
-                    f.write(new_content)
-                return True
-            except Exception as e:
-                 print(f"  ❌ 写回 Makefile 失败 {makefile_path}: {e}")
-                 return False
-        else:
-             print(f"  ℹ️ 清理后内容未变 (或仅空格变化): {makefile_path}")
-             return False
-    else:
-        return False
-
-
-
-
-
-def process_makefile_depends(makefile_path: Path):
-    """Helper function to process DEPENDS in a single Makefile.
-       Handles simple lists and complex Make constructs differently."""
-    try:
-        if makefile_path.is_symlink():
-            pass # Process the symlink path
-
-        if not makefile_path.is_file():
-            return False
-
         with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
-        original_content = content
+    except Exception as e:
+        print(f"  ❌ 读取 Makefile 出错 {get_relative_path(str(makefile_path))}: {e}")
+        return False
 
-        is_package_makefile = ('define Package/' in content and 'endef' in content) or \
-                              ('include $(TOPDIR)/rules.mk' in content or \
-                               'include $(INCLUDE_DIR)/package.mk' in content or \
-                               'include ../../buildinfo.mk' in content)
-        if not is_package_makefile:
-            return False
+    original_content = content
+    new_content = content
+    modified = False
+    offset_adjustment = 0 # Track changes in length for subsequent replacements
 
-        depends_regex = r'^([ \t]*DEPENDS\+?=\s*)((?:.*?\\\n)*.*)$'
-        modified_in_file = False
-        new_content = content
-        offset_adjustment = 0
+    # Find DEPENDS lines (supports += and multi-line with \)
+    depends_regex = r'^([ \t]*DEPENDS\s*[:+]?=\s*)((?:.*?\\\n)*.*)$'
+    matches = list(re.finditer(depends_regex, content, re.MULTILINE | re.IGNORECASE))
 
-        matches = list(re.finditer(depends_regex, content, re.MULTILINE))
-        if not matches:
-            return False
+    if not matches:
+        return False # No DEPENDS found
 
-        for match in matches:
-            start_index = match.start() + offset_adjustment
-            end_index = match.end() + offset_adjustment
+    for match in matches:
+        start_index = match.start() + offset_adjustment
+        end_index = match.end() + offset_adjustment
 
-            original_depends_line_block = new_content[start_index:end_index]
-            prefix = match.group(1)
-            depends_value = match.group(2).replace('\\\n', ' ').strip()
-            original_depends_value_for_log = depends_value # For potential logging
+        original_block = new_content[start_index:end_index] # Get current block from potentially modified content
+        prefix = match.group(1)
+        depends_str_multiline = match.group(2)
 
-            # --- Check for complex Make syntax ($ or parenthesis) ---
-            # We assume lines with these characters should not have duplicates removed after splitting
-            is_complex = '$' in depends_value or '(' in depends_value
+        # Combine multi-line into single line, remove trailing backslashes
+        depends_str = depends_str_multiline.replace('\\\n', ' ').replace('\n', ' ').strip()
 
-            # Split by whitespace - this is the source of potential issues with complex lines
-            depends_list = re.split(r'\s+', depends_value)
-            processed_depends = [] # Store parts after version cleaning
-            needs_fix = False      # Track if any version constraint was removed
+        # Check for complex Make syntax early
+        is_complex = '$' in depends_str or '(' in depends_str
 
-            for dep in depends_list:
-                dep = dep.strip()
-                if not dep:
-                    continue
+        # Split dependencies by whitespace
+        depends_list = re.split(r'\s+', depends_str)
+        cleaned_depends = []
+        item_modified = False
 
+        for dep in depends_list:
+            dep = dep.strip()
+            if not dep or dep == '\\': continue
+
+            original_dep = dep
+            cleaned_dep = dep # Start with original
+
+            # Remove version constraints only if NOT complex Make syntax
+            if not is_complex:
+                # Remove prefixes like +@
                 dep_prefix = ""
                 if dep.startswith('+') or dep.startswith('@'):
                     dep_prefix = dep[0]
@@ -1119,35 +1093,175 @@ def process_makefile_depends(makefile_path: Path):
                     dep_name = dep
 
                 # Remove version constraints like >=, <=, =, >, <
-                cleaned_name = re.split(r'[>=<]', dep_name, 1)[0].strip()
+                dep_name_cleaned = re.split(r'[<>=!~]', dep_name, 1)[0].strip()
 
-                if cleaned_name != dep_name:
+                # Basic validation: ensure it looks like a package name
+                if dep_name_cleaned and re.match(r'^[a-zA-Z0-9._-]+$', dep_name_cleaned):
+                    cleaned_dep = f"{dep_prefix}{dep_name_cleaned}"
+                elif dep_name_cleaned: # Looks invalid after cleaning
+                    print(f"  ⚠️ 清理后的依赖 '{dep_name_cleaned}' (来自 '{original_dep}') 格式无效，已丢弃。文件: {get_relative_path(str(makefile_path))}")
+                    cleaned_dep = None # Mark for removal
+                # else: keep original dep if cleaning results in empty string
+
+            if cleaned_dep is not None: # Add if not marked for removal
+                cleaned_depends.append(cleaned_dep)
+
+            if cleaned_dep != original_dep:
+                item_modified = True
+                print(f"  🔧 清理依赖: '{original_dep}' -> '{cleaned_dep or '(丢弃)'}' in {get_relative_path(str(makefile_path))}")
+
+        if item_modified:
+            modified = True # Mark the whole file as modified if any item changed
+
+            # Remove duplicates only for simple lists
+            if not is_complex:
+                unique_depends = list(dict.fromkeys(cleaned_depends)) # Simple de-duplication
+                new_depends_str = ' '.join(unique_depends)
+            else:
+                new_depends_str = ' '.join(cleaned_depends) # Keep order and duplicates for complex lines
+
+            # Reconstruct the line/block
+            # Handle potential multi-line original block - reconstruct as single line for simplicity
+            new_depends_line = f"{prefix}{new_depends_str}"
+
+            # Perform replacement in the current state of new_content
+            current_block_in_new_content = new_content[start_index:end_index]
+
+            # Check if the block we found is still the same as the original match content
+            # This helps avoid incorrect replacement if previous iterations shifted content
+            if current_block_in_new_content == original_block:
+                new_content = new_content[:start_index] + new_depends_line + new_content[end_index:]
+                offset_adjustment += len(new_depends_line) - len(original_block)
+            else:
+                # Fallback: Try to find the original block text again if content shifted
+                # This is less reliable but might work for minor shifts.
+                try:
+                    current_start_index = new_content.index(original_block, max(0, start_index - 50)) # Search near original position
+                    current_end_index = current_start_index + len(original_block)
+                    print(f"  ⚠️ 内容偏移，尝试基于原始内容在 {current_start_index} 处替换...")
+                    new_content = new_content[:current_start_index] + new_depends_line + new_content[current_end_index:]
+                    # Recalculate total offset adjustment from the beginning
+                    offset_adjustment = len(new_content) - len(original_content)
+                except ValueError:
+                    print(f"  ❌ 无法在当前内容中重新定位原始块，跳过此 DEPENDS 行的替换。文件: {get_relative_path(str(makefile_path))}")
+                    modified = False # Revert modified status for this block if replacement failed
+                    continue # Skip to next match
+
+    if modified:
+        try:
+            with open(makefile_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            print(f"  ✅ 已写回修改到: {get_relative_path(str(makefile_path))}")
+            return True
+        except Exception as e:
+             print(f"  ❌ 写回 Makefile 失败 {get_relative_path(str(makefile_path))}: {e}")
+             return False
+    else:
+        return False # No modification needed or happened
+
+def process_makefile_depends(makefile_path: Path):
+    """Helper function to process DEPENDS in a single Makefile.
+       Handles simple lists and complex Make constructs differently."""
+    try:
+        if makefile_path.is_symlink():
+            # If it's a symlink, try resolving it, but process the link path if resolution fails
+            try:
+                real_path = makefile_path.resolve(strict=True)
+                if not real_path.is_file(): return False
+                makefile_path = real_path
+            except Exception:
+                # Process the symlink path itself if resolve fails (might be broken link)
+                if not makefile_path.exists(): return False # Skip if link target doesn't exist
+
+        if not makefile_path.is_file():
+            return False
+
+        with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
+            content = f.read()
+        original_content = content
+
+        # Basic check if it looks like an OpenWrt Makefile
+        is_package_makefile = ('define Package/' in content and 'endef' in content) or \
+                              ('include $(TOPDIR)/rules.mk' in content or \
+                               'include $(INCLUDE_DIR)/package.mk' in content or \
+                               'include ../../buildinfo.mk' in content)
+        if not is_package_makefile:
+            return False
+
+        depends_regex = r'^([ \t]*DEPENDS\s*[:+]?=\s*)((?:.*?\\\n)*.*)$' # Added :? for depends:=
+        modified_in_file = False
+        new_content = content
+        offset_adjustment = 0
+
+        matches = list(re.finditer(depends_regex, content, re.MULTILINE | re.IGNORECASE))
+        if not matches:
+            return False
+
+        for match in matches:
+            start_index = match.start() + offset_adjustment
+            end_index = match.end() + offset_adjustment
+
+            original_depends_line_block = new_content[start_index:end_index]
+            prefix = match.group(1) # Includes DEPENDS+= or DEPENDS:= etc.
+            depends_value = match.group(2).replace('\\\n', ' ').strip()
+
+            # --- Check for complex Make syntax ($ or parenthesis) ---
+            is_complex = '$' in depends_value or '(' in depends_value
+
+            # Split by whitespace
+            depends_list = re.split(r'\s+', depends_value)
+            processed_depends = []
+            needs_fix = False
+
+            for dep in depends_list:
+                dep = dep.strip()
+                if not dep: continue
+
+                original_dep_for_log = dep # Store original for logging comparison
+                current_part = dep        # Start with the original part
+
+                # Only clean version constraints if it's NOT complex Make syntax
+                if not is_complex:
+                    dep_prefix = ""
+                    if dep.startswith('+') or dep.startswith('@'):
+                        dep_prefix = dep[0]
+                        dep_name = dep[1:]
+                    else:
+                        dep_name = dep
+
+                    # Remove version constraints like >=, <=, =, >, <, ~
+                    cleaned_name = re.split(r'[>=<~]', dep_name, 1)[0].strip()
+
+                    # Basic validation: ensure it looks like a package name after cleaning
+                    if cleaned_name and re.match(r'^[a-zA-Z0-9._-]+$', cleaned_name):
+                        current_part = f"{dep_prefix}{cleaned_name}"
+                    elif cleaned_name: # Looks invalid after cleaning
+                        print(f"  ⚠️ 清理后的依赖 '{cleaned_name}' (来自 '{original_dep_for_log}') 格式无效，已丢弃。文件: {get_relative_path(str(makefile_path))}")
+                        current_part = None # Mark for removal
+                    # else: keep original dep if cleaning results in empty string or no change needed
+
+                if current_part is not None: # Add if not marked for removal
+                    processed_depends.append(current_part)
+
+                if current_part != original_dep_for_log:
                     needs_fix = True
+                    # Log the change clearly
+                    # print(f"  🔧 清理依赖项部分: '{original_dep_for_log}' -> '{current_part or '(丢弃)'}' in {get_relative_path(str(makefile_path))}")
 
-                # Reconstruct the potentially cleaned part
-                # We keep the original structure for complex lines, just potentially without version constraints
-                current_part = f"{dep_prefix}{cleaned_name}" if cleaned_name else dep # Handle empty cleaned_name? Fallback to original dep.
 
-                # Basic validation check (optional, but good practice)
-                # If the part still looks weird after cleaning, maybe keep original?
-                # For now, we trust the cleaning for version constraints.
-                processed_depends.append(current_part)
-
-            # --- Apply fixes only if version constraints were found ---
+            # --- Apply fixes only if version constraints were found/removed ---
             if needs_fix:
                 if is_complex:
-                    # For complex lines (containing $ or parenthesis),
-                    # simply join the processed parts back together.
-                    # DO NOT remove duplicates, as it breaks Make syntax like $(foreach).
+                    # For complex lines, simply join the processed parts back. DO NOT remove duplicates.
                     new_depends_str = ' '.join(processed_depends)
-                    # Optional: Log that we handled a complex line differently
                     # print(f"  处理复杂依赖行 (仅移除版本约束): {get_relative_path(str(makefile_path))}")
                 else:
-                    # For simple lines, remove duplicates as before.
+                    # For simple lines, remove duplicates after cleaning.
                     # print(f"  处理简单依赖行 (移除版本约束和重复项): {get_relative_path(str(makefile_path))}")
+                    # Use dict for ordered unique items
                     seen = {}
                     unique_depends = []
-                    for item in processed_depends: # Iterate over the already cleaned parts
+                    for item in processed_depends:
                         item_prefix = ""
                         item_name = item
                         if item.startswith('+') or item.startswith('@'):
@@ -1156,47 +1270,46 @@ def process_makefile_depends(makefile_path: Path):
 
                         if not item_name: continue
 
+                        # Handle + vs @ preference for duplicates
                         if item_name not in seen:
                             seen[item_name] = item_prefix
                             unique_depends.append(item)
                         elif item_prefix == '@' and seen[item_name] == '+':
+                            # Upgrade existing '+' to '@'
                             seen[item_name] = '@'
+                            # Find and replace in unique_depends list
                             for i, old_item in enumerate(unique_depends):
                                 if old_item == f"+{item_name}":
                                     unique_depends[i] = item
                                     break
+                        # else: if current is '+' and seen is '@', do nothing (keep '@')
+                        # else: if prefixes are same, do nothing (already unique)
+
                     new_depends_str = ' '.join(unique_depends)
 
-                # Reconstruct the full line
+                # Reconstruct the full line/block (usually single line after fix)
                 new_depends_line = f"{prefix}{new_depends_str}"
 
                 # Replace the original block within the *current* state of new_content
                 current_block_in_new_content = new_content[start_index:end_index]
+
                 if current_block_in_new_content == original_depends_line_block: # Sanity check
                     new_content = new_content[:start_index] + new_depends_line + new_content[end_index:]
                     offset_adjustment += len(new_depends_line) - len(original_depends_line_block)
                     modified_in_file = True
                 else:
-                     print(f"⚠️ 替换依赖块时发生偏移错误或内容不匹配 in {get_relative_path(str(makefile_path))}")
-                     # Attempting replacement based on original value might be risky if content shifted significantly
-                     # Let's try replacing based on the original block content found initially
-                     # This is less safe but might work if only minor shifts occurred.
+                     # Fallback: Try to find the original block text again if content shifted
                      try:
-                         # Find the original block again in the potentially modified new_content
-                         current_start_index = new_content.find(original_depends_line_block, max(0, start_index - 50)) # Search around the original position
-                         if current_start_index != -1:
-                             current_end_index = current_start_index + len(original_depends_line_block)
-                             print(f"  尝试基于原始内容进行替换...")
-                             new_content = new_content[:current_start_index] + new_depends_line + new_content[current_end_index:]
-                             # Recalculate offset adjustment based on this replacement
-                             offset_adjustment = len(new_content) - len(original_content) # Simpler recalculation
-                             modified_in_file = True
-                         else:
-                              print(f"  无法在当前内容中重新定位原始块，跳过替换。")
-                              continue # Skip this match
-                     except Exception as replace_err:
-                          print(f"  基于原始内容替换时出错: {replace_err}, 跳过替换。")
-                          continue # Skip this match if fallback replacement fails
+                         current_start_index = new_content.index(original_depends_line_block, max(0, start_index - 100)) # Search wider range
+                         current_end_index = current_start_index + len(original_depends_line_block)
+                         print(f"  ⚠️ 内容偏移，尝试基于原始内容在 {current_start_index} 处替换...")
+                         new_content = new_content[:current_start_index] + new_depends_line + new_content[current_end_index:]
+                         offset_adjustment = len(new_content) - len(original_content) # Recalculate total offset
+                         modified_in_file = True
+                     except ValueError:
+                          print(f"  ❌ 无法在当前内容中重新定位原始块，跳过此 DEPENDS 行的替换。文件: {get_relative_path(str(makefile_path))}")
+                          # Do not set modified_in_file to True if replacement failed
+                          continue # Skip to next match
 
         if modified_in_file:
             print(f"✅ 已修改依赖项: {get_relative_path(str(makefile_path))}") # Log modified file
@@ -1216,6 +1329,7 @@ def process_makefile_depends(makefile_path: Path):
         return False
 
     return False # No modification needed or happened
+
 def fix_lua_neturl_download(log_content):
     """修复 lua-neturl 下载问题 (需要 requests 和 beautifulsoup4)"""
     if not (requests and BeautifulSoup):
@@ -1225,45 +1339,51 @@ def fix_lua_neturl_download(log_content):
     print("🔧 检测到 lua-neturl 下载错误，尝试更新 Makefile...")
 
     makefile_path = None
-    for pattern in ["feeds/small8/lua-neturl/Makefile", "package/feeds/small8/lua-neturl/Makefile"]:
-        path = Path(pattern)
-        if path.exists():
-            makefile_path = path
-            break
-
-    if not makefile_path:
+    # Search more broadly
+    makefile_paths = list(Path(".").glob("**/lua-neturl/Makefile"))
+    if not makefile_paths:
         print("❌ 无法找到 lua-neturl 的 Makefile。")
         return False
+    # Prioritize paths not in build_dir etc.
+    valid_paths = [p for p in makefile_paths if not any(ignored in p.parts for ignored in ['build_dir', 'staging_dir', 'tmp', 'dl'])]
+    if not valid_paths:
+        print("❌ 找到的 lua-neturl Makefile 都在忽略目录中。")
+        return False
+    makefile_path = valid_paths[0] # Take the first valid one
 
-    print(f"找到 Makefile: {makefile_path}")
+    print(f"找到 Makefile: {get_relative_path(str(makefile_path))}")
 
     try:
         # 1. Get latest tag from GitHub
         print("🌐 正在从 GitHub 获取最新的 neturl tag...")
-        response = requests.get("https://github.com/golgote/neturl/tags", timeout=15)
+        response = requests.get("https://github.com/golgote/neturl/tags", timeout=20)
         response.raise_for_status() # Raise exception for bad status codes
         soup = BeautifulSoup(response.text, 'html.parser')
-        # Find tags like vX.Y.Z or vX.Y.Z-N
         tag_elements = soup.find_all('a', href=re.compile(r'/golgote/neturl/releases/tag/v[\d.-]+'))
         tags = [tag.text.strip() for tag in tag_elements if re.match(r'^v[\d.-]+$', tag.text.strip())]
 
         if not tags:
-            print("⚠️ 未能在 GitHub 页面找到有效的版本标签，使用默认值 v1.2-1。")
-            latest_tag = "v1.2-1"
+            print("⚠️ 未能在 GitHub 页面找到有效的版本标签，无法自动更新。")
+            return False # Cannot proceed without a valid tag
         else:
-            # Simple sort might work for versions like v1.2, v1.10 but fail for v1.2-1 vs v1.2
-            # Let's just take the first one found, assuming GitHub lists newest first
+            # Simple sort might work, but taking the first is often sufficient if newest is first
             latest_tag = tags[0]
             print(f"✅ 获取到最新/第一个 tag: {latest_tag}")
 
         # 2. Derive version, source filename, URL, and expected build dir
         raw_version_part = latest_tag.lstrip('v') # e.g., 1.2-1
-        pkg_version = re.match(r'^(\d+(\.\d+)*)', raw_version_part).group(1) # e.g., 1.2
+        pkg_version_match = re.match(r'^(\d+(\.\d+)*)', raw_version_part)
+        if not pkg_version_match:
+             print(f"❌ 无法从 tag '{latest_tag}' 解析基础版本号。")
+             return False
+        pkg_version = pkg_version_match.group(1) # e.g., 1.2
+
         pkg_release = "1" # Default release
         release_match = re.search(r'-(\d+)$', raw_version_part)
         if release_match:
             pkg_release = release_match.group(1)
-            pkg_source_filename = f"neturl-{raw_version_part}.tar.gz"
+
+        pkg_source_filename = f"neturl-{raw_version_part}.tar.gz" # Use the raw version part for filename
         pkg_source_url = f"https://github.com/golgote/neturl/archive/refs/tags/{latest_tag}.tar.gz"
         expected_build_subdir = f"neturl-{raw_version_part}" # Directory inside tarball
 
@@ -1272,7 +1392,7 @@ def fix_lua_neturl_download(log_content):
         dl_dir.mkdir(exist_ok=True)
         tarball_path = dl_dir / pkg_source_filename
 
-        print(f"Downloading {pkg_source_url} to {tarball_path}...")
+        print(f"下载 {pkg_source_url} 到 {get_relative_path(str(tarball_path))}...")
         try:
             # Use wget or curl, whichever is available
             if shutil.which("wget"):
@@ -1282,11 +1402,13 @@ def fix_lua_neturl_download(log_content):
             else:
                 print("❌ wget 和 curl 都不可用，无法下载。")
                 return False
-            subprocess.run(download_cmd, check=True, timeout=60)
+            subprocess.run(download_cmd, check=True, timeout=90)
             print("✅ 下载成功。")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
             print(f"❌ 下载失败: {e}")
-            if tarball_path.exists(): tarball_path.unlink() # Clean up partial download
+            if tarball_path.exists():
+                try: tarball_path.unlink() # Clean up partial download
+                except OSError: pass
             return False
 
         # 4. Calculate SHA256 hash
@@ -1304,35 +1426,41 @@ def fix_lua_neturl_download(log_content):
         with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
             content = f.read()
         original_content = content
+        modified_content = content
 
-        content = re.sub(r'^(PKG_VERSION:=).*', rf'\g<1>{pkg_version}', content, flags=re.MULTILINE)
-        content = re.sub(r'^(PKG_RELEASE:=).*', rf'\g<1>{pkg_release}', content, flags=re.MULTILINE)
-        content = re.sub(r'^(PKG_SOURCE:=).*', rf'\g<1>{pkg_source_filename}', content, flags=re.MULTILINE)
-        content = re.sub(r'^(PKG_SOURCE_URL:=).*', rf'\g<1>{pkg_source_url}', content, flags=re.MULTILINE)
-        content = re.sub(r'^(PKG_HASH:=).*', rf'\g<1>{sha256_hex}', content, flags=re.MULTILINE)
+        # Use functions for safer replacement
+        def replace_line(pattern, replacement, text):
+            return re.sub(pattern, replacement, text, count=1, flags=re.MULTILINE)
+
+        modified_content = replace_line(r'^(PKG_VERSION:=).*', rf'\g<1>{pkg_version}', modified_content)
+        modified_content = replace_line(r'^(PKG_RELEASE:=).*', rf'\g<1>{pkg_release}', modified_content)
+        modified_content = replace_line(r'^(PKG_SOURCE:=).*', rf'\g<1>{pkg_source_filename}', modified_content)
+        modified_content = replace_line(r'^(PKG_SOURCE_URL:=).*', rf'\g<1>{pkg_source_url}', modified_content)
+        modified_content = replace_line(r'^(PKG_HASH:=).*', rf'\g<1>{sha256_hex}', modified_content)
 
         # Ensure PKG_BUILD_DIR is correct
         build_dir_line = f"PKG_BUILD_DIR:=$(BUILD_DIR)/{expected_build_subdir}"
         build_dir_regex = r'^\s*PKG_BUILD_DIR:=\$\(BUILD_DIR\)/.*'
-        if not re.search(build_dir_regex, content, re.MULTILINE):
-             insert_after = r'^\s*PKG_HASH:=[^\n]+'
-             content = re.sub(f'({insert_after})', f'\\1\n{build_dir_line}', content, 1, re.MULTILINE)
-        elif not re.search(r'^\s*PKG_BUILD_DIR:=\$\(BUILD_DIR\)/' + re.escape(expected_build_subdir) + r'\s*$', content, re.MULTILINE):
-             content = re.sub(build_dir_regex, build_dir_line, content, 1, re.MULTILINE)
+        if not re.search(build_dir_regex, modified_content, re.MULTILINE):
+             insert_after = r'^\s*PKG_HASH:=[^\n]+' # Insert after PKG_HASH
+             modified_content = re.sub(f'({insert_after})', f'\\1\n{build_dir_line}', modified_content, 1, re.MULTILINE)
+        elif not re.search(r'^\s*PKG_BUILD_DIR:=\$\(BUILD_DIR\)/' + re.escape(expected_build_subdir) + r'\s*$', modified_content, re.MULTILINE):
+             modified_content = re.sub(build_dir_regex, build_dir_line, modified_content, 1, re.MULTILINE)
 
-        if content != original_content:
+        if modified_content != original_content:
             with open(makefile_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f"✅ Makefile {makefile_path} 已更新。")
+                f.write(modified_content)
+            print(f"✅ Makefile {get_relative_path(str(makefile_path))} 已更新。")
 
             # Clean the package to apply changes
-            pkg_rel_path = makefile_path.parent.relative_to(Path.cwd())
-            print(f"🧹 清理旧的构建文件: {pkg_rel_path}")
-            subprocess.run(["make", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True)
-            # Optional: Update feeds index again after fixing a specific package
-            # print("Updating feeds index...")
-            # subprocess.run(["./scripts/feeds", "update", "-i"], check=False, capture_output=True)
-            # subprocess.run(["./scripts/feeds", "install", "lua-neturl"], check=False, capture_output=True)
+            try:
+                pkg_rel_path = makefile_path.parent.relative_to(Path.cwd())
+                print(f"🧹 清理旧的构建文件: {pkg_rel_path}")
+                subprocess.run(["make", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True)
+            except ValueError:
+                 print(f"⚠️ 无法获取 {makefile_path.parent} 的相对路径进行清理。")
+            except Exception as e:
+                 print(f"⚠️ 执行清理命令时出错: {e}")
 
             print("⏳ 等待 2 秒后重试...")
             time.sleep(2)
@@ -1350,96 +1478,111 @@ def fix_lua_neturl_download(log_content):
         print(f"❌ 更新 lua-neturl Makefile 时发生意外错误: {e}")
         return False
 
-def fix_apk_directly():
-    """直接修复 luci.mk 中的 apk mkpkg 调用以清理依赖 (v3)"""
-    print("🔧 尝试直接修改 luci.mk 中的 apk mkpkg 调用以清理依赖...")
-    luci_mk_path = None
-    possible_paths = ["feeds/luci/luci.mk", "package/feeds/luci/luci.mk", "package/luci/luci.mk"]
-    for path in possible_paths:
-        if os.path.exists(path):
-            luci_mk_path = path
-            break
+def fix_apk_directly(makefile_to_fix=None):
+    """直接修复 APK 依赖命令行参数 (修改 luci.mk 或指定 Makefile)"""
+    target_mk_path_str = ""
+    if makefile_to_fix and Path(makefile_to_fix).exists():
+        target_mk_path = Path(makefile_to_fix)
+        target_mk_path_str = get_relative_path(str(target_mk_path))
+        print(f"🔧 尝试直接修改指定的 Makefile '{target_mk_path_str}' 来修复 APK 依赖格式...")
+    else:
+        print("🔧 尝试直接修改 luci.mk 来修复 APK 依赖格式...")
+        luci_mk_path = None
+        # 优先使用 feeds 中的路径
+        possible_paths = ["feeds/luci/luci.mk", "package/feeds/luci/luci.mk", "package/luci/luci.mk"]
+        for path in possible_paths:
+            if os.path.exists(path):
+                luci_mk_path = Path(path)
+                break
+        if not luci_mk_path:
+            print(f"⚠️ 找不到 luci.mk (检查路径: {possible_paths})")
+            return False
+        target_mk_path = luci_mk_path
+        target_mk_path_str = get_relative_path(str(target_mk_path))
 
-    if not luci_mk_path:
-        print(f"⚠️ 找不到 luci.mk (检查路径: {possible_paths})")
-        return False
 
     try:
-        with open(luci_mk_path, 'r', encoding='utf-8') as f:
-            original_content = f.read()
+        with open(target_mk_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        original_content = content
 
-        content = original_content
-        made_change = False
+        # 检查是否已经修复过 (查找 CleanDependString 定义)
+        if "define CleanDependString" in content:
+            print(f"ℹ️ {target_mk_path_str} 似乎已经应用过修复。")
+            return True # 认为尝试过此方法
 
-        # 查找调用 apk mkpkg 并包含 --info "depends:$(PKG_DEPENDS)" 的行
-        # 这个模式需要精确匹配，可能需要根据实际 luci.mk 内容调整
-        # 假设 apk mkpkg 命令在一行内
-        apk_mkpkg_pattern = re.compile(r'(\$\(STAGING_DIR_HOST\)/bin/apk mkpkg .*?--info "depends:)(\$\(PKG_DEPENDS\))(".*)', re.IGNORECASE)
+        # 添加修复代码，使用 sed 来清理依赖项
+        fix_code = """
 
-        # 替换方案：在调用 apk mkpkg 前，用 shell 命令清理 PKG_DEPENDS
-        # 注意：这里的 shell 命令需要仔细构造，避免引号和特殊字符问题
-        # 使用一个临时变量 CLEANED_DEPENDS
-        replacement_logic = r"""\
-        CLEANED_DEPENDS=$$$$(echo '$(PKG_DEPENDS)' | tr ' ' '\\n' | sed -e 's/[<>=!~].*//g' -e '/^$$/d' | sort -u | tr '\\n' ' ' | sed -e 's/ $$//g'); \
-        \1$$$$(CLEANED_DEPENDS)\3
+# APK dependency fix v2: Define function to clean dependencies
+define CleanDependString
+$(strip $(shell echo '$(1)' | tr ' ' '\\n' | sed -e 's/[<>=!~].*//g' -e '/^$$/d' | sort -u | tr '\\n' ' '))
+endef
+
 """
-        # 使用 re.sub 进行替换
-        modified_content, num_replacements = apk_mkpkg_pattern.subn(replacement_logic, content)
+        # 查找插入点，通常在文件顶部或 include 之后
+        insert_pos = content.find("include $(TOPDIR)/rules.mk")
+        if insert_pos != -1:
+            insert_pos = content.find('\n', insert_pos) + 1
+            new_content = content[:insert_pos] + fix_code + content[insert_pos:]
+        else:
+            # Fallback: Insert at the beginning if include is not found
+            new_content = fix_code + content
+
+        # 修改依赖参数处理
+        # Match --info "depends:..." part, handle potential variations
+        # Use a raw string for the pattern
+        original_depends_pattern = r'(--info "depends:)(\$\(PKG_DEPENDS\))(")'
+        # Alternative pattern if PKG_DEPENDS is not directly used (less common)
+        alternative_depends_pattern = r'(--info "depends:)([^"]+)(")'
+
+        modified_content = new_content
+        num_replacements = 0
+
+        # Try replacing the primary pattern first
+        modified_content, count1 = re.subn(original_depends_pattern, r'\1$(call CleanDependString,\2)\3', modified_content)
+        num_replacements += count1
+
+        # If primary pattern wasn't found, try the alternative (more risky)
+        if count1 == 0:
+            modified_content, count2 = re.subn(alternative_depends_pattern, r'\1$(call CleanDependString,\2)\3', modified_content)
+            num_replacements += count2
+            if count2 > 0:
+                 print(f"  ⚠️ 使用了备用模式替换依赖项，请检查 {target_mk_path_str} 的正确性。")
+
 
         if num_replacements > 0:
-            print(f"  ✅ 在 {luci_mk_path} 中找到并修改了 {num_replacements} 处 apk mkpkg 调用以清理依赖。")
-            content = modified_content
-            made_change = True
-            # 移除可能存在的旧的 CleanDependString 函数定义，因为它不再需要
-            content = re.sub(r'^# APK dependency fix.*?endef\s*$', '', content, flags=re.MULTILINE | re.DOTALL).strip()
+            print(f"✅ 已在 {target_mk_path_str} 中添加依赖项清理函数并修改了 {num_replacements} 处依赖参数。")
+            with open(target_mk_path, 'w', encoding='utf-8') as f:
+                f.write(modified_content)
 
-        else:
-            print(f"  ⚠️ 未能在 {luci_mk_path} 中找到预期的 apk mkpkg 调用模式进行修改。")
-            # 检查是否已经应用过类似的修复 (查找 CLEANED_DEPENDS)
-            if "CLEANED_DEPENDS=" in content and "--info \"depends:$$$$(CLEANED_DEPENDS)\"" in content:
-                 print("  ℹ️ 似乎已应用过类似的修复逻辑。")
-                 made_change = False # 标记为未做修改，但认为尝试过
-            else:
-                 # 如果找不到模式，并且没有修复痕迹，则此方法失败
-                 print(f"  ❌ 无法应用修复逻辑到 {luci_mk_path}。")
-                 return False
+            # Clean tmp directory
+            tmp_dir = Path("tmp")
+            if tmp_dir.exists():
+                print("🧹 清理 tmp 目录...")
+                try: shutil.rmtree(tmp_dir)
+                except Exception as e: print(f"⚠️ 清理 tmp 目录失败: {e}")
 
-
-        # 如果做了修改，写回文件并清理
-        if made_change and content.strip() != original_content.strip():
-            print(f"  💾 写回修改到 {luci_mk_path}...")
-            with open(luci_mk_path, 'w', encoding='utf-8') as f:
-                f.write(content + "\n") # 确保末尾有换行
-
-            # 清理 tmp 目录
-            print("  🧹 清理 tmp 目录...")
-            if os.path.exists("tmp"):
-                try:
-                    shutil.rmtree("tmp")
-                    print("    ✅ tmp 目录已删除。")
-                except Exception as e:
-                    print(f"    ⚠️ 清理 tmp 目录失败: {e}")
-            else:
-                print("    ℹ️ tmp 目录不存在。")
-
-            # 清理相关包 (DIRCLEAN)
-            print("  🧹 清理相关构建缓存 (DIRCLEAN)...")
-            # ... (清理包的逻辑，同上) ...
-            packages_to_clean = [...] # 定义需要清理的包
-            for pkg_path in set(packages_to_clean):
-                 # ... (执行 make DIRCLEAN=1 .../clean) ...
-                 pass
+            # Clean potentially affected packages (heuristic)
+            print("🧹 清理可能受影响的包 (luci-base, toolchain)...")
+            subprocess.run(["make", "package/feeds/luci/luci-base/clean", "V=s"], check=False, capture_output=True)
+            subprocess.run(["make", "package/libs/toolchain/clean", "V=s"], check=False, capture_output=True)
+            # If a specific makefile was targeted, clean that package too
+            if makefile_to_fix:
+                 try:
+                     pkg_rel_path = target_mk_path.parent.relative_to(Path.cwd())
+                     print(f"🧹 清理目标包: {pkg_rel_path}")
+                     subprocess.run(["make", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True)
+                 except ValueError: pass # Ignore if path is outside CWD
+                 except Exception as e: print(f"⚠️ 清理目标包时出错: {e}")
 
             return True
-        elif made_change: # 内容相同，说明之前的修改就是这个
-             print(f"  ℹ️ {luci_mk_path} 内容已包含修复逻辑，无需写回。")
-             return True # 认为尝试过
-        else: # made_change 为 False
-            print(f"  ℹ️ {luci_mk_path} 无需修改。")
-            return True # 认为尝试过
+        else:
+            print(f"⚠️ 未能在 {target_mk_path_str} 中找到 '--info \"depends:$(PKG_DEPENDS)\"' 或类似模式进行替换。")
+            return False # Return False if no modification was made
 
     except Exception as e:
-        print(f"❌ 直接修复 luci.mk 中的 apk mkpkg 调用时出错: {e}")
+        print(f"❌ 直接修复 APK 依赖 ({target_mk_path_str}) 时出错: {e}")
         return False
 
 def fix_toolchain_provides_syntax(log_content):
@@ -1447,9 +1590,13 @@ def fix_toolchain_provides_syntax(log_content):
     print("🔧 检测到 toolchain provides 语法错误，尝试修复...")
     makefile_path = Path("package/libs/toolchain/Makefile")
     if not makefile_path.exists():
-        print("❌ 找不到 package/libs/toolchain/Makefile。")
-        return False
+        # Try alternative common location
+        makefile_path = Path("toolchain/Makefile")
+        if not makefile_path.exists():
+            print("❌ 找不到 toolchain Makefile (已检查 package/libs/toolchain/ 和 toolchain/)。")
+            return False
 
+    print(f"找到 toolchain Makefile: {get_relative_path(str(makefile_path))}")
     fixed = False
     try:
         with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
@@ -1458,24 +1605,31 @@ def fix_toolchain_provides_syntax(log_content):
 
         # Find lines like: --info "provides: name=version " (with trailing space)
         # And remove the trailing space inside the quotes
-        # Use a function for replacement to handle multiple occurrences
-        def remove_trailing_space(match):
-            nonlocal fixed
-            provides_val = match.group(1)
-            if provides_val.endswith(" "):
-                fixed = True
-                return f'--info "provides:{provides_val.rstrip()} "' # Keep space after quotes if any
-            return match.group(0) # No change
+        # Use a function for replacement to handle multiple occurrences safely
+        modified_lines = []
+        changed_in_file = False
+        for line in content.splitlines():
+            original_line = line
+            # More specific pattern to avoid accidental replacements
+            line = re.sub(r'(--info "provides:)([^"]+?)(\s+)(")', lambda m: f"{m.group(1)}{m.group(2).rstrip()}{m.group(4)}", line)
+            if line != original_line:
+                changed_in_file = True
+            modified_lines.append(line)
 
-        content = re.sub(r'--info "provides:([^"]+?)\s*"', remove_trailing_space, content)
-
-        if fixed:
+        if changed_in_file:
+            fixed = True
+            new_content = "\n".join(modified_lines)
             with open(makefile_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            print(f"✅ 已修复 {makefile_path} 中的 provides 字段空格问题。")
+                f.write(new_content)
+            print(f"✅ 已修复 {get_relative_path(str(makefile_path))} 中的 provides 字段空格问题。")
             # Clean toolchain package
             print("🧹 清理 toolchain 构建...")
-            subprocess.run(["make", "package/libs/toolchain/clean", "V=s"], check=False, capture_output=True)
+            # Determine make target path based on found Makefile location
+            if makefile_path.parts[0] == 'toolchain':
+                 clean_target = "toolchain/clean"
+            else:
+                 clean_target = "package/libs/toolchain/clean"
+            subprocess.run(["make", clean_target, "V=s"], check=False, capture_output=True)
             return True
         else:
             print("ℹ️ 未在 toolchain Makefile 中找到需要修复的 provides 字段空格。")
@@ -1500,22 +1654,24 @@ def fix_apk_wrapper_issues(log_content):
                   try:
                        wrapper_path.unlink()
                        real_path.rename(wrapper_path)
+                       wrapper_path.chmod(0o755) # Restore permissions
                        print("✅ 已恢复原始 apk 命令。")
                        return True # Action taken
                   except Exception as e:
                        print(f"❌ 恢复原始 apk 时出错: {e}")
+                       # Try deleting the wrapper anyway if rename failed
+                       try: wrapper_path.unlink()
+                       except OSError: pass
                        return False
              else:
-                  print("ℹ️ wrapper 存在但日志中未检测到其语法错误。")
-                  # Maybe the wrapper fixed the depends issue but another error occurred?
-                  # Or maybe the wrapper itself is fine but didn't fix the root cause.
-                  # Let's leave it for now, unless specific wrapper errors occur.
+                  print("ℹ️ wrapper 存在但日志中未检测到其语法错误。可能不需要处理。")
                   return False # No action taken on the wrapper itself
         else:
              # Wrapper script is missing, but real binary exists. Restore.
              print("⚠️ wrapper 脚本丢失，但备份存在。恢复原始 apk...")
              try:
                   real_path.rename(wrapper_path)
+                  wrapper_path.chmod(0o755)
                   print("✅ 已恢复原始 apk 命令。")
                   return True # Action taken
              except Exception as e:
@@ -1523,269 +1679,95 @@ def fix_apk_wrapper_issues(log_content):
                   return False
     else:
          # No wrapper seems to be active
+         # Check if the current apk is a script (might be an old broken wrapper without .real)
+         if wrapper_path.is_file() and not wrapper_path.is_symlink():
+             try:
+                 with open(wrapper_path, 'r') as f:
+                     first_line = f.readline()
+                 if first_line.startswith("#!"): # It's a script!
+                      print(f"⚠️ {wrapper_path} 是一个脚本但没有 .real 备份。可能是损坏的 wrapper。尝试删除...")
+                      try:
+                           wrapper_path.unlink()
+                           print(f"✅ 已删除可能是 wrapper 的脚本: {get_relative_path(str(wrapper_path))}")
+                           print("   下一步编译可能会因缺少 apk 而失败，但清除了潜在问题。")
+                           return True # Action taken (deletion)
+                      except Exception as e:
+                           print(f"❌ 删除脚本 {get_relative_path(str(wrapper_path))} 失败: {e}")
+                           return False
+             except Exception:
+                 pass # Ignore errors reading the file
+
+         # If it's not a script or doesn't exist, no wrapper issue detected
          return False # No action taken
 
-def fix_apk_depends_logic():
+def fix_apk_depends_problem():
     """
     综合处理 APK 依赖格式错误 (Error 99 或 invalid value)。
-    优先尝试修改 luci.mk。
+    优先尝试修复特定包 Makefile 问题 (如 luci-lib-taskd)，然后尝试修改 luci.mk。
     """
-    print("🔧 尝试修复 APK 依赖格式逻辑 (优先修改 luci.mk)...")
-    luci_mk_path = None
-    # Prefer feed path if it exists
-    feed_path = Path("feeds/luci/luci.mk")
-    package_path = Path("package/feeds/luci/luci.mk") # Fallback if using older structure/local copy
+    print("🔍 尝试综合解决方案修复 APK 依赖格式问题...")
+    fixed_something = False
 
-    if feed_path.exists():
-        luci_mk_path = feed_path
-    elif package_path.exists():
-        luci_mk_path = package_path
-
-    if luci_mk_path:
-        if fix_apk_directly(luci_mk_path):
-            return True # Fixed by modifying luci.mk
-        else:
-            # If modifying luci.mk didn't work or wasn't needed,
-            # maybe the issue is in *another* package's depends definition.
-            # Try the global DEPENDS format fix as a fallback.
-            print("ℹ️ 修改 luci.mk 未解决问题或无需修改，尝试全局 DEPENDS 格式修复...")
-            # We need log content for the global fix, assume it's available in the caller
-            # This function now just signals if the primary fix worked.
-            return False # Indicate primary fix didn't solve it
+    # 步骤 1: 专门修复 luci-lib-taskd 的 LUCI_EXTRA_DEPENDS (High priority if applicable)
+    print("  方法 1: 尝试注释掉 luci-lib-taskd/Makefile 中的 LUCI_EXTRA_DEPENDS...")
+    if fix_luci_lib_taskd_extra_depends():
+        print("  ✅ 方法 1 (注释 LUCI_EXTRA_DEPENDS) 执行完成。")
+        fixed_something = True
     else:
-        print("❌ 找不到 feeds/luci/luci.mk 或 package/feeds/luci/luci.mk。")
-        return False
+        print("  ℹ️ 方法 1 (注释 LUCI_EXTRA_DEPENDS) 未进行修改或失败。")
 
-def fix_apk_directly():
-    """直接修复 APK 依赖命令行参数 (修改 luci.mk)"""
-    print("🔧 尝试直接修改 luci.mk 来修复 APK 依赖格式...")
-    luci_mk_path = None
-    # 优先使用 feeds 中的路径
-    possible_paths = ["feeds/luci/luci.mk", "package/feeds/luci/luci.mk", "package/luci/luci.mk"]
-    for path in possible_paths:
-        if os.path.exists(path):
-            luci_mk_path = path
-            break
-
-    if not luci_mk_path:
-        print(f"⚠️ 找不到 luci.mk (检查路径: {possible_paths})")
-        return False
-
-    try:
-        with open(luci_mk_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-
-        # 检查是否已经修复过
-        if "# APK dependency fix" in content:
-            print(f"ℹ️ {luci_mk_path} 似乎已经应用过修复。")
-            # 即使已修复，也返回 True，表示尝试过此方法
-            return True
-
-        # 添加修复代码，使用 sed 来清理依赖项
-        fix_code = """
-# APK dependency fix
-define CleanDependString
-$(shell echo $(1) | tr ' ' '\\n' | sed -e 's/[<>=!~].*//g' -e '/^$$/d' | sort -u | tr '\\n' ' ' | sed -e 's/ $$//g')
-endef
-
-"""
-        # 查找插入点，通常在文件顶部或 include 之后
-        insert_pos = content.find("include $(TOPDIR)/rules.mk")
-        if insert_pos != -1:
-            insert_pos = content.find('\n', insert_pos) + 1
-            new_content = content[:insert_pos] + fix_code + content[insert_pos:]
+    # 步骤 2: 如果上一步无效或不适用，再尝试修改 luci.mk (作为通用修复)
+    if not fixed_something:
+        print("  方法 2: 尝试直接修改 luci.mk 中的 apk mkpkg 调用...")
+        if fix_apk_directly(): # Pass no specific file, targets luci.mk
+            print("  ✅ 方法 2 (修改 luci.mk) 执行完成。")
+            fixed_something = True
         else:
-            new_content = fix_code + content # 放在文件开头
+            print("  ℹ️ 方法 2 (修改 luci.mk) 未进行修改或失败。")
 
-        # 修改依赖参数处理
-        # 匹配 --info "depends:..." 部分，确保替换正确
-        # 使用 re.sub 更安全地处理可能的多行或复杂情况
-        original_depends_pattern = r'(--info "depends:)(\$\(PKG_DEPENDS\))(")'
-        replacement_pattern = r'\1$(call CleanDependString,\2)\3'
+    # 步骤 3: (可选) 尝试修复具体导致错误的包的 DEPENDS:= 行
+    # This might be redundant if luci.mk fix works globally, but can target specific issues.
+    if not fixed_something:
+        apk_error_sig = get_error_signature(log_content_global) # Use global log content
+        if "apk_add_invalid_dep_format" in apk_error_sig:
+            failed_pkg_name = apk_error_sig.split(":")[-1]
+            if failed_pkg_name != "unknown_pkg_from_apk":
+                print(f"  方法 3: 尝试修复包 '{failed_pkg_name}' 的 Makefile DEPENDS...")
+                possible_makefile_paths = list(Path(".").glob(f"**/{failed_pkg_name}/Makefile"))
+                found_makefile = None
+                for mf_path in possible_makefile_paths:
+                    if not any(ignored in mf_path.parts for ignored in ['build_dir', 'staging_dir', 'tmp', 'dl']):
+                        found_makefile = mf_path
+                        break
+                if found_makefile:
+                     if fix_single_makefile_depends(found_makefile):
+                          print(f"  ✅ 方法 3 (修复 {failed_pkg_name} DEPENDS) 执行完成。")
+                          fixed_something = True
+                     else:
+                          print(f"  ℹ️ 方法 3 (修复 {failed_pkg_name} DEPENDS) 未进行修改或失败。")
+                else:
+                     print(f"  ⚠️ 方法 3: 未找到包 '{failed_pkg_name}' 的 Makefile。")
 
-        modified_content, num_replacements = re.subn(original_depends_pattern, replacement_pattern, new_content)
-
-        if num_replacements > 0:
-            with open(luci_mk_path, 'w', encoding='utf-8') as f:
-                f.write(modified_content)
-            print(f"✅ 已在 {luci_mk_path} 中添加依赖项清理函数并修改了 {num_replacements} 处依赖参数。")
-
-            # 清理可能受影响的包的构建缓存 (示例，可能需要更精确)
-            print("🧹 清理 luci 相关构建缓存...")
-            subprocess.run(["make", "package/feeds/luci/luci-base/clean"], check=False, capture_output=True)
-            subprocess.run(["make", "package/feeds/small8/luci-lib-taskd/clean"], check=False, capture_output=True)
-            # 清理 toolchain 缓存，因为它也调用 apk
-            subprocess.run(["make", "package/libs/toolchain/clean"], check=False, capture_output=True)
-            return True
-        else:
-            print(f"⚠️ 未能在 {luci_mk_path} 中找到 '--info \"depends:$(PKG_DEPENDS)\"' 进行替换。")
-            # 即使未替换，但文件存在且尝试过，也算是一种尝试
-            return True # 返回 True 表示尝试过，但不一定成功修改
-
-    except Exception as e:
-        print(f"❌ 直接修复 APK 依赖 (luci.mk) 时出错: {e}")
-        return False
-
-def fix_luci_lib_taskd_makefile():
-    """修复 luci-lib-taskd 的依赖格式问题 (创建 APK wrapper - 作为备选方案)"""
-    print("🛠️ 使用拦截方法修复 APK 依赖格式问题 (备选方案)...")
-
-    apk_script_path = "staging_dir/host/bin/apk"
-    apk_real_path = "staging_dir/host/bin/apk.real"
-
-    # 确保 staging_dir/host/bin 存在
-    host_bin_dir = Path("staging_dir/host/bin")
-    if not host_bin_dir.exists():
-        print(f"⚠️ 目录 {host_bin_dir} 不存在，无法创建 wrapper。")
-        return False
-    host_bin_dir.mkdir(parents=True, exist_ok=True) # 尝试创建
-
-    # 如果 wrapper 已存在，先删除，尝试恢复原始文件
-    if os.path.exists(apk_script_path) and os.path.realpath(apk_script_path) != apk_script_path: # 检查是否是符号链接或我们的脚本
-         if os.path.exists(apk_real_path):
-             print(f"ℹ️ 检测到现有 wrapper，尝试恢复原始 apk...")
-             try:
-                 os.remove(apk_script_path)
-                 os.rename(apk_real_path, apk_script_path)
-                 os.chmod(apk_script_path, 0o755) # 恢复权限
-             except Exception as e:
-                 print(f"⚠️ 恢复原始 apk 失败: {e}")
-                 # 继续尝试创建新的 wrapper
-         else:
-              print(f"⚠️ 检测到现有 wrapper 但无备份 ({apk_real_path})，尝试直接覆盖...")
-              try:
-                  os.remove(apk_script_path)
-              except Exception as e:
-                  print(f"⚠️ 删除现有 wrapper 失败: {e}")
-
-
-    # 检查原始 apk 是否存在
-    if not os.path.exists(apk_script_path) or os.path.islink(apk_script_path):
-         print(f"⚠️ 找不到原始 apk 命令 ({apk_script_path}) 或它是一个链接。")
-         # 尝试寻找可能的真实路径
-         real_apk_found = False
-         for potential_real_path in host_bin_dir.glob("apk*"):
-             if potential_real_path.name != "apk" and not potential_real_path.name.endswith(".real"):
-                 try:
-                     # 假设找到的是原始 apk，重命名它
-                     os.rename(potential_real_path, apk_script_path)
-                     os.chmod(apk_script_path, 0o755)
-                     print(f"✅ 找到了可能的原始 apk 并重命名为: {apk_script_path}")
-                     real_apk_found = True
-                     break
-                 except Exception as e:
-                     print(f"⚠️ 尝试重命名 {potential_real_path} 失败: {e}")
-         if not real_apk_found:
-              print(f"❌ 无法定位原始 apk 命令，无法创建 wrapper。")
-              return False
-
-
-    # 创建 wrapper
-    try:
-        print(f"ℹ️ 备份原始 apk 到 {apk_real_path}")
-        shutil.move(apk_script_path, apk_real_path) # 使用 shutil.move 更可靠
-        os.chmod(apk_real_path, 0o755)
-
-        # 创建脚本替换原命令 - 使用更健壮的参数处理和引号
-        wrapper_content = f'''#!/bin/sh
-# APK wrapper script to fix dependency format issues (v2)
-REAL_APK="{apk_real_path}"
-
-# Log wrapper execution for debugging
-# echo "APK Wrapper executing with args: $@" >> /tmp/apk_wrapper.log
-
-if [ "$1" = "mkpkg" ]; then
-    fixed_args=""
-    skip_next=0
-    depend_fixed=0
-
-    # Iterate through arguments carefully
-    for arg in "$@"; do
-        if [ "$skip_next" -eq 1 ]; then
-            skip_next=0
-            continue
-        fi
-
-        case "$arg" in
-            --info)
-                # Check the next argument
-                next_arg=$(eval echo \\$\\$\\(\\( \\(echo "$@" | awk -v current="$arg" '{{ for(i=1; i<=NF; i++) if ($i == current) print i+1 }}'\\) \\)\\))
-                # echo "Next arg for --info: $next_arg" >> /tmp/apk_wrapper.log # Debug log
-                if echo "$next_arg" | grep -q "^depends:"; then
-                    # Extract dependencies, handling potential spaces within quotes
-                    deps_raw=$(echo "$next_arg" | sed 's/^depends://')
-                    # echo "Raw deps: $deps_raw" >> /tmp/apk_wrapper.log # Debug log
-
-                    # Clean dependencies: remove version constraints, remove duplicates, handle empty strings
-                    # Use awk for more robust splitting on spaces, then process each part
-                    fixed_deps=$(echo "$deps_raw" | awk '{{for(i=1;i<=NF;i++) print $i}}' | sed -e 's/[<>=!~].*//g' -e '/^$/d' | sort -u | tr '\\n' ' ' | sed 's/ $//')
-                    # echo "Fixed deps: $fixed_deps" >> /tmp/apk_wrapper.log # Debug log
-
-                    # Reconstruct the argument with proper quoting
-                    fixed_args="$fixed_args --info 'depends:$fixed_deps'" # Use single quotes for the value
-                    skip_next=1 # Skip the original dependency string in the next iteration
-                    depend_fixed=1
-                else
-                    # Not a depends info, pass both args as they are
-                    fixed_args="$fixed_args '$arg' '$next_arg'" # Quote both
-                    skip_next=1
-                fi
-                ;;
-            *)
-                # Handle other arguments, quote them just in case
-                fixed_args="$fixed_args '$arg'"
-                ;;
-        esac
-    done
-
-    if [ "$depend_fixed" -eq 1 ]; then
-        echo "🔧 APK wrapper: Fixed dependency format for mkpkg" >&2
-        # echo "Executing: $REAL_APK $fixed_args" >> /tmp/apk_wrapper.log # Debug log
-        eval "$REAL_APK $fixed_args" # Use eval to handle the constructed args string
-        exit $? # Propagate exit code
-    else
-        # echo "Executing original: $REAL_APK $@" >> /tmp/apk_wrapper.log # Debug log
-        "$REAL_APK" "$@"
-        exit $?
-    fi
-else
-    # Not mkpkg, just pass through
-    # echo "Executing original (non-mkpkg): $REAL_APK $@" >> /tmp/apk_wrapper.log # Debug log
-    "$REAL_APK" "$@"
-    exit $?
-fi
-'''
-        with open(apk_script_path, 'w') as f:
-            f.write(wrapper_content)
-        os.chmod(apk_script_path, 0o755)
-        print("✅ 已创建 APK 命令包装器 (wrapper)。")
-        return True
-    except Exception as e:
-        print(f"❌ 创建 APK 命令包装器时出错: {e}")
-        # 尝试恢复
-        if os.path.exists(apk_real_path) and not os.path.exists(apk_script_path):
-            try:
-                print(f"ℹ️ 尝试恢复原始 apk 从 {apk_real_path}")
-                shutil.move(apk_real_path, apk_script_path)
-            except Exception as re_e:
-                 print(f"⚠️ 恢复原始 apk 失败: {re_e}")
-        return False
-
+    return fixed_something
 
 def fix_luci_lib_taskd_extra_depends():
     """专门注释掉 luci-lib-taskd/Makefile 中的 LUCI_EXTRA_DEPENDS 行"""
     print("🔧 尝试特定修复: 注释掉 luci-lib-taskd/Makefile 中的 LUCI_EXTRA_DEPENDS...")
     makefile_path = None
     # 精确查找 Makefile
-    possible_paths = list(Path(".").glob("**/feeds/small8/luci-lib-taskd/Makefile"))
-    if not possible_paths:
-         possible_paths = list(Path(".").glob("**/package/feeds/small8/luci-lib-taskd/Makefile")) # 备用
-
+    possible_paths = list(Path(".").glob("**/luci-lib-taskd/Makefile"))
     if not possible_paths:
         print(f"  ⚠️ 未找到 luci-lib-taskd 的 Makefile。")
         return False
-    makefile_path = possible_paths[0]
-    print(f"  ➡️ 定位到 Makefile: {makefile_path}")
+
+    # Filter out paths in ignored directories
+    valid_paths = [p for p in possible_paths if not any(ignored in p.parts for ignored in ['build_dir', 'staging_dir', 'tmp', 'dl'])]
+    if not valid_paths:
+        print(f"  ⚠️ 找到的 luci-lib-taskd Makefile 都在忽略目录中。")
+        return False
+    makefile_path = valid_paths[0] # Take the first valid one
+    makefile_path_rel = get_relative_path(str(makefile_path))
+    print(f"  ➡️ 定位到 Makefile: {makefile_path_rel}")
 
     try:
         with open(makefile_path, 'r', encoding='utf-8') as f:
@@ -1795,8 +1777,8 @@ def fix_luci_lib_taskd_extra_depends():
         modified = False
         found_target_line = False
 
-        # 精确匹配需要注释掉的行
-        target_line_pattern = re.compile(r"^\s*LUCI_EXTRA_DEPENDS\s*:=\s*taskd\s*\(\s*>=?\s*[\d.-]+\s*\)\s*$", re.IGNORECASE)
+        # 精确匹配需要注释掉的行 (allow variations in spacing and version)
+        target_line_pattern = re.compile(r"^\s*LUCI_EXTRA_DEPENDS\s*[:+]?=\s*\+?taskd\s*(?:\(.*\))?\s*$", re.IGNORECASE)
 
         for i, line in enumerate(lines):
             stripped_line = line.strip()
@@ -1816,75 +1798,50 @@ def fix_luci_lib_taskd_extra_depends():
 
         if not found_target_line:
              print(f"  ⚠️ 未找到需要注释的 LUCI_EXTRA_DEPENDS 行。")
-             # 检查 DEPENDS 是否已被手动修复（作为后备检查）
-             define_block_pattern = re.compile(r'define Package/luci-lib-taskd\s*.*?\s*DEPENDS\s*:=\s*\+taskd\s+\+luci-lib-xterm\s+\+luci-lua-runtime(?:\s+\+libc)?\s*.*?\s*endef', re.DOTALL | re.IGNORECASE)
+             # Check DEPENDS as a fallback indicator of manual fix
+             define_block_pattern = re.compile(r'define Package/luci-lib-taskd\s*.*?\s*DEPENDS\s*:=\s*.*?\+taskd\s+', re.DOTALL | re.IGNORECASE)
              if define_block_pattern.search("".join(lines)):
-                 print("  ℹ️ 检测到可能已被手动修复的 DEPENDS 定义。")
-                 return True # 认为问题已解决
-             return False # 确实没找到问题行
+                 print("  ℹ️ 检测到 DEPENDS 可能已被手动修复。")
+                 return True # Assume problem is addressed
+             return False # Truly not found
 
         if modified:
-            print(f"  ✅ 准备写回修改到 {makefile_path}")
+            print(f"  ✅ 准备写回修改到 {makefile_path_rel}")
             with open(makefile_path, 'w', encoding='utf-8') as f:
                 f.writelines(new_lines)
             # 清理该包的缓存
-            print(f"  🧹 清理包 'luci-lib-taskd' 缓存 (DIRCLEAN)...")
-            subprocess.run(["make", f"DIRCLEAN=1", f"{makefile_path.parent}/clean"], check=False, capture_output=True)
-            # 清理 tmp 目录可能有助于确保更改生效
-            print("  🧹 清理 tmp 目录...")
-            if os.path.exists("tmp"):
-                try: shutil.rmtree("tmp"); print("    ✅ tmp 目录已删除。")
+            try:
+                pkg_rel_path = makefile_path.parent.relative_to(Path.cwd())
+                print(f"  🧹 清理包 '{pkg_rel_path}' 缓存 (DIRCLEAN)...")
+                subprocess.run(["make", f"DIRCLEAN=1", f"{pkg_rel_path}/clean", "V=s"], check=False, capture_output=True)
+            except ValueError:
+                 print(f"  ⚠️ 无法获取 {makefile_path.parent} 的相对路径进行清理。")
+            except Exception as e:
+                 print(f"  ⚠️ 执行清理命令时出错: {e}")
+
+            # Clean tmp directory as well
+            tmp_dir = Path("tmp")
+            if tmp_dir.exists():
+                print("  🧹 清理 tmp 目录...")
+                try: shutil.rmtree(tmp_dir); print("    ✅ tmp 目录已删除。")
                 except Exception as e: print(f"    ⚠️ 清理 tmp 目录失败: {e}")
             return True
         else:
-            print(f"  ℹ️ {makefile_path} 无需修改 (LUCI_EXTRA_DEPENDS 已注释或不存在)。")
-            return True # 认为问题已解决或无需处理
+            print(f"  ℹ️ {makefile_path_rel} 无需修改 (LUCI_EXTRA_DEPENDS 已注释或不存在)。")
+            return True # Assume problem is addressed or not applicable
 
     except Exception as e:
         print(f"❌ 修改包 'luci-lib-taskd' 的 Makefile 时出错: {e}")
         return False
 
-# --- 更新 fix_apk_depends_problem ---
-def fix_apk_depends_problem():
-    """综合性解决方案解决 APK 依赖格式问题 (v8 - 优先修复特定包 Makefile 问题)"""
-    print("🔍 尝试综合解决方案修复 APK 依赖格式问题...")
-    fixed_something = False
-
-    # 步骤 1: 专门修复 luci-lib-taskd 的 LUCI_EXTRA_DEPENDS
-    print("  方法 1: 尝试注释掉 luci-lib-taskd/Makefile 中的 LUCI_EXTRA_DEPENDS...")
-    if fix_luci_lib_taskd_extra_depends():
-        print("  ✅ 方法 1 (注释 LUCI_EXTRA_DEPENDS) 执行完成。")
-        fixed_something = True
-    else:
-        print("  ℹ️ 方法 1 (注释 LUCI_EXTRA_DEPENDS) 未进行修改或失败。")
-
-    # 步骤 2: 如果上一步无效，再尝试修改 luci.mk (作为后备)
-    if not fixed_something:
-        print("  方法 2: 尝试直接修改 luci.mk 中的 apk mkpkg 调用...")
-        if fix_apk_directly():
-            print("  ✅ 方法 2 (修改 luci.mk) 执行完成。")
-            fixed_something = True
-        else:
-            print("  ❌ 方法 2 (修改 luci.mk) 失败。")
-
-    # 步骤 3: 尝试修复具体包的 DEPENDS:= 行 (作为补充)
-    # 这个步骤现在可能不太必要，因为根源是 LUCI_EXTRA_DEPENDS，但保留以防万一
-    apk_error_sig = get_error_signature(log_content_global)
-    if "apk_depends_invalid" in apk_error_sig:
-        failed_pkg_name = apk_error_sig.split(":")[-1]
-        if failed_pkg_name != "unknown_pkg_from_apk":
-            print(f"  补充方法: 尝试修复包 '{failed_pkg_name}' 的 Makefile DEPENDS...")
-            # ... (查找并修复具体包 Makefile 的逻辑) ...
-            pass # 可以暂时跳过或保留之前的逻辑
-
-
-    return fixed_something
 def fix_apk_wrapper_syntax():
     """修复 APK 包装器脚本中的语法错误"""
     print("🔧 检测到 APK wrapper 语法错误，尝试修复...")
 
     wrapper_path = Path("staging_dir/host/bin/apk")
     real_path = Path("staging_dir/host/bin/apk.real")
+    wrapper_path_rel = get_relative_path(str(wrapper_path))
+    real_path_rel = get_relative_path(str(real_path))
 
     if wrapper_path.exists() and real_path.exists():
         try:
@@ -1892,41 +1849,53 @@ def fix_apk_wrapper_syntax():
             with open(wrapper_path, 'r') as f:
                 content = f.read()
 
-            # 检查是否是我们的 wrapper (通过注释判断)
-            if "# APK wrapper script" in content:
-                print("  ℹ️ 检测到旧的 APK wrapper，移除并恢复原始命令...")
+            # 检查是否是我们的 wrapper (通过注释或特征判断)
+            if "# APK wrapper script" in content or 'REAL_APK=' in content:
+                print(f"  ℹ️ 检测到旧的/错误的 APK wrapper ({wrapper_path_rel})，移除并恢复原始命令...")
                 wrapper_path.unlink() # 删除脚本
                 real_path.rename(wrapper_path) # 恢复原始命令
                 wrapper_path.chmod(0o755) # 恢复权限
-                print("  ✅ 已恢复原始 APK 命令。")
+                print(f"  ✅ 已恢复原始 APK 命令 ({wrapper_path_rel})。")
 
                 # 恢复后，尝试直接修复依赖问题，因为这可能是根本原因
                 print("  ▶️ 尝试再次运行直接修复 (luci.mk)...")
                 return fix_apk_directly() # 返回直接修复的结果
             else:
-                print(f"  ⚠️ {wrapper_path} 存在但不是预期的 wrapper 脚本。")
+                print(f"  ⚠️ {wrapper_path_rel} 存在但不是预期的 wrapper 脚本。")
                 # 可能是其他东西，不要动它，返回 False
                 return False
         except Exception as e:
             print(f"❌ 移除旧 wrapper 或恢复原始 apk 时出错: {e}")
             return False
     elif wrapper_path.exists() and not real_path.exists():
-         print(f"  ⚠️ 找到 {wrapper_path} 但没有备份 {real_path}。可能是原始 apk。")
-         # 假设它是原始apk，尝试直接修复
-         print("  ▶️ 尝试运行直接修复 (luci.mk)...")
-         return fix_apk_directly()
+         print(f"  ⚠️ 找到 {wrapper_path_rel} 但没有备份 {real_path_rel}。可能是原始 apk 或损坏的 wrapper。")
+         # 尝试检查它是否是脚本
+         is_script = False
+         try:
+             with open(wrapper_path, 'r') as f:
+                 first_line = f.readline()
+             if first_line.startswith("#!"): is_script = True
+         except Exception: pass
+
+         if is_script:
+             print(f"  ⚠️ {wrapper_path_rel} 是一个脚本，可能是损坏的 wrapper。尝试删除...")
+             try:
+                 wrapper_path.unlink()
+                 print(f"  ✅ 已删除脚本: {wrapper_path_rel}")
+                 return True # Action taken
+             except Exception as e:
+                 print(f"  ❌ 删除脚本失败: {e}")
+                 return False
+         else:
+             # Assume it's the original apk, try direct fix
+             print("  ▶️ 假设是原始 APK，尝试运行直接修复 (luci.mk)...")
+             return fix_apk_directly()
     else:
-        print(f"  ⚠️ 找不到 APK wrapper ({wrapper_path}) 或原始备份 ({real_path})。")
+        print(f"  ⚠️ 找不到 APK wrapper ({wrapper_path_rel}) 或原始备份 ({real_path_rel})。")
         # 尝试直接修复
         print("  ▶️ 尝试运行直接修复 (luci.mk)...")
         return fix_apk_directly()
 
-
-
-# Assuming get_relative_path function exists as before
-# Assuming get_error_signature function exists and works as before
-# --- Global flag for pre-computation ---
-needs_base_files_precompute = False
 def fix_apk_add_base_files_issue(log_content):
     """修复 apk add 时 base-files= 或类似包版本缺失导致的 Error 99 (v11: 设置预处理标志)"""
     global needs_base_files_precompute
@@ -1951,23 +1920,43 @@ def fix_apk_add_base_files_issue(log_content):
     except Exception as e:
         print(f"    ⚠️ 创建 {tmp_dir} 目录失败: {e}")
 
-    # Clean staging package directory
-    target_arch_match = re.search(r'staging_dir/target-([a-zA-Z0-9_]+)', log_content)
-    package_dir_match = re.search(r'staging_dir/packages/([a-zA-Z0-9_]+)', log_content)
+    # Clean staging package directory (more specific target)
     staging_pkg_dir_path = None
-    if package_dir_match:
-        staging_pkg_dir_path = Path("staging_dir/packages") / package_dir_match.group(1)
-    elif target_arch_match:
-         target_name = target_arch_match.group(1)
-         if 'ramips' in target_name:
-             staging_pkg_dir_path = Path("staging_dir/packages/ramips")
+    # Try to find the specific target staging dir mentioned in logs if possible
+    target_staging_match = re.search(r'staging_dir/target-([a-zA-Z0-9_.-]+)', log_content)
+    if target_staging_match:
+        target_name = target_staging_match.group(1)
+        # Construct path like staging_dir/target-mipsel_24kc_musl/pkginfo
+        pkginfo_dir = Path("staging_dir") / f"target-{target_name}" / "pkginfo"
+        if pkginfo_dir.exists():
+             # Clean the pkginfo dir as it contains dependency info
+             staging_pkg_dir_path = pkginfo_dir # Target this dir for cleaning
+        else:
+             # Fallback to cleaning the packages dir for the arch
+             arch_match = re.search(r'mipsel|aarch64|x86_64|arm', target_name) # Basic arch detection
+             if arch_match:
+                  arch = arch_match.group(0)
+                  # Heuristic: try common package dir names
+                  for pkg_dir_name in [arch, f"{arch}_core", f"{arch}_generic", "all"]:
+                       potential_path = Path("staging_dir/packages") / pkg_dir_name
+                       if potential_path.exists():
+                           staging_pkg_dir_path = potential_path
+                           break
+    # Fallback if no specific dir found
+    if not staging_pkg_dir_path:
+         staging_pkg_dir_path = Path("staging_dir/packages") # Clean the whole packages dir as last resort
+
     if staging_pkg_dir_path and staging_pkg_dir_path.exists():
         print(f"  🧹 清理目录: {get_relative_path(str(staging_pkg_dir_path))}")
         try:
+            # Be careful cleaning staging_dir/packages directly, maybe just clean specific arch?
+            # For now, let's stick to cleaning the determined path
+            if staging_pkg_dir_path.name == "packages" and staging_pkg_dir_path.parent.name == "staging_dir":
+                print("    ⚠️ 警告: 将清理整个 staging_dir/packages 目录。")
             shutil.rmtree(staging_pkg_dir_path)
             action_taken = True
         except Exception as e:
-            print(f"    ⚠️ 清理 {staging_pkg_dir_path} 目录失败: {e}")
+            print(f"    ⚠️ 清理 {get_relative_path(str(staging_pkg_dir_path))} 目录失败: {e}")
             action_taken = True
 
     # --- Set the flag ---
@@ -1976,181 +1965,211 @@ def fix_apk_add_base_files_issue(log_content):
 
     # Return True to indicate a fix strategy was determined
     return True
-# 主逻辑
+# --- Main Logic ---
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
-    parser.add_argument('make_command', help='编译命令，如 "make V=s"')
-    parser.add_argument('log_file', help='日志文件路径')
+    parser.add_argument('make_command', help='原始编译命令，例如 "make V=s"')
+    parser.add_argument('log_file', help='主日志文件基础名 (不含 .run.N.log)')
     parser.add_argument('--max-retry', type=int, default=8, help='最大重试次数')
-    parser.add_argument('--jobs', type=int, default=0, help='初始并行任务数')
+    parser.add_argument('--jobs', type=int, default=0, help='初始并行任务数 (0 表示自动检测)')
     args = parser.parse_args()
 
+    # Extract base command without -j flag
     base_cmd = re.sub(r'\s-j\s*\d+', '', args.make_command).strip()
+    # Determine initial jobs
     jobs = args.jobs if args.jobs > 0 else (os.cpu_count() or 1)
+    print(f"初始并行任务数: {jobs}")
+
     retry = 1
-    log_content_global = "" # Initialize log_content_global
-    last_error = None
+    last_error_signature = None
     same_error_count = 0
-    needs_base_files_precompute = False # Ensure this is initialized if used
+    global log_content_global # Allow modification
+    global needs_base_files_precompute # Allow modification
 
     while retry <= args.max_retry:
-        # --- Pre-computation Step (e.g., for base-files) ---
+        # --- Pre-computation Step (if flagged) ---
         if needs_base_files_precompute:
-            print("🚀 执行预处理步骤：编译 base-files...")
+            print(f"\n🚀 [尝试 {retry-1} 后] 执行预处理步骤：编译 base-files...")
             precompute_cmd = f"{base_cmd} package/base-files/compile V=s -j1" # Compile base-files specifically
             print(f"运行: {precompute_cmd}")
-            pre_log = f"{Path(args.log_file).stem}.pre.{retry}.log"
-            pre_status = subprocess.run(precompute_cmd, shell=True, stdout=open(pre_log, 'w'), stderr=subprocess.STDOUT).returncode
+            pre_log_file = f"{args.log_file}.pre.{retry}.log"
+            pre_status = -1
+            try:
+                with open(pre_log_file, 'w', encoding='utf-8', errors='replace') as plog:
+                    process = subprocess.run(precompute_cmd, shell=True, stdout=plog, stderr=subprocess.STDOUT, timeout=300) # Add timeout
+                    pre_status = process.returncode
+            except subprocess.TimeoutExpired:
+                 print(f"❌ base-files 预编译超时 (日志: {pre_log_file})")
+            except Exception as e:
+                 print(f"❌ base-files 预编译时发生错误: {e} (日志: {pre_log_file})")
+
+
             if pre_status == 0:
                 print("✅ base-files 预编译成功。")
-                # Find and rename the apk file if necessary (optional but safer)
+                # Find and rename the apk file if necessary
                 try:
-                    staging_pkg_dir = next(Path("staging_dir/packages").glob("*"), None) # Guess package arch dir
+                    # Find staging package dir more reliably
+                    staging_pkg_dir = None
+                    for p in Path("staging_dir/packages").iterdir():
+                        if p.is_dir(): # Assume the first directory found is the target arch
+                            staging_pkg_dir = p
+                            break
                     if staging_pkg_dir:
                         base_files_apks = list(staging_pkg_dir.glob("base-files_*.apk"))
                         for apk_path in base_files_apks:
                             if "=" not in apk_path.name:
-                                version_match = re.search(r'_([\d.-]+(?:_r\d+)?)-', apk_path.name)
+                                # Extract version like 2023-01-01-abcdef12 or just a number
+                                version_match = re.search(r'_([\d.-]+(?:_[a-f0-9]+)?(?:-r\d+)?)_', apk_path.name)
                                 if version_match:
                                     version = version_match.group(1)
                                     new_name = f"base-files={version}.apk"
                                     new_path = apk_path.with_name(new_name)
                                     print(f"  🏷️ 重命名 base-files APK: {apk_path.name} -> {new_path.name}")
-                                    apk_path.rename(new_path)
+                                    try:
+                                        apk_path.rename(new_path)
+                                    except OSError as rename_e:
+                                         print(f"    ⚠️ 重命名失败: {rename_e}")
                                 else:
                                      print(f"  ⚠️ 无法从 {apk_path.name} 提取版本以重命名。")
+                    else:
+                        print("  ⚠️ 未找到 staging_dir/packages/<arch> 目录来检查 base-files APK。")
                 except Exception as e:
                     print(f"  ⚠️ 重命名 base-files APK 时出错: {e}")
-            else:
-                print(f"❌ base-files 预编译失败 (日志: {pre_log})，继续尝试主编译...")
-            needs_base_files_precompute = False # Reset flag
+            elif pre_status != -1: # If not timeout/exception
+                print(f"❌ base-files 预编译失败，返回码: {pre_status} (日志: {pre_log_file})，继续尝试主编译...")
+            needs_base_files_precompute = False # Reset flag regardless of outcome
 
         # --- Main Compile Step ---
+        current_run_log = f"{args.log_file}.run.{retry}.log"
         cmd = f"{base_cmd} -j{jobs}"
-        print(f"尝试 {retry}/{args.max_retry} 次: {cmd}")
-        log_file = f"{Path(args.log_file).stem}.run.{retry}.log"
+        print(f"\n--- 尝试 {retry}/{args.max_retry} ---")
+        print(f"运行命令: {cmd}")
+        print(f"日志文件: {current_run_log}")
 
-        process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
-        with open(log_file, 'w', encoding='utf-8') as f:
-            for line in process.stdout:
-                sys.stdout.write(line)
-                f.write(line)
-        status = process.wait()
-
-        # Read log content AFTER process finishes
+        status = -1 # Default status
         try:
-            with open(log_file, 'r', encoding='utf-8', errors='replace') as f:
-                log_content_global = f.read()
-        except FileNotFoundError:
-             print(f"❌ 无法读取日志文件: {log_file}")
-             log_content_global = "" # Reset log content
+            # Use Popen to stream output and write to log simultaneously
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       text=True, encoding='utf-8', errors='replace', bufsize=1) # Line buffered
 
+            with open(current_run_log, 'w', encoding='utf-8', errors='replace') as f:
+                for line in iter(process.stdout.readline, ''):
+                    sys.stdout.write(line)
+                    f.write(line)
+            status = process.wait() # Get final return code
+
+        except Exception as e:
+            print(f"\n❌ 执行编译命令时发生异常: {e}")
+            # Write exception to log if possible
+            try:
+                with open(current_run_log, 'a', encoding='utf-8', errors='replace') as f:
+                    f.write(f"\n\n*** SCRIPT ERROR DURING EXECUTION ***\n{e}\n")
+            except Exception: pass
+            status = 1 # Assume failure
+
+        # --- Process Results ---
         if status == 0:
-            print("编译成功！")
+            print("\n✅ 编译成功！")
             return 0
 
-        error = get_error_signature(log_content_global)
-        print(f"错误: {error}")
+        print(f"\n❌ 编译失败 (返回码: {status})")
 
-        if error == last_error and error != "no_log_content": # Avoid loop on no log
+        # Read log content for error analysis
+        try:
+            with open(current_run_log, 'r', encoding='utf-8', errors='replace') as f:
+                log_content_global = f.read()
+        except FileNotFoundError:
+             print(f"❌ 无法读取日志文件: {current_run_log}")
+             log_content_global = "" # Reset log content
+             current_error_signature = "no_log_content_error"
+        except Exception as e:
+             print(f"❌ 读取日志文件时发生错误: {e}")
+             log_content_global = ""
+             current_error_signature = "log_read_error"
+        else:
+             current_error_signature = get_error_signature(log_content_global)
+
+        print(f"检测到的错误签名: {current_error_signature}")
+
+        # --- Consecutive Error Check ---
+        if current_error_signature == last_error_signature and current_error_signature not in ["no_log_content", "unknown_error", "log_read_error"]:
             same_error_count += 1
-            # Increase tolerance for metadata/dep errors as fixes might take >1 cycle
-            if error.startswith("apk_") or error.startswith("makefile_dep_missing"):
-                 if same_error_count >= 3:
-                      print("连续三次相同 APK/依赖 错误，停止重试")
-                      break
-            elif same_error_count >= 2:
-                print("连续两次相同错误，停止重试")
-                break
+            print(f"连续相同错误次数: {same_error_count + 1}")
+            # Define thresholds for stopping
+            # More tolerant for dependency/metadata issues which might need multiple steps
+            if current_error_signature.startswith(("apk_", "makefile_dep_", "metadata_")):
+                consecutive_threshold = 3
+            else:
+                consecutive_threshold = 2
+
+            if same_error_count >= consecutive_threshold:
+                print(f"错误 '{current_error_signature}' 连续出现 {same_error_count + 1} 次，达到阈值 {consecutive_threshold+1}，停止重试。")
+                break # Exit the while loop
         else:
-            same_error_count = 0
+            same_error_count = 0 # Reset counter if error changes
 
-        last_error = error
-        fixed_something = False # Flag to track if a fix was attempted
+        last_error_signature = current_error_signature
 
-        if error == "oom_detected":
-            jobs = handle_oom(jobs, log_content_global)
-            fixed_something = True # Adjusting jobs is a fix attempt
-        elif error.startswith("netifd_link_error"):
-            fixed_something = fix_netifd_libnl_tiny()
-        elif error == "lua_neturl_download":
-            fixed_something = fix_lua_neturl_download(log_content_global)
-        # --- Handle APK Invalid Version Format ---
-        elif error.startswith("apk_invalid_version_format:"):
-            print("🔧 检测到无效的包版本格式错误 (apk mkpkg)。")
-            # This error is caused by incorrect PKG_VERSION/PKG_RELEASE in a Makefile.
-            # fix_metadata_errors() should correct this.
-            fixed_something = fix_metadata_errors()
-            # Optionally clean the specific package that failed
-            pkg_name = error.split(":")[-1]
-            if pkg_name != "unknown_pkg_from_apk":
-                print(f"🧹 尝试清理包 '{pkg_name}' 以应用元数据修复...")
-                # Find makefile path (reuse logic if available or implement basic search)
-                pkg_makefile_paths = list(Path(".").glob(f"package/**/{pkg_name}/Makefile")) + \
-                                     list(Path(".").glob(f"feeds/**/{pkg_name}/Makefile"))
-                if pkg_makefile_paths:
-                    # Use relative path for make command
-                    try:
-                        pkg_rel_path = pkg_makefile_paths[0].parent.relative_to(Path.cwd())
-                        clean_cmd = ["make", f"{pkg_rel_path}/clean", "V=s"]
-                        print(f"  运行: {' '.join(clean_cmd)}")
-                        subprocess.run(clean_cmd, check=False, capture_output=True)
-                    except ValueError: # Handle case where path is outside CWD (less likely here)
-                        print(f"  ⚠️ 无法获取 {pkg_name} 的相对路径进行清理。")
-                else:
-                    print(f"  ⚠️ 未找到包 '{pkg_name}' 的 Makefile 进行清理。")
-            # If metadata fix was done, assume it might help, set fixed_something
-            if fixed_something: print("✅ 已尝试元数据修复。")
-
-        elif error == "trojan_plus_buffer_cast":
-            fixed_something = fix_trojan_plus_issues()
-        elif error.startswith("patch_failed"):
-            fixed_something = fix_patch_application(log_content_global)
-        elif error.startswith("makefile_separator"):
-            fixed_something = fix_makefile_separator(log_content_global)
-        elif error == "directory_conflict":
-            fixed_something = fix_directory_conflict(log_content_global)
-        elif error == "symlink_conflict":
-            fixed_something = fix_symbolic_link_conflict(log_content_global)
-        elif error == "toolchain_provides_syntax":
-            fixed_something = fix_toolchain_provides_syntax(log_content_global)
-        elif error == "luci_lib_taskd_depends":
-             # Try specific fix first
-             fixed_something = fix_luci_lib_taskd_extra_depends()
-             # If that didn't work or wasn't applicable, try the general depends fix
-             if not fixed_something:
-                  print("  ➡️ luci-lib-taskd 特定修复无效，尝试通用依赖修复...")
-                  fixed_something = fix_depends_format(log_content_global)
-        elif error == "apk_add_base_files":
-            fixed_something = fix_apk_add_base_files_issue(log_content_global) # Sets flag
-        elif error.startswith("makefile_dep_missing"):
-            fixed_something = fix_depends_format(log_content_global)
-        elif error.startswith("apk_depends_invalid"): # Handle general APK depends errors (like from luci.mk)
-             fixed_something = fix_apk_depends_problem() # Use the consolidated function
-             # If the primary fix (luci.mk or specific package) didn't work, try global format fix
-             if not fixed_something:
-                  print("  ➡️ APK 依赖修复无效，尝试通用依赖格式修复...")
-                  fixed_something = fix_depends_format(log_content_global)
-        elif error == "apk_wrapper_syntax":
-             fixed_something = fix_apk_wrapper_syntax()
-        elif error == "unknown_error":
-            print("未知错误，无法自动修复")
-            # Consider adding a fallback here, e.g., 'make clean' or deeper clean of tmp/staging
-            # Or maybe just reduce jobs as a last resort?
-            # jobs = max(1, jobs // 2)
-            # print(f"尝试减少 jobs 到 {jobs} 作为后备措施")
-            # fixed_something = True # Count reducing jobs as a fix attempt
+        # --- Attempt Fixes ---
+        fix_attempted = False
+        if current_error_signature == "oom_detected":
+            new_jobs = handle_oom(jobs, log_content_global)
+            if new_jobs != jobs:
+                jobs = new_jobs
+                fix_attempted = True
+        elif current_error_signature.startswith("netifd_link_error"):
+            fix_attempted = fix_netifd_libnl_tiny()
+        elif current_error_signature == "lua_neturl_download":
+            fix_attempted = fix_lua_neturl_download(log_content_global)
+        elif current_error_signature.startswith("apk_invalid_version_format:"):
+            fix_attempted = fix_metadata_errors() # This handles version format issues
+        elif current_error_signature == "trojan_plus_build_error": # Renamed signature
+            fix_attempted = fix_trojan_plus_issues()
+        elif current_error_signature.startswith("patch_failed"):
+            fix_attempted = fix_patch_application(log_content_global)
+        elif current_error_signature.startswith("makefile_separator"):
+            fix_attempted = fix_makefile_separator(log_content_global)
+        elif current_error_signature == "directory_conflict":
+            fix_attempted = fix_directory_conflict(log_content_global)
+        elif current_error_signature == "symlink_conflict": # Your specific error
+            fix_attempted = fix_symbolic_link_conflict(log_content_global)
+        elif current_error_signature == "toolchain_provides_syntax":
+            fix_attempted = fix_toolchain_provides_syntax(log_content_global)
+        elif current_error_signature == "luci_lib_taskd_depends":
+             fix_attempted = fix_apk_depends_problem() # Use the consolidated function
+        elif current_error_signature == "apk_add_base_files":
+            fix_attempted = fix_apk_add_base_files_issue(log_content_global) # Sets flag for next loop
+        elif current_error_signature.startswith("makefile_dep_missing"):
+            fix_attempted = fix_depends_format(log_content_global)
+        elif current_error_signature.startswith("apk_add_invalid_dep_format"):
+             fix_attempted = fix_apk_depends_problem() # Use the consolidated function
+        elif current_error_signature == "apk_wrapper_syntax":
+             fix_attempted = fix_apk_wrapper_syntax()
+        elif current_error_signature == "unknown_error":
+            print("未知错误，无法自动修复。")
+            # Optional: Reduce jobs as a last resort?
+            # if jobs > 1:
+            #     jobs = max(1, jobs // 2)
+            #     print(f"尝试减少 jobs 到 {jobs} 作为后备措施")
+            #     fix_attempted = True
+        elif current_error_signature in ["no_log_content", "no_log_content_error", "log_read_error"]:
+             print("无法读取日志或无内容，无法分析错误。")
         else:
-            # Handle other specific error types if needed
-             print(f"未处理的错误类型: {error}")
+             print(f"未处理的错误类型: {current_error_signature}，无自动修复程序。")
 
+        # --- Prepare for next retry ---
         retry += 1
-        # Add a slightly longer sleep if a fix was attempted, shorter otherwise
-        time.sleep(5 if fixed_something else 2)
+        if fix_attempted or needs_base_files_precompute:
+            print("已尝试修复或将执行预处理，等待 5 秒...")
+            time.sleep(5)
+        else:
+            print("未尝试修复，等待 2 秒...")
+            time.sleep(2)
 
 
-    print("编译失败，达到最大重试次数或连续相同错误")
+    # --- End of Loop ---
+    print(f"\n--- 编译最终失败 ---")
+    print(f"已达到最大重试次数 ({args.max_retry}) 或因连续相同错误停止。")
+    print(f"最后一次运行日志: {current_run_log}")
+    print(f"最后检测到的错误: {last_error_signature}")
     return 1
-
-if __name__ == "__main__":
-    sys.exit(main())
