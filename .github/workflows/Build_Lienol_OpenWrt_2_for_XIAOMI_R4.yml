@@ -100,7 +100,8 @@ jobs:
         # set -x
         LOG_FILE="packages.log"
         # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
-        cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
+        cp ../compile_with_retry.py . 
+        make -j1 package/compile V=s || python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
 
 
     - name: Try compiling the firmware
@@ -111,7 +112,7 @@ jobs:
         # set -o pipefail
         LOG_FILE="compile.log"
         # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "compile.log" 7
-        cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "compile.log"
+        make -j1 V=s || python compile_with_retry.py "make -j1 V=s" "compile.log"
         
         
         
