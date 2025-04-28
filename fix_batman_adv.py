@@ -97,7 +97,6 @@ def fix_batman_adv_generate_patch():
         return True # Indicate fix attempt was made (by checking existence + cleaning)
 
     # 2. Find the source file in build_dir
-    # This file should be in the state *after* patches 0001 and 0002 were applied
     search_pattern = f"build_dir/**/batman-adv-*/{relative_file_path}"
     found_files = list(Path(".").glob(search_pattern))
     valid_files = [f for f in found_files if 'target-' in str(f) and 'linux-' in str(f)]
@@ -117,89 +116,110 @@ def fix_batman_adv_generate_patch():
     temp_patch_file_path = None
     try:
         # Create a backup
-        backup_file = source_file_in_build_dir.with_suffix(".orig")
-        shutil.copy2(source_file_in_build_dir, backup_file)
-        print(f"创建临时备份: {get_relative_path(str(backup_file))}")
+        # Use a temporary directory for the backup to avoid cluttering build_dir
+        with tempfile.TemporaryDirectory() as temp_dir:
+            backup_file_in_temp = Path(temp_dir) / source_file_in_build_dir.name
+            shutil.copy2(source_file_in_build_dir, backup_file_in_temp)
+            print(f"创建临时备份于: {backup_file_in_temp}") # Log temp path for debug
 
-        # Modify the file in build_dir *in place* temporarily
-        with open(source_file_in_build_dir, 'r+', encoding='utf-8', errors='replace') as f:
-            lines = f.readlines()
-            if len(lines) <= target_line_index:
-                print(f"❌ 错误：文件 {source_file_rel} 行数 ({len(lines)}) 不足，无法修改第 {target_line_num} 行。")
-                raise ValueError("Line index out of bounds")
+            # Modify the file in build_dir *in place* temporarily
+            with open(source_file_in_build_dir, 'r+', encoding='utf-8', errors='replace') as f:
+                lines = f.readlines()
+                if len(lines) <= target_line_index:
+                    print(f"❌ 错误：文件 {source_file_rel} 行数 ({len(lines)}) 不足，无法修改第 {target_line_num} 行。")
+                    raise ValueError("Line index out of bounds")
 
-            current_line = lines[target_line_index]
-            if old_func not in current_line:
-                print(f"❌ 错误：在文件 {source_file_rel} 第 {target_line_num} 行未找到预期函数 '{old_func}'。")
-                print(f"   该行内容为: {current_line.rstrip()}")
-                raise ValueError("Function not found at expected line")
+                current_line = lines[target_line_index]
+                if old_func not in current_line:
+                    # Check if it was already patched by previous attempts or patches
+                    if new_func in current_line:
+                         print(f"ℹ️ 在文件 {source_file_rel} 第 {target_line_num} 行找到新函数 '{new_func}'，可能已被修复。跳过修改。")
+                         # Skip modification, but proceed to check diff and clean
+                    else:
+                        print(f"❌ 错误：在文件 {source_file_rel} 第 {target_line_num} 行未找到预期函数 '{old_func}'。")
+                        print(f"   该行内容为: {current_line.rstrip()}")
+                        raise ValueError("Function not found at expected line")
+                else:
+                    print(f"在 {source_file_rel} 第 {target_line_num} 行临时替换函数...")
+                    lines[target_line_index] = current_line.replace(old_func, new_func)
+                    f.seek(0)
+                    f.writelines(lines)
+                    f.truncate()
 
-            print(f"在 {source_file_rel} 第 {target_line_num} 行临时替换函数...")
-            lines[target_line_index] = current_line.replace(old_func, new_func)
-            f.seek(0)
-            f.writelines(lines)
-            f.truncate()
+            # Create a temporary file for the patch
+            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".patch", encoding='utf-8') as temp_patch_file:
+                temp_patch_file_path = Path(temp_patch_file.name)
+                # --- MODIFIED DIFF COMMAND ---
+                # Pass the relative paths directly as strings.
+                # The paths found by glob are already relative to CWD (openwrt dir).
+                diff_cmd = [
+                    "diff", "-u",
+                    str(source_file_in_build_dir), # Original file (now modified)
+                    str(backup_file_in_temp)       # Backup file (original content)
+                ]
+                # Note: diff order is reversed (modified vs original) to get the correct patch format easily
+                # We will swap the --- and +++ headers later.
 
-        # Create a temporary file for the patch
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".patch", encoding='utf-8') as temp_patch_file:
-            temp_patch_file_path = Path(temp_patch_file.name)
-            diff_cmd = [
-                "diff", "-u",
-                str(backup_file.relative_to(Path.cwd())), # Use relative path for diff
-                str(source_file_in_build_dir.relative_to(Path.cwd())) # Use relative path for diff
-            ]
-            print(f"生成 diff: {' '.join(diff_cmd)}")
-            # Run diff and capture output
-            diff_process = subprocess.run(diff_cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
+                print(f"生成 diff: {' '.join(diff_cmd)}")
+                diff_process = subprocess.run(diff_cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
 
-            # diff exits with 1 if differences are found, 0 if identical, >1 on error
-            if diff_process.returncode > 1:
-                 print(f"❌ diff 命令执行失败 (返回码 {diff_process.returncode}):")
-                 print(diff_process.stderr)
-                 raise RuntimeError("diff command failed")
-            elif diff_process.returncode == 0:
-                 print(f"⚠️ diff 未找到差异，文件可能已修复或修改失败？")
-                 # Continue, maybe the file was already correct, but still clean.
-            else:
-                 # Process diff output to fix headers
-                 print("处理 diff 输出以修正补丁头...")
-                 diff_output = diff_process.stdout
-                 # Replace the absolute/long paths in the --- and +++ lines
-                 # Make the paths relative to the package source root
-                 processed_diff = re.sub(r"^--- .*", f"--- a/{relative_file_path}", diff_output, count=1, flags=re.MULTILINE)
-                 processed_diff = re.sub(r"^\+\+\+ .*", f"+++ b/{relative_file_path}", processed_diff, count=1, flags=re.MULTILINE)
-                 temp_patch_file.write(processed_diff)
-                 print(f"临时补丁写入: {temp_patch_file_path}")
+                if diff_process.returncode > 1:
+                     print(f"❌ diff 命令执行失败 (返回码 {diff_process.returncode}):")
+                     print(diff_process.stderr)
+                     raise RuntimeError("diff command failed")
+                elif diff_process.returncode == 0:
+                     print(f"⚠️ diff 未找到差异，文件可能已修复或修改失败？")
+                     # No patch needed if no diff
+                else:
+                     # Process diff output to fix headers (swap ---/+++ and fix paths)
+                     print("处理 diff 输出以修正补丁头...")
+                     diff_output = diff_process.stdout
+                     # Swap --- and +++ lines and fix paths
+                     processed_lines = []
+                     for line in diff_output.splitlines():
+                         if line.startswith("--- "):
+                             # This was the modified file, make it the 'b' version
+                             processed_lines.append(f"+++ b/{relative_file_path}")
+                         elif line.startswith("+++ "):
+                             # This was the backup file, make it the 'a' version
+                             processed_lines.append(f"--- a/{relative_file_path}")
+                         else:
+                             processed_lines.append(line)
 
+                     processed_diff = "\n".join(processed_lines) + "\n" # Ensure trailing newline
+                     temp_patch_file.write(processed_diff)
+                     print(f"临时补丁写入: {temp_patch_file_path}")
 
-        # Move the generated patch to the correct location
-        if temp_patch_file_path and temp_patch_file_path.stat().st_size > 0: # Check if patch has content
-            patch_dir.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(temp_patch_file_path), patch_path)
-            print(f"✅ 成功生成并移动补丁到: {patch_path_rel}")
-            patch_generated = True
-        elif temp_patch_file_path: # If file exists but is empty
-             print(f"ℹ️ 生成的补丁为空，未移动。")
-             temp_patch_file_path.unlink() # Clean up empty temp file
-             patch_generated = False # Consider it not generated if empty
-        else:
-             patch_generated = False # Not generated if diff failed etc.
+            # Move the generated patch to the correct location
+            if temp_patch_file_path and temp_patch_file_path.stat().st_size > 0:
+                patch_dir.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(temp_patch_file_path), patch_path)
+                print(f"✅ 成功生成并移动补丁到: {patch_path_rel}")
+                patch_generated = True
+            elif temp_patch_file_path:
+                 print(f"ℹ️ 生成的补丁为空，未移动。")
+                 temp_patch_file_path.unlink()
+                 patch_generated = False
+            else: # Case where diff found no differences
+                 print(f"ℹ️ 无需生成补丁文件。")
+                 patch_generated = False # No new patch was generated
+
+            # --- Restore the original file in build_dir ---
+            # This happens *after* diff is done
+            print(f"恢复原始文件: {source_file_rel}")
+            shutil.copy2(backup_file_in_temp, source_file_in_build_dir)
 
     except Exception as e:
         print(f"❌ 生成动态补丁时出错: {e}")
-        patch_generated = False # Ensure flag is false on error
+        patch_generated = False
+        # Attempt to restore if backup exists and modification happened in build_dir
+        if Path(str(source_file_in_build_dir) + ".orig").exists(): # Check for old backup style just in case
+             try:
+                 shutil.move(str(source_file_in_build_dir) + ".orig", source_file_in_build_dir)
+                 print(f"⚠️ 已尝试从旧式备份恢复 {source_file_rel}")
+             except Exception: pass
     finally:
-        # Restore the original file in build_dir from backup
-        if backup_file and backup_file.exists():
-            print(f"恢复原始文件: {source_file_rel}")
-            try:
-                shutil.move(str(backup_file), source_file_in_build_dir)
-            except Exception as restore_e:
-                 print(f"⚠️ 恢复备份文件失败: {restore_e}")
-                 # This is problematic, the build dir is now modified...
-                 # Try to delete the modified file? Or just leave it?
-                 # Let's leave it for now, clean should handle it.
-        # Clean up temp patch file if it still exists (e.g., was empty)
+        # Clean up temp patch file if it still exists
         if temp_patch_file_path and temp_patch_file_path.exists():
             try: temp_patch_file_path.unlink()
             except OSError: pass
@@ -209,7 +229,7 @@ def fix_batman_adv_generate_patch():
     print("🧹 清理 batman-adv 包以应用补丁...")
     clean_package()
 
-    # Return True if the patch was generated or already existed
+    # Return True if the patch was generated OR already existed before we started
     return patch_generated or patch_path.exists()
 
 def clean_package():
