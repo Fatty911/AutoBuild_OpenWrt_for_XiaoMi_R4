@@ -1,765 +1,287 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""
-fix_batman_adv.py
-专门用于修复 batman-adv 相关编译错误的Python脚本
-用法: python3 fix_batman_adv.py <make_command> <log_file> [max_retry]
-"""
-
 import argparse
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
-import logging
+import shutil
 from pathlib import Path
+import glob
 
-# --- 配置 ---
-BATMAN_ADV_COMMIT = "5437d2c91fd9f15e06fbea46677abb529ed3547c"  # 已知兼容的 batman-adv/routing feed commit
-FEED_ROUTING_NAME = "routing"  # feeds.conf[.default] 中的 routing feed 名称
-FEED_ROUTING_URL = "https://github.com/coolsnowwolf/routing.git"  # routing feed 的 URL
-config_path="./.config"
+# --- Global variable for log content ---
+log_content_global = ""
 
-# 配置日志记录
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger(__name__)
-
-def parse_arguments():
-    """解析命令行参数"""
-    parser = argparse.ArgumentParser(description='修复 batman-adv 相关编译错误的脚本')
-    parser.add_argument('make_command', help='编译命令，例如 "make -j1 package/feeds/routing/batman-adv/compile V=s"')
-    parser.add_argument('log_file', help='日志文件路径，例如 "batman-adv.log"')
-    parser.add_argument('max_retry', nargs='?', type=int, default=5, help='最大重试次数 (默认: 5)')
-    parser.add_argument('--fallback', help='编译失败后的备选命令', default="")
-    return parser.parse_args()
-
-def run_command(cmd, capture_output=True, shell=True, timeout=7200):
-    """运行shell命令并返回结果，添加超时参数"""
+def get_relative_path(path):
+    """获取相对路径，优先相对于当前工作目录"""
+    current_pwd = os.getcwd()
     try:
-        logger.info(f"执行命令: {cmd}")
-        result = subprocess.run(
-            cmd, 
-            shell=shell, 
-            capture_output=capture_output, 
-            text=True, 
-            check=False,
-            timeout=timeout  # 添加2小时超时
-        )
-        return result.returncode, result.stdout, result.stderr
-    except subprocess.TimeoutExpired:
-        logger.error(f"命令执行超时: {cmd}")
-        return 124, "", "Command timed out"
-    except Exception as e:
-        logger.error(f"执行命令失败: {cmd}, 错误: {e}")
-        return 1, "", str(e)
-
-
-
-def check_openwrt_root():
-    """检查当前目录是否为OpenWrt根目录"""
-    if not (os.path.isdir("package") and os.path.isdir("target") and 
-            os.path.isfile("Makefile") and os.path.isdir("scripts")):
-        logger.info("当前目录不是 OpenWrt 根目录，尝试查找...")
-        
-        # 尝试查找 OpenWrt 根目录
-        for dir_path in [".", "..", "../..", "../../..", "../../../.."]:
-            if (os.path.isdir(os.path.join(dir_path, "package")) and 
-                os.path.isdir(os.path.join(dir_path, "target")) and 
-                os.path.isfile(os.path.join(dir_path, "Makefile")) and 
-                os.path.isdir(os.path.join(dir_path, "scripts"))):
-                logger.info(f"找到 OpenWrt 根目录: {dir_path}")
-                os.chdir(dir_path)
-                return True
-        
-        logger.error("错误: 无法找到 OpenWrt 根目录。")
-        return False
-    
-    return True
-
-def check_batman_adv_exists():
-    """检查 batman-adv 包是否存在"""
-    logger.info("检查 batman-adv 包是否存在...")
-    
-    # 检查 feeds 目录
-    if not os.path.isdir(f"feeds/{FEED_ROUTING_NAME}"):
-        logger.info(f"feeds/{FEED_ROUTING_NAME} 目录不存在，尝试更新 feeds...")
-        return False
-    
-    # 检查 batman-adv 包目录
-    if not os.path.isdir(f"feeds/{FEED_ROUTING_NAME}/batman-adv"):
-        logger.info(f"feeds/{FEED_ROUTING_NAME}/batman-adv 目录不存在，尝试更新 feeds...")
-        return False
-    
-    # 检查 package/feeds 目录
-    if not os.path.isdir(f"package/feeds/{FEED_ROUTING_NAME}"):
-        logger.info(f"package/feeds/{FEED_ROUTING_NAME} 目录不存在，尝试安装 feeds...")
-        return False
-    
-    # 检查 package/feeds/routing/batman-adv 目录
-    if not os.path.isdir(f"package/feeds/{FEED_ROUTING_NAME}/batman-adv"):
-        logger.info(f"package/feeds/{FEED_ROUTING_NAME}/batman-adv 目录不存在，尝试安装 feeds...")
-        return False
-    
-    logger.info("batman-adv 包存在。")
-    return True
-
-def check_missing_dependencies(log_content):
-    """检查并修复缺失的依赖项"""
-    missing_deps = re.findall(r"has a dependency on '([^']+)', which does not exist", log_content)
-    if missing_deps:
-        logger.info(f"检测到缺失的依赖项: {', '.join(set(missing_deps))}")
-        for dep in set(missing_deps):
-            logger.info(f"尝试安装依赖项: {dep}")
-            ret_code, _, _ = run_command(f"./scripts/feeds install {dep}")
-            if ret_code != 0:
-                logger.warning(f"安装依赖项 {dep} 失败，尝试更新feeds后再安装")
-                run_command("./scripts/feeds update -a")
-                run_command(f"./scripts/feeds install {dep}")
-        return True
-    return False
-
-def fix_update_feeds():
-    """更新和安装 feeds"""
-    logger.info("更新和安装 feeds...")
-    
-    # 检查 feeds.conf 文件
-    feed_conf_file = "feeds.conf" if os.path.isfile("feeds.conf") else "feeds.conf.default"
-    
-    # 如果 feeds.conf.default 不存在，尝试创建
-    if not os.path.isfile(feed_conf_file):
-        logger.info(f"未找到 {feed_conf_file}，尝试创建...")
-        if os.path.isfile("feeds.conf.default.bak"):
-            shutil.copy("feeds.conf.default.bak", feed_conf_file)
-        elif os.path.isfile("feeds.conf.bak"):
-            shutil.copy("feeds.conf.bak", feed_conf_file)
+        abs_path = Path(path).resolve()
+        if abs_path.is_relative_to(current_pwd):
+            return str(abs_path.relative_to(current_pwd))
         else:
-            # 创建一个基本的 feeds.conf 文件
-            logger.info(f"创建基本的 {feed_conf_file} 文件...")
-            with open(feed_conf_file, 'w') as f:
-                f.write("src-git packages https://github.com/coolsnowwolf/packages\n")
-                f.write("src-git luci https://github.com/coolsnowwolf/luci\n")
-                f.write(f"src-git {FEED_ROUTING_NAME} {FEED_ROUTING_URL}\n")
-    
-    # 检查 routing feed 是否在 feeds.conf 中
-    routing_feed_found = False
-    with open(feed_conf_file, 'r') as f:
-        if re.search(f"^src-git {FEED_ROUTING_NAME}", f.read(), re.MULTILINE):
-            routing_feed_found = True
-    
-    if not routing_feed_found:
-        logger.info(f"在 {feed_conf_file} 中添加 {FEED_ROUTING_NAME} feed...")
-        with open(feed_conf_file, 'a') as f:
-            f.write(f"src-git {FEED_ROUTING_NAME} {FEED_ROUTING_URL}\n")
-    
-    # 检查 scripts/feeds 是否存在
-    if not os.path.isfile("scripts/feeds"):
-        logger.error("错误: scripts/feeds 不存在，可能不是 OpenWrt 根目录。")
-        return False
-    
-    # 更新 feeds
-    logger.info("执行 ./scripts/feeds update -a")
-    ret_code, _, _ = run_command("./scripts/feeds update -a")
-    if ret_code != 0:
-        logger.info(f"更新 feeds 失败，尝试单独更新 {FEED_ROUTING_NAME}...")
-        ret_code, _, _ = run_command(f"./scripts/feeds update {FEED_ROUTING_NAME}")
-        if ret_code != 0:
-            logger.error(f"更新 {FEED_ROUTING_NAME} feed 失败。")
-            return False
-    
-    # 安装 feeds
-    logger.info("执行 ./scripts/feeds install -a")
-    ret_code, _, _ = run_command("./scripts/feeds install -a")
-    if ret_code != 0:
-        logger.info(f"安装 feeds 失败，尝试单独安装 {FEED_ROUTING_NAME}...")
-        ret_code, _, _ = run_command(f"./scripts/feeds install -a -p {FEED_ROUTING_NAME}")
-        if ret_code != 0:
-            logger.error(f"安装 {FEED_ROUTING_NAME} feed 失败。")
-            return False
-    
-    # 特别安装 batman-adv
-    logger.info("特别安装 batman-adv...")
-    ret_code, _, _ = run_command(f"./scripts/feeds install -p {FEED_ROUTING_NAME} batman-adv")
-    if ret_code != 0:
-        logger.error("安装 batman-adv 失败。")
-        return False
-    
-    # 检查安装结果
-    if os.path.isdir(f"package/feeds/{FEED_ROUTING_NAME}/batman-adv"):
-        logger.info("batman-adv 安装成功。")
-        return True
-    else:
-        logger.error("batman-adv 安装失败，目录不存在。")
-        return False
+            return str(abs_path)
+    except (ValueError, OSError, Exception):
+        return str(path)
 
-def fix_batman_multicast_struct(log_file):
-    """修补 batman-adv 的 multicast.c 文件"""
-    logger.info("尝试修补 batman-adv 'struct br_ip' 错误...")
-    
-    # 定位源目录中的 multicast.c
-    pkg_dir = None
-    for root, dirs, files in os.walk("feeds"):
-        for dir in dirs:
-            if dir == "batman-adv":
-                pkg_dir = os.path.join(root, dir)
-                break
-        if pkg_dir:
-            break
-    
-    if not pkg_dir:
-        logger.error("无法找到 batman-adv 包目录。")
-        return False
-    
-    multicast_file = os.path.join(pkg_dir, "net/batman-adv/multicast.c")
-    if not os.path.isfile(multicast_file):
-        logger.error(f"在 {pkg_dir} 中未找到 multicast.c 文件。")
-        return False
+# --- Error Signature Detection ---
+def get_error_signature(log_content):
+    """Detects specific error signatures from the build log."""
+    if not log_content: return "no_log_content"
 
-    logger.info(f"正在修补 {multicast_file}...")
-    shutil.copy(multicast_file, f"{multicast_file}.bak")
+    # --- Batman-adv multicast.c implicit declaration error ---
+    # More specific regex matching the key parts of the error
+    batman_adv_error_match = re.search(
+        r"batman-adv/multicast\.c.*error: implicit declaration of function 'br_multicast_has_router_adjacent'.*?did you mean 'br_multicast_has_querier_adjacent'.*?make\[\d+\]: \*\*\* .*?batman-adv.*? Error \d+",
+        log_content, re.DOTALL | re.IGNORECASE
+    )
+    if batman_adv_error_match:
+        return "batman_adv_multicast_implicit_decl"
 
-    # 读取文件内容
-    with open(multicast_file, 'r') as f:
-        content = f.read()
-    
-    # 替换所有 'dst.ip4' 和 'dst.ip6' 为 'u.ip4' 和 'u.ip6'
-    content = content.replace('dst.ip4', 'u.ip4')
-    content = content.replace('dst.ip6', 'u.ip6')
-    # 替换 br_multicast_has_router_adjacent
-    content = content.replace('br_multicast_has_router_adjacent', 'br_multicast_has_querier_adjacent')
-    
-    # 写回文件
-    with open(multicast_file, 'w') as f:
-        f.write(content)
+    # --- Generic Error (fallback) ---
+    generic_error_match = re.search(r'(error:|failed|fatal error:|collect2: error: ld returned 1 exit status)', log_content, re.IGNORECASE)
+    if generic_error_match:
+        error_keyword = generic_error_match.group(1).lower().split(':')[0].replace(' ', '_')
+        context_line = ""
+        for line in reversed(log_content.splitlines()):
+             if generic_error_match.group(1).lower() in line.lower():
+                 context_line = re.sub(r'\x1b\[[0-9;]*[mK]', '', line).strip() # Remove ANSI codes
+                 context_line = re.sub(r'[^a-zA-Z0-9\s\._\-\+=:/]', '', context_line)[:80] # Keep relevant chars
+                 break
+        return f"generic_error:{error_keyword}:{context_line}"
 
-    # 检查修补是否成功
-    with open(multicast_file, 'r') as f:
-        patched_content = f.read()
-    
-    if 'dst.ip4' not in patched_content and 'dst.ip6' not in patched_content and \
-       'br_multicast_has_router_adjacent' not in patched_content:
-        logger.info(f"成功修补 {multicast_file}")
-        # 触摸 Makefile 以触发重新编译
-        pkg_makefile = os.path.join(pkg_dir, "Makefile")
-        if os.path.isfile(pkg_makefile):
-            os.utime(pkg_makefile, None)
-            logger.info(f"已触摸 {pkg_makefile} 以强制重建。")
-        # 清理构建目录以确保使用修补后的文件
-        run_command(f"make package/feeds/{FEED_ROUTING_NAME}/batman-adv/clean V=s")
-        if os.path.isfile(f"{multicast_file}.bak"):
-            os.remove(f"{multicast_file}.bak")
-        return True
-    else:
-        logger.error(f"修补 {multicast_file} 失败，正在恢复备份。")
-        logger.error("剩余的 'dst' 模式:")
-        for line in patched_content.splitlines():
-            if 'dst.ip4' in line or 'dst.ip6' in line:
-                logger.error(line.strip())
-        if os.path.isfile(f"{multicast_file}.bak"):
-            shutil.move(f"{multicast_file}.bak", multicast_file)
-        return False
+    return "unknown_error"
 
-def fix_batman_switch_feed(target_commit):
-    """切换到兼容的 batman-adv feed commit"""
-    feed_name = FEED_ROUTING_NAME
-    feed_conf_file = "feeds.conf" if os.path.isfile("feeds.conf") else "feeds.conf.default"
-    
-    logger.info(f"使用 {feed_conf_file} 文件。")
-    logger.info(f"尝试切换 {feed_name} feed 至 commit {target_commit}...")
-    
-    # 读取feeds配置文件
-    with open(feed_conf_file, 'r') as f:
-        lines = f.readlines()
-    
-    # 检查和修改routing feed行
-    feed_pattern = re.compile(f"^src-git {feed_name}")
-    feed_found = False
-    
-    for i, line in enumerate(lines):
-        if feed_pattern.match(line):
-            feed_found = True
-            lines[i] = f"src-git {feed_name} {FEED_ROUTING_URL};{target_commit}\n"
-            break
-    
-    # 如果没有找到，添加新行
-    if not feed_found:
-        lines.append(f"src-git {feed_name} {FEED_ROUTING_URL};{target_commit}\n")
-    
-    # 写回文件
-    with open(feed_conf_file, 'w') as f:
-        f.writelines(lines)
-    
-    # 验证更新
-    with open(feed_conf_file, 'r') as f:
-        content = f.read()
-        if f"src-git {feed_name} {FEED_ROUTING_URL};{target_commit}" in content:
-            logger.info(f"成功更新 {feed_conf_file} 中的 {feed_name} feed 配置。")
-            run_command(f"./scripts/feeds update {feed_name}")
-            run_command(f"./scripts/feeds install -a -p {feed_name}")
-            run_command(f"./scripts/feeds install -p {feed_name} batman-adv")
-            run_command(f"make package/feeds/{feed_name}/batman-adv/clean V=s")
-            return True
-        else:
-            logger.error(f"更新 {feed_conf_file} 失败。")
-            return False
-
-def fix_batman_disable_werror():
-    """在 batman-adv Makefile 中禁用 -Werror"""
-    batman_makefile = f"package/feeds/{FEED_ROUTING_NAME}/batman-adv/Makefile"
-    
-    logger.info("尝试在 batman-adv Makefile 中禁用 -Werror...")
-    if not os.path.isfile(batman_makefile):
-        logger.error(f"未找到 {batman_makefile}。")
-        return False
-    
-    # 读取Makefile内容
-    with open(batman_makefile, 'r') as f:
-        content = f.read()
-    
-    # 检查是否已禁用 -Werror
-    if 'filter-out -Werror' in content:
-        logger.info(f"{batman_makefile} 中似乎已禁用 -Werror。")
-        return True
-    
-    # 修改Makefile
-    lines = content.splitlines()
-    new_lines = []
-    werror_added = False
-    
-    for line in lines:
-        if 'include ../../package.mk' in line or 'include $(TOPDIR)/rules.mk' in line:
-            new_lines.append(line)
-            new_lines.append("")
-            new_lines.append("# Disable -Werror for this package")
-            new_lines.append("TARGET_CFLAGS:=$(filter-out -Werror,$(TARGET_CFLAGS))")
-            new_lines.append("")
-            werror_added = True
-        else:
-            new_lines.append(line)
-    
-    if not werror_added:
-        logger.error("无法在Makefile中找到合适的位置添加 -Werror 过滤。")
-        return False
-    
-    # 写回文件
-    with open(f"{batman_makefile}.tmp", 'w') as f:
-        f.write('\n'.join(new_lines))
-    
-    # 检查写入是否成功
-    if os.path.getsize(f"{batman_makefile}.tmp") > 0:
-        shutil.move(f"{batman_makefile}.tmp", batman_makefile)
-        logger.info(f"已在 {batman_makefile} 中添加 CFLAGS 过滤。")
-        run_command(f"make package/feeds/{FEED_ROUTING_NAME}/batman-adv/clean V=s")
-        return True
-    else:
-        logger.error(f"错误: 修改 {batman_makefile} 失败。")
-        if os.path.isfile(f"{batman_makefile}.tmp"):
-            os.remove(f"{batman_makefile}.tmp")
-        return False
-
-def fix_batman_patch_tasklet():
-    """修复 batman-adv 的 tasklet_setup 错误"""
-    logger.info("尝试修补 batman-adv 的 tasklet_setup 错误...")
-    
-    # 查找 backports 目录
-    backports_dir = None
-    for root, dirs, files in os.walk("feeds"):
-        for dir_path in [os.path.join(root, d) for d in dirs]:
-            if "batman-adv/compat-sources/backports" in dir_path:
-                backports_dir = dir_path
-                break
-        if backports_dir:
-            break
-    
-    if not backports_dir:
-        logger.error("无法找到 batman-adv 的 backports 目录。")
-        return False
-    
-    logger.info(f"找到 backports 目录: {backports_dir}")
-    
-    # 查找 compat.h 文件
-    compat_file = os.path.join(backports_dir, "include/linux/compat-2.6.h")
-    if not os.path.isfile(compat_file):
-        logger.error("未找到 compat-2.6.h 文件。")
-        return False
-    
-    logger.info(f"正在修补 {compat_file}...")
-    shutil.copy(compat_file, f"{compat_file}.bak")
-    
-    # 检查是否已添加 tasklet_setup
-    with open(compat_file, 'r') as f:
-        content = f.read()
-        if "tasklet_setup" in content:
-            logger.info(f"{compat_file} 中已存在 tasklet_setup 定义。")
-            if os.path.isfile(f"{compat_file}.bak"):
-                os.remove(f"{compat_file}.bak")
-            return True
-    
-    # 添加 tasklet_setup 兼容定义
-    tasklet_setup_code = """
-/* Backport tasklet_setup for older kernels */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,9,0)
-static inline void tasklet_setup(struct tasklet_struct *t,
-                                void (*callback)(struct tasklet_struct *))
-{
-    void (*tasklet_func)(unsigned long data);
-    
-    tasklet_func = (void (*)(unsigned long))callback;
-    tasklet_init(t, tasklet_func, (unsigned long)t);
-}
-#endif
-"""
-    
-    with open(compat_file, 'a') as f:
-        f.write(tasklet_setup_code)
-    
-    logger.info("已添加 tasklet_setup 兼容定义。")
-    
-    # 清理构建目录
-    run_command(f"make package/feeds/{FEED_ROUTING_NAME}/batman-adv/clean V=s")
-    return True
-
-def fix_compile_command(original_command):
-    """修改编译命令"""
-    # 检查命令是否包含 package/feeds/routing/
-    if "package/feeds/routing/batman-adv/compile" in original_command:
-        # 尝试使用 package/feeds/routing/batman-adv 而不是 package/feeds/routing/batman-adv/compile
-        new_command = original_command.replace(
-            "package/feeds/routing/batman-adv/compile", 
-            "package/feeds/routing/batman-adv"
-        )
-        logger.info(f"修改编译命令: {original_command} -> {new_command}")
-        return new_command
-    # 检查luci-base路径
-    elif "package/luci/modules/luci-base/compile" in original_command:
-        # 尝试修正luci-base路径
-        new_command = original_command.replace(
-            "package/luci/modules/luci-base/compile", 
-            "package/feeds/luci/luci-base"
-        )
-        logger.info(f"修改编译命令: {original_command} -> {new_command}")
-        return new_command
-    else:
-        logger.info("编译命令无需修改。")
-        return original_command
-
-def fix_install_batman_directly():
-    """尝试直接安装 batman-adv 包"""
-    logger.info("尝试直接安装 batman-adv 包...")
-    
-    # 尝试直接编译 batman-adv
-    logger.info("尝试直接编译 batman-adv...")
-    ret_code, _, _ = run_command("make package/feeds/routing/batman-adv/{clean,compile} V=s")
-    if ret_code != 0:
-        logger.error("直接编译 batman-adv 失败，尝试另一种方式...")
-        ret_code, _, _ = run_command("make package/batman-adv/compile V=s")
-        if ret_code != 0:
-            logger.error("直接编译 batman-adv 失败。")
-            return False
-    
-    logger.info("batman-adv 直接编译成功。")
-    return True
-
-def check_build_interrupted(log_content):
-    """检查编译是否被中断"""
-    # 检查是否有明显的编译中断迹象
-    if "Killed" in log_content or "Terminated" in log_content:
-        logger.info("检测到编译被中断，可能是内存不足导致。")
-        return True
-    
-    # 检查是否有补丁应用但没有完成编译
-    if "Applying ./patches/" in log_content and "Compiled" not in log_content:
-        logger.info("检测到编译过程中断，可能是在应用补丁后停止。")
-        return True
-    
-    return False
-def process_config(path):
+# --- Fix Function ---
+def fix_batman_adv_multicast(log_content):
     """
-    读取 .config 文件，进行必要的处理 (目前仅记录信息)。
+    Fixes the implicit declaration error in batman-adv/net/batman-adv/multicast.c
+    by replacing br_multicast_has_router_adjacent with br_multicast_has_querier_adjacent.
     """
-    if not os.path.exists(path):
-        logging.error(f".config file not found at '{path}'. Cannot proceed.")
-        return False
+    print("🔧 检测到 batman-adv multicast.c 错误，尝试修复...")
+    fixed = False
+    target_line_index = 210 # Line 211 is index 210
+    old_func = "br_multicast_has_router_adjacent"
+    new_func = "br_multicast_has_querier_adjacent"
 
-    logging.info(f"Processing config file: {path}")
+    # Find the multicast.c file within the batman-adv build directory
+    # Use glob to be more robust against slight path variations
+    search_pattern = "build_dir/**/batman-adv-*/net/batman-adv/multicast.c"
+    found_files = list(Path(".").glob(search_pattern))
+
+    # Filter out potential matches in unrelated directories if necessary (e.g., tmp)
+    # Typically, there should only be one relevant match in build_dir/target-*/linux-*/
+    valid_files = [f for f in found_files if 'target-' in str(f) and 'linux-' in str(f)]
+
+    if not valid_files:
+        print(f"❌ 错误：找不到 batman-adv 的 multicast.c 文件 (搜索模式: {search_pattern})")
+        return False
+    if len(valid_files) > 1:
+        print(f"⚠️ 警告：找到多个 multicast.c 文件，将使用第一个: {get_relative_path(str(valid_files[0]))}")
+        print(f"   其他找到的文件: {[get_relative_path(str(f)) for f in valid_files[1:]]}")
+
+    target_file = valid_files[0]
+    target_file_rel = get_relative_path(str(target_file))
+    print(f"找到目标文件: {target_file_rel}")
+
     try:
-        with open(path, 'r') as f:
+        with open(target_file, 'r', encoding='utf-8', errors='replace') as f:
             lines = f.readlines()
 
-        new_lines = []
-        modified = False # 跟踪是否有实际修改
+        if len(lines) <= target_line_index:
+            print(f"❌ 错误：文件 {target_file_rel} 行数 ({len(lines)}) 不足，无法修改第 {target_line_index + 1} 行。")
+            return False
 
-        for line in lines:
-            stripped_line = line.strip()
+        current_line = lines[target_line_index]
 
-            # --- 移除禁用 batman-adv 和 batctl-full 的逻辑 ---
-            # 我们不再需要检查和注释这些行，因为 batman-adv 是必需的。
-            # 让它们保持原样，由 OpenWrt 的依赖系统处理。
-            # if any(pkg in stripped_line for pkg in packages_to_disable):
-            #     if not stripped_line.startswith('#'):
-            #         new_line = f"# {stripped_line} # Disabled by fix script\n"
-            #         logging.info(f"Commenting out: {stripped_line}")
-            #         new_lines.append(new_line)
-            #         modified = True
-            #         continue # 处理下一行
-            #     else:
-            #         # 如果已经是注释，保持不变
-            #         logging.debug(f"Already commented out: {stripped_line}")
-            #         new_lines.append(line)
-            #         continue
+        if new_func in current_line:
+            print(f"ℹ️ 文件 {target_file_rel} 第 {target_line_index + 1} 行似乎已修复。")
+            # Even if already fixed, cleaning might be necessary if build failed previously
+            fixed = True # Indicate we should proceed with cleaning
+        elif old_func in current_line:
+            print(f"找到旧函数 '{old_func}' 在第 {target_line_index + 1} 行，进行替换...")
+            backup_path = target_file.with_suffix(target_file.suffix + ".bak")
+            try:
+                shutil.copy2(target_file, backup_path)
+                print(f"创建备份: {get_relative_path(str(backup_path))}")
+            except Exception as backup_e:
+                print(f"⚠️ 创建备份失败: {backup_e}")
+                backup_path = None
 
-            # 检查 kmod-batman-adv 是否被选中 (仅用于记录信息)
-            if 'CONFIG_PACKAGE_kmod-batman-adv=y' in stripped_line:
-                 logging.info("Found 'CONFIG_PACKAGE_kmod-batman-adv=y'. Keeping it enabled as required for EasyMesh.")
-            elif '# CONFIG_PACKAGE_kmod-batman-adv is not set' in stripped_line:
-                 logging.info("Found '# CONFIG_PACKAGE_kmod-batman-adv is not set'. Build system dependency resolution should handle enabling it if EasyMesh is selected.")
+            lines[target_line_index] = current_line.replace(old_func, new_func)
 
-            # 检查 batctl-full 是否被选中 (仅用于记录信息)
-            if 'CONFIG_PACKAGE_batctl-full=y' in stripped_line:
-                 logging.info("Found 'CONFIG_PACKAGE_batctl-full=y'. Keeping it enabled.")
-            elif '# CONFIG_PACKAGE_batctl-full is not set' in stripped_line:
-                 logging.info("Found '# CONFIG_PACKAGE_batctl-full is not set'.")
+            with open(target_file, 'w', encoding='utf-8') as f:
+                f.writelines(lines)
 
-
-            # 将原始行添加到新列表中 (除非上面有特殊处理)
-            new_lines.append(line)
-
-
-        # 只有在确实进行了修改时才写回文件 (在这个版本中，modified 应该总是 False)
-        # if modified:
-        #     with open(path, 'w') as f:
-        #         f.writelines(new_lines)
-        #     logging.info(f"Successfully modified '{path}'.")
-        # else:
-        #     logging.info(f"No modifications needed for batman-adv/batctl in '{path}'.")
-        logging.info(f"Finished processing '{path}'. No changes made by this script regarding batman-adv/batctl.")
-
-        return True # 表示处理完成
+            # Verify fix
+            with open(target_file, 'r', encoding='utf-8', errors='replace') as f_check:
+                fixed_line = f_check.readlines()[target_line_index]
+            if new_func in fixed_line:
+                print(f"✅ 成功替换函数名于文件 {target_file_rel}。")
+                fixed = True
+                if backup_path and backup_path.exists():
+                    try: os.remove(backup_path)
+                    except OSError: pass
+            else:
+                print(f"❌ 替换失败，第 {target_line_index + 1} 行内容仍为: '{fixed_line.rstrip()}'")
+                if backup_path and backup_path.exists():
+                    try:
+                        shutil.move(str(backup_path), target_file) # Restore backup
+                        print("已恢复备份。")
+                    except Exception as restore_e:
+                         print(f"❌ 恢复备份失败: {restore_e}")
+        else:
+            print(f"❌ 错误：在文件 {target_file_rel} 第 {target_line_index + 1} 行未找到预期的函数 '{old_func}'。")
+            print(f"   该行内容为: {current_line.rstrip()}")
+            return False
 
     except Exception as e:
-        logging.error(f"Error processing config file '{path}': {e}")
+        print(f"❌ 处理文件 {target_file_rel} 时出错: {e}")
         return False
-def main():
-    """主函数"""
-    args = parse_arguments()
-    make_command = args.make_command
-    log_file = args.log_file
-    max_retry = args.max_retry
-    fallback_command = args.fallback or "make -j1 package/feeds/luci/luci-base V=s"
-    
-    logger.info("--------------------------------------------------")
-    logger.info("开始修复 batman-adv 编译问题...")
-    logger.info("--------------------------------------------------")
-    
-    # 确保日志文件存在
-    open(log_file, 'a').close()
-    
-    # 检查并切换到 OpenWrt 根目录
-    if not check_openwrt_root():
-        logger.error("错误: 无法找到 OpenWrt 根目录，脚本将退出。")
-        sys.exit(1)
-    
-    # 初始化状态标志
-    batman_exists_checked = False
-    feeds_updated = False
-    batman_multicast_patched = False
-    batman_werror_disabled = False
-    batman_feed_switched = False
-    batman_tasklet_patched = False
-    command_fixed = False
-    direct_install_tried = False
-    missing_deps_fixed = False
-    
-    # 主循环
-    for retry_count in range(max_retry):
-        logger.info("--------------------------------------------------")
-        logger.info(f"尝试编译: {make_command} (第 {retry_count + 1} / {max_retry} 次)...")
-        logger.info("--------------------------------------------------")
-        
-        # 运行编译命令并捕获输出到临时日志文件
-        tmp_log_file = f"{log_file}.tmp"
-        try:
-            with open(tmp_log_file, 'w') as f:
-                ret_code = subprocess.call(make_command, shell=True, stdout=f, stderr=subprocess.STDOUT, timeout=7200)
-                success = process_config(config_path)
-                if success:
-                    logging.info("Script finished successfully.")
-                    sys.exit(0) # 成功退出
-                else:
-                    logging.error("Script encountered errors.")
-                    #sys.exit(1) # 失败退出
-        except subprocess.TimeoutExpired:
-            logger.error("编译命令超时，可能是系统资源不足或编译卡住")
-            ret_code = 124
-            with open(tmp_log_file, 'a') as f:
-                f.write("\n\n### COMMAND TIMED OUT AFTER 2 HOURS ###\n")
-        
-        # 检查编译是否成功
-        with open(tmp_log_file, 'r', errors='replace') as f:
-            log_content = f.read()
-            compile_success = (ret_code == 0 and not re.search(r"error:|failed|undefined reference", log_content))
-        
-        if compile_success:
-            logger.info("编译成功！")
-            with open(log_file, 'a') as main_log, open(tmp_log_file, 'r', errors='replace') as tmp_log:
-                main_log.write(tmp_log.read())
-            if os.path.isfile(tmp_log_file):
-                os.remove(tmp_log_file)
-            sys.exit(0)
-        else:
-            logger.info(f"编译失败 (退出码: {ret_code})，检查错误...")
 
-        
-        # 错误检测和修复逻辑
-        fix_applied = False
-        
-        # 检查编译是否被中断
-        if check_build_interrupted(log_content):
-            logger.info("尝试清理并重新编译...")
-            run_command("make clean")
-            fix_applied = True
-            continue
-        
-        # 检查缺失的依赖项
-        if not missing_deps_fixed and check_missing_dependencies(log_content):
-            missing_deps_fixed = True
-            fix_applied = True
-            logger.info("已尝试修复缺失的依赖项，将重试编译...")
-            continue
-        
-        # 检查 "No rule to make target" 错误
-        if "No rule to make target" in log_content:
-            logger.info("检测到 'No rule to make target' 错误...")
-            
-            # 首先检查 batman-adv 包是否存在
-            if not batman_exists_checked:
-                batman_exists_checked = True
-                if not check_batman_adv_exists():
-                    logger.info("batman-adv 包不存在，尝试更新和安装 feeds...")
-                    if fix_update_feeds():
-                        fix_applied = True
-                        feeds_updated = True
-                        logger.info("feeds 更新和安装成功，将重试编译...")
-                    else:
-                        logger.error("feeds 更新和安装失败。")
-            
-            # 如果包存在但命令有问题，尝试修改命令
-            if not command_fixed:
-                command_fixed = True
-                new_command = fix_compile_command(make_command)
-                if new_command != make_command:
-                    make_command = new_command
-                    fix_applied = True
-                    logger.info(f"已修改编译命令为: {make_command}")
-            
-            # 尝试直接安装 batman-adv
-            if not direct_install_tried and not fix_applied:
-                direct_install_tried = True
-                if fix_install_batman_directly():
-                    fix_applied = True
-                    logger.info("直接安装 batman-adv 成功，将重试编译...")
-                else:
-                    logger.error("直接安装 batman-adv 失败。")
-        
-        # 检查 struct br_ip 错误
-        elif (re.search(r"struct br_ip.*has no member named.*dst", log_content) or 
-              (re.search(r"dst\.ip[4|6]", log_content) and re.search(r"batman-adv.*multicast\.c", log_content))):
-            logger.info("检测到 batman-adv struct br_ip 'dst' 错误...")
-            if not batman_multicast_patched:
-                if fix_batman_multicast_struct(tmp_log_file):
-                    fix_applied = True
-                    batman_multicast_patched = True
-                    logger.info("修补成功，将重试编译...")
-                else:
-                    batman_multicast_patched = True
-                    logger.error("修补 multicast.c 失败，将尝试其他修复方法...")
-        
-        # 检查 -Werror 错误
-        elif re.search(r"cc1: some warnings being treated as errors", log_content) and "batman-adv" in log_content:
-            logger.info("检测到 batman-adv -Werror 错误...")
-            if not batman_werror_disabled:
-                if fix_batman_disable_werror():
-                    fix_applied = True
-                    batman_werror_disabled = True
-                    logger.info("已禁用 -Werror，将重试编译...")
-                else:
-                    batman_werror_disabled = True
-                    logger.error("禁用 -Werror 失败，将尝试其他修复方法...")
-        
-        # 检查 tasklet_setup 错误
-        elif (re.search(r'undefined reference to .*tasklet_setup', log_content) and 
-              re.search(r'batman-adv|backports|compat', log_content)):
-            logger.info("检测到 batman-adv 的 'tasklet_setup' 符号错误...")
-            if not batman_tasklet_patched:
-                if fix_batman_patch_tasklet():
-                    fix_applied = True
-                    batman_tasklet_patched = True
-                    logger.info("已添加 tasklet_setup 兼容定义，将重试编译...")
-                else:
-                    batman_tasklet_patched = True
-                    logger.error("修补 tasklet_setup 失败，将尝试其他修复方法...")
-        
-        # 通用 batman-adv 错误，尝试切换 feed
-        elif re.search(r"batman-adv.*error:|batman-adv.*failed", log_content) and not batman_feed_switched:
-            logger.info("检测到通用 batman-adv 错误，尝试切换 feed...")
-            if fix_batman_switch_feed(BATMAN_ADV_COMMIT):
-                fix_applied = True
-                batman_feed_switched = True
-                logger.info(f"已切换 feed 到 commit {BATMAN_ADV_COMMIT}，将重试编译...")
+    # If the fix was applied or deemed already applied, clean the package
+    if fixed:
+        print("🧹 清理 batman-adv 包以应用更改...")
+        clean_cmd = ["make", "package/feeds/routing/batman-adv/clean", "V=s"]
+        try:
+            result = subprocess.run(clean_cmd, check=False, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                print(f"⚠️ batman-adv 清理失败:\n{result.stderr[-500:]}")
             else:
-                batman_feed_switched = True
-                logger.error("切换 feed 失败。")
-        
+                print("✅ batman-adv 清理完成。")
+        except subprocess.TimeoutExpired:
+             print("❌ 清理 batman-adv 时超时。")
+        except Exception as e:
+            print(f"❌ 执行清理命令时出错: {e}")
+        # Return True even if clean fails, as the primary fix was attempted/verified
+        return True
+    else:
+        return False
+
+# --- Map Signatures to Fix Functions ---
+FIX_FUNCTIONS = {
+    "batman_adv_multicast_implicit_decl": fix_batman_adv_multicast,
+    # Add other error signatures and their fix functions here if needed
+}
+
+# --- Main Logic ---
+def main():
+    parser = argparse.ArgumentParser(description='OpenWrt Batman-adv 编译修复脚本')
+    parser.add_argument('make_command', help='原始编译命令，例如 "make package/feeds/routing/batman-adv/compile V=s"')
+    parser.add_argument('log_file', help='日志文件基础名 (不含 .run.N.log)')
+    parser.add_argument('--max-retry', type=int, default=3, help='最大重试次数') # Lower default for specific fix
+    # -j flag is often not relevant for single package compile, but keep for consistency
+    parser.add_argument('--jobs', type=int, default=1, help='并行任务数 (通常为 1 用于包编译)')
+    args = parser.parse_args()
+
+    # Extract base command and ensure -j is set correctly
+    base_cmd = re.sub(r'\s-j\s*\d+', '', args.make_command).strip()
+    jobs = args.jobs if args.jobs > 0 else 1 # Default to 1 for package compile
+
+    retry = 1
+    last_error_signature = None
+    same_error_count = 0
+    global log_content_global
+
+    while retry <= args.max_retry:
+        current_run_log = f"{args.log_file}.run.{retry}.log"
+        # Always use specified jobs for package compile
+        cmd = f"{base_cmd} -j{jobs}"
+
+        print(f"\n--- 尝试 {retry}/{args.max_retry} ---")
+        print(f"运行命令: {cmd}")
+        print(f"日志文件: {current_run_log}")
+
+        status = -1 # Default status
+        try:
+            # Use Popen to stream output and write to log simultaneously
+            process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       text=True, encoding='utf-8', errors='replace', bufsize=1) # Line buffered
+
+            with open(current_run_log, 'w', encoding='utf-8', errors='replace') as f:
+                for line in iter(process.stdout.readline, ''):
+                    sys.stdout.write(line)
+                    f.write(line)
+            status = process.wait() # Get final return code
+
+        except Exception as e:
+            print(f"\n❌ 执行编译命令时发生异常: {e}")
+            try:
+                with open(current_run_log, 'a', encoding='utf-8', errors='replace') as f:
+                    f.write(f"\n\n*** SCRIPT ERROR DURING EXECUTION ***\n{e}\n")
+            except Exception: pass
+            status = 1 # Assume failure
+
+        # --- Process Results ---
+        if status == 0:
+            print("\n✅ 编译成功！")
+            return 0
+
+        print(f"\n❌ 编译失败 (返回码: {status})")
+
+        # Read log content for error analysis
+        try:
+            with open(current_run_log, 'r', encoding='utf-8', errors='replace') as f:
+                log_content_global = f.read()
+        except FileNotFoundError:
+             print(f"❌ 无法读取日志文件: {current_run_log}")
+             log_content_global = ""
+             current_error_signature = "no_log_content_error"
+        except Exception as e:
+             print(f"❌ 读取日志文件时发生错误: {e}")
+             log_content_global = ""
+             current_error_signature = "log_read_error"
         else:
-            logger.info("未检测到已知的 batman-adv 错误模式，但编译失败。")
-            
-            # 如果是第一次运行且没有应用任何修复，尝试更新 feeds
-            if retry_count == 0 and not feeds_updated:
-                logger.info("尝试更新和安装 feeds...")
-                if fix_update_feeds():
-                    fix_applied = True
-                    feeds_updated = True
-                    logger.info("feeds 更新和安装成功，将重试编译...")
-        
-        # 如果没有应用任何修复但已尝试所有修复方法，尝试备选命令
-        if not fix_applied and feeds_updated and batman_multicast_patched and \
-           batman_werror_disabled and batman_feed_switched and \
-           batman_tasklet_patched and command_fixed and direct_install_tried:
-            
-            if fallback_command and fallback_command != make_command:
-                logger.info(f"所有修复方法都已尝试，切换到备选命令: {fallback_command}")
-                make_command = fallback_command
-                fallback_command = ""  # 避免再次使用相同的备选命令
-                fix_applied = True
-            else:
-                logger.info("所有修复方法都已尝试，但无法解决问题。")
-                with open(log_file, 'a') as main_log, open(tmp_log_file, 'r', errors='replace') as tmp_log:
-                    main_log.write(tmp_log.read())
-                if os.path.isfile(tmp_log_file):
-                    os.remove(tmp_log_file)
-                sys.exit(1)
-        
-        # 清理临时日志
-        with open(log_file, 'a') as main_log, open(tmp_log_file, 'r', errors='replace') as tmp_log:
-            main_log.write(tmp_log.read())
-        if os.path.isfile(tmp_log_file):
-            os.remove(tmp_log_file)
-        
-        logger.info("等待 3 秒后重试...")
-        time.sleep(3)
-    
-    # 达到最大重试次数
-    logger.info("--------------------------------------------------")
-    logger.info(f"达到最大重试次数 ({max_retry})，编译最终失败。")
-    logger.info("--------------------------------------------------")
-    logger.info(f"请检查完整日志: {log_file}")
-    sys.exit(1)
+             current_error_signature = get_error_signature(log_content_global)
+
+        print(f"检测到的错误签名: {current_error_signature}")
+
+        # --- Consecutive Error Check ---
+        if current_error_signature == last_error_signature and current_error_signature not in ["no_log_content", "unknown_error", "log_read_error", "generic_error"]:
+            same_error_count += 1
+            print(f"连续相同错误次数: {same_error_count + 1}")
+            if same_error_count >= 1: # Stop after 2 consecutive identical specific errors
+                print(f"错误 '{current_error_signature}' 连续出现 {same_error_count + 1} 次，停止重试。")
+                break
+        else:
+            same_error_count = 0
+
+        last_error_signature = current_error_signature
+
+        # --- Attempt Fixes ---
+        fix_attempted = False
+        if current_error_signature in FIX_FUNCTIONS:
+            fix_func = FIX_FUNCTIONS[current_error_signature]
+            fix_attempted = fix_func(log_content_global)
+        elif current_error_signature == "unknown_error":
+            print("未知错误，无法自动修复。")
+        elif current_error_signature.startswith("generic_error"):
+             print("检测到通用错误，无特定修复程序。")
+        elif current_error_signature in ["no_log_content", "no_log_content_error", "log_read_error"]:
+             print("无法读取日志或无内容，无法分析错误。")
+        else:
+             print(f"未处理的错误类型: {current_error_signature}，无自动修复程序。")
+
+        # --- Prepare for next retry ---
+        retry += 1
+        if fix_attempted:
+            print("已尝试修复，等待 3 秒...")
+            time.sleep(3)
+        else:
+            # If no fix was attempted for the specific error, stop retrying.
+            print("未找到适用的修复程序或修复未执行，停止重试。")
+            break
+
+
+    # --- End of Loop ---
+    print(f"\n--- 编译最终失败 ---")
+    if retry > args.max_retry:
+        print(f"已达到最大重试次数 ({args.max_retry})。")
+    print(f"最后一次运行日志: {current_run_log}")
+    print(f"最后检测到的错误: {last_error_signature}")
+    return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
