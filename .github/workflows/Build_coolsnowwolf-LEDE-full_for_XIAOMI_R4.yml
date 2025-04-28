@@ -157,11 +157,13 @@ jobs:
           cd openwrt
           # cp ../fix_batman_adv.sh . && bash ./fix_batman_adv.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || bash ./fix_batman_adv.sh "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
           cp ../fix_batman_adv.py . 
-          make -j1 package/feeds/routing/batman-adv/compile V=s || python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || python ./fix_batman_adv.py "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
+          #make -j1 package/feeds/routing/batman-adv/compile V=s
+          python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log"
           
 
       - name: Compile the firmware
         id: compile
+        if: steps.compile_batman_1.outcome == 'success'
         run: |
           cd openwrt && cp ../compile_with_retry.py .
           echo -e "先尝试$(nproc)线程编译"
@@ -197,10 +199,22 @@ jobs:
         if: (!cancelled())
         run: df -hT
 
+      - name: Check for .bin files
+        id: check_bin
+        if: steps.rename.conclusion == 'success' && !cancelled()
+        run: |
+          echo "Check File Sizes..."
+          ls -lh ${{ env.firmware_path }}/*
+          if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
+            echo "No .bin files found in firmware_path. Stopping workflow."
+            exit 1
+          fi
+          echo "check_bin_exist=success" >> $GITHUB_OUTPUT
+          
       - name: Upload bin directory
         id: upload
         uses: actions/upload-artifact@master
-        if: steps.compile.conclusion == 'success' && env.UPLOAD_BIN_DIR == 'true'
+        if: steps.check_bin.check_bin_exist.outcome == 'success'
         with:
           name: OpenWrt_LEDE_coolsnowwolf_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: |
@@ -209,7 +223,7 @@ jobs:
 
       - name: Organize files
         id: organize
-        if: env.UPLOAD_FIRMWARE == 'true' && steps.upload.conclusion == 'success'
+        if: steps.upload.conclusion == 'success'
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
@@ -223,17 +237,6 @@ jobs:
           name: OpenWrt_LEDE_coolsnowwolf_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: ${{ env.firmware_path }}
 
-      - name: Check for .bin files
-        id: check_bin
-        if: steps.organize.outputs.status == 'success' && !cancelled()
-        run: |
-          echo "Check File Sizes..."
-          ls -lh ${{ env.firmware_path }}/*
-          if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
-            echo "No .bin files found in firmware_path. Stopping workflow."
-            exit 1
-          fi
-          echo "check_bin_exist=success" >> $GITHUB_OUTPUT
 
       - name: Generate release tag
         id: generate_release_tag
