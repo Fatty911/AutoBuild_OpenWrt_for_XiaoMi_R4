@@ -115,7 +115,7 @@ jobs:
       - name: Compile tools
         run: |
           cd openwrt
-          make tools/install -j1 V=s > tools.log 2>&1 || {
+          make tools/install -j2 V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1 || {
             LOG_TAIL=$(tac tools.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
             [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 tools.log)
             echo "编译错误日志摘要："
@@ -128,7 +128,7 @@ jobs:
         run: |
           cd openwrt
           set +e
-          make toolchain/install -j1 V=s > toolchain.log 2>&1 || {
+          make toolchain/install -j2 V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1 || {
             LOG_TAIL=$(tac toolchain.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
             [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 toolchain.log)
             echo "编译错误日志摘要："
@@ -139,7 +139,7 @@ jobs:
       - name: Compile kernel
         run: |
           cd openwrt
-          make target/linux/compile -j1 V=s > kernel.log 2>&1 || {
+          make target/linux/compile -j2 V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1 || {
             LOG_TAIL=$(tac kernel.log | awk '/Entering directory/{count++} count==3{exit}1' | tac)
             [ -z "$LOG_TAIL" ] && LOG_TAIL=$(tail -n 100 kernel.log)
             echo "编译错误日志摘要："
