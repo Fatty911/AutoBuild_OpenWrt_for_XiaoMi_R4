@@ -1,10 +1,11 @@
-diff --git a/net/batman-adv/multicast.c b/net/batman-adv/multicast.c
 --- a/net/batman-adv/multicast.c
 +++ b/net/batman-adv/multicast.c
 @@ -208,7 +208,7 @@
   */
- static bool batadv_mcast_mla_rtr_flags_bridge_get(struct net_device *dev)
- {
--	if (!br_multicast_has_router_adjacent(dev, ETH_P_IP))
+ bool batadv_mcast_mla_rtr_flags_bridge_get(struct batadv_priv *bat_priv,
+                                          struct net_device *dev)
+-{
++{
+ 	if (!br_multicast_has_router_adjacent(dev, ETH_P_IP))
 +	if (!br_multicast_has_querier_adjacent(dev, ETH_P_IP))
  		return false;
