@@ -40,197 +40,136 @@ def get_error_signature(log_content):
     if batman_adv_error_match:
         return "batman_adv_multicast_implicit_decl"
 
-    # --- Batman-adv patch failed error ---
-    # Detect if our specific patch failed to apply
+    # --- Batman-adv patch failed error (specifically 0001 if we modify it) ---
     patch_failed_match = re.search(
-        r"Applying.*?patches/0003-fix-multicast-implicit-declaration\.patch.*?Hunk #\d+ FAILED.*?Patch failed!",
+        r"Applying.*?patches/0001-Revert-batman-adv-Migrate-to-linux-container_of\.h\.patch.*?FAILED.*?Patch failed!",
         log_content, re.DOTALL | re.IGNORECASE
     )
     if patch_failed_match:
-        return "batman_adv_patch_0003_failed" # Specific signature for our patch failing
+        return "batman_adv_patch_0001_failed" # Signature if our modified patch fails
 
     # --- Generic Error (fallback) ---
     generic_error_match = re.search(r'(error:|failed|fatal error:|collect2: error: ld returned 1 exit status)', log_content, re.IGNORECASE)
     if generic_error_match:
-        # Try to get the package name from the "ERROR: package/... failed" line if available
         pkg_fail_match = re.search(r"ERROR: package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+) failed to build", log_content)
         pkg_name = pkg_fail_match.group(1) if pkg_fail_match else "unknown_pkg"
-
         error_keyword = generic_error_match.group(1).lower().split(':')[0].replace(' ', '_')
         context_line = ""
         for line in reversed(log_content.splitlines()):
              if generic_error_match.group(1).lower() in line.lower():
-                 context_line = re.sub(r'\x1b\[[0-9;]*[mK]', '', line).strip() # Remove ANSI codes
-                 context_line = re.sub(r'[^a-zA-Z0-9\s\._\-\+=:/]', '', context_line)[:80] # Keep relevant chars
+                 context_line = re.sub(r'\x1b\[[0-9;]*[mK]', '', line).strip()
+                 context_line = re.sub(r'[^a-zA-Z0-9\s\._\-\+=:/]', '', context_line)[:80]
                  break
         return f"generic_error:{error_keyword}:{pkg_name}:{context_line}"
-
 
     return "unknown_error"
 
 # --- Fix Function ---
-def fix_batman_adv_generate_patch():
+def fix_batman_adv_modify_patch_0001():
     """
-    Fixes the implicit declaration error in batman-adv/net/batman-adv/multicast.c
-    by dynamically generating a patch file in feeds/routing/batman-adv/patches/
-    based on the state of the file in build_dir.
+    Fixes the implicit declaration error by modifying the existing patch
+    '0001-Revert-batman-adv-Migrate-to-linux-container_of.h.patch'
+    to include the function name change for multicast.c.
     """
-    print("🔧 检测到 batman-adv multicast.c 错误，尝试动态生成修复补丁...")
-    patch_generated = False
+    print("🔧 检测到 batman-adv multicast.c 错误，尝试修改现有补丁 0001...")
+    patch_modified = False
     patch_dir = Path("feeds/routing/batman-adv/patches")
-    patch_filename = "0003-fix-multicast-implicit-declaration.patch"
+    patch_filename = "0001-Revert-batman-adv-Migrate-to-linux-container_of.h.patch"
     patch_path = patch_dir / patch_filename
     patch_path_rel = get_relative_path(str(patch_path))
 
-    target_line_num = 211 # Actual line number from error log
-    target_line_index = target_line_num - 1
     old_func = "br_multicast_has_router_adjacent"
     new_func = "br_multicast_has_querier_adjacent"
-    relative_file_path = "net/batman-adv/multicast.c" # Path relative to package source root
+    target_file_in_patch = "net/batman-adv/multicast.c"
 
-    # 1. Check if patch already exists
-    if patch_path.exists():
-        print(f"ℹ️ 补丁文件 '{patch_path_rel}' 已存在。假设修复已应用。")
-        # Still clean the package to ensure it's applied correctly in the next run
-        print("🧹 清理 batman-adv 包以确保补丁应用...")
-        clean_package()
-        return True # Indicate fix attempt was made (by checking existence + cleaning)
-
-    # 2. Find the source file in build_dir
-    search_pattern = f"build_dir/**/batman-adv-*/{relative_file_path}"
-    found_files = list(Path(".").glob(search_pattern))
-    valid_files = [f for f in found_files if 'target-' in str(f) and 'linux-' in str(f)]
-
-    if not valid_files:
-        print(f"❌ 错误：找不到 batman-adv 的源文件 (搜索模式: {search_pattern})")
+    if not patch_path.exists():
+        print(f"❌ 错误：找不到目标补丁文件 '{patch_path_rel}' 进行修改。")
         return False
-    if len(valid_files) > 1:
-        print(f"⚠️ 警告：找到多个源文件，将使用第一个: {get_relative_path(str(valid_files[0]))}")
 
-    source_file_in_build_dir = valid_files[0]
-    source_file_rel = get_relative_path(str(source_file_in_build_dir))
-    print(f"找到构建目录中的源文件: {source_file_rel}")
-
-    # 3. Generate the patch dynamically
-    backup_file = None
-    temp_patch_file_path = None
     try:
-        # Create a backup
-        # Use a temporary directory for the backup to avoid cluttering build_dir
-        with tempfile.TemporaryDirectory() as temp_dir:
-            backup_file_in_temp = Path(temp_dir) / source_file_in_build_dir.name
-            shutil.copy2(source_file_in_build_dir, backup_file_in_temp)
-            print(f"创建临时备份于: {backup_file_in_temp}") # Log temp path for debug
+        print(f"读取补丁文件: {patch_path_rel}")
+        with open(patch_path, 'r', encoding='utf-8', errors='replace') as f:
+            lines = f.readlines()
 
-            # Modify the file in build_dir *in place* temporarily
-            with open(source_file_in_build_dir, 'r+', encoding='utf-8', errors='replace') as f:
-                lines = f.readlines()
-                if len(lines) <= target_line_index:
-                    print(f"❌ 错误：文件 {source_file_rel} 行数 ({len(lines)}) 不足，无法修改第 {target_line_num} 行。")
-                    raise ValueError("Line index out of bounds")
+        new_lines = []
+        in_multicast_hunk = False
+        found_line_to_modify = False
+        already_modified = False
 
-                current_line = lines[target_line_index]
-                if old_func not in current_line:
-                    # Check if it was already patched by previous attempts or patches
-                    if new_func in current_line:
-                         print(f"ℹ️ 在文件 {source_file_rel} 第 {target_line_num} 行找到新函数 '{new_func}'，可能已被修复。跳过修改。")
-                         # Skip modification, but proceed to check diff and clean
-                    else:
-                        print(f"❌ 错误：在文件 {source_file_rel} 第 {target_line_num} 行未找到预期函数 '{old_func}'。")
-                        print(f"   该行内容为: {current_line.rstrip()}")
-                        raise ValueError("Function not found at expected line")
-                else:
-                    print(f"在 {source_file_rel} 第 {target_line_num} 行临时替换函数...")
-                    lines[target_line_index] = current_line.replace(old_func, new_func)
-                    f.seek(0)
-                    f.writelines(lines)
-                    f.truncate()
+        for line in lines:
+            current_line = line # Keep original for appending if no change
 
-            # Create a temporary file for the patch
-            with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=".patch", encoding='utf-8') as temp_patch_file:
-                temp_patch_file_path = Path(temp_patch_file.name)
-                # --- MODIFIED DIFF COMMAND ---
-                # Pass the relative paths directly as strings.
-                # The paths found by glob are already relative to CWD (openwrt dir).
-                diff_cmd = [
-                    "diff", "-u",
-                    str(source_file_in_build_dir), # Original file (now modified)
-                    str(backup_file_in_temp)       # Backup file (original content)
-                ]
-                # Note: diff order is reversed (modified vs original) to get the correct patch format easily
-                # We will swap the --- and +++ headers later.
+            # Detect start of hunk for the target file
+            if line.startswith(f"--- a/{target_file_in_patch}") or line.startswith(f"+++ b/{target_file_in_patch}"):
+                in_multicast_hunk = True
+            # Detect end of hunk (start of a new file's hunk)
+            elif line.startswith("--- a/") and in_multicast_hunk:
+                in_multicast_hunk = False
+            # Detect end of hunk (end of patch file) - less reliable but fallback
+            # elif not line.strip() and in_multicast_hunk: # Approximation
+            #     in_multicast_hunk = False
 
-                print(f"生成 diff: {' '.join(diff_cmd)}")
-                diff_process = subprocess.run(diff_cmd, capture_output=True, text=True, encoding='utf-8', errors='replace')
+            if in_multicast_hunk:
+                # Look for the specific line within the hunk (must start with ' ' or '-')
+                # The line in the patch might start with '-' if it's being removed, or ' ' if context
+                # We expect it to be context (' ') or possibly added ('+') in the original patch 0001
+                line_content = line.strip()
+                if old_func in line_content and (line.startswith(' ') or line.startswith('+') or line.startswith('-')):
+                    print(f"  找到包含 '{old_func}' 的行: {line.rstrip()}")
+                    # Replace the function name within this line
+                    modified_line = line.replace(old_func, new_func)
+                    print(f"  修改为: {modified_line.rstrip()}")
+                    new_lines.append(modified_line)
+                    found_line_to_modify = True
+                    patch_modified = True
+                    continue # Go to next line after appending modified one
+                elif new_func in line_content and (line.startswith(' ') or line.startswith('+') or line.startswith('-')):
+                     # If the new function is already there, assume it's fixed
+                     already_modified = True
+                     print(f"  发现函数 '{new_func}' 已存在于补丁中: {line.rstrip()}")
 
-                if diff_process.returncode > 1:
-                     print(f"❌ diff 命令执行失败 (返回码 {diff_process.returncode}):")
-                     print(diff_process.stderr)
-                     raise RuntimeError("diff command failed")
-                elif diff_process.returncode == 0:
-                     print(f"⚠️ diff 未找到差异，文件可能已修复或修改失败？")
-                     # No patch needed if no diff
-                else:
-                     # Process diff output to fix headers (swap ---/+++ and fix paths)
-                     print("处理 diff 输出以修正补丁头...")
-                     diff_output = diff_process.stdout
-                     # Swap --- and +++ lines and fix paths
-                     processed_lines = []
-                     for line in diff_output.splitlines():
-                         if line.startswith("--- "):
-                             # This was the modified file, make it the 'b' version
-                             processed_lines.append(f"+++ b/{relative_file_path}")
-                         elif line.startswith("+++ "):
-                             # This was the backup file, make it the 'a' version
-                             processed_lines.append(f"--- a/{relative_file_path}")
-                         else:
-                             processed_lines.append(line)
 
-                     processed_diff = "\n".join(processed_lines) + "\n" # Ensure trailing newline
-                     temp_patch_file.write(processed_diff)
-                     print(f"临时补丁写入: {temp_patch_file_path}")
+            # Append the original or unmodified line if no change was made above
+            new_lines.append(current_line)
+            # Reset in_multicast_hunk if we reach the end of the file within the hunk
+            # This check might be redundant if the file ends correctly after the hunk.
+            # if line is lines[-1] and in_multicast_hunk:
+            #      in_multicast_hunk = False
 
-            # Move the generated patch to the correct location
-            if temp_patch_file_path and temp_patch_file_path.stat().st_size > 0:
-                patch_dir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(temp_patch_file_path), patch_path)
-                print(f"✅ 成功生成并移动补丁到: {patch_path_rel}")
-                patch_generated = True
-            elif temp_patch_file_path:
-                 print(f"ℹ️ 生成的补丁为空，未移动。")
-                 temp_patch_file_path.unlink()
-                 patch_generated = False
-            else: # Case where diff found no differences
-                 print(f"ℹ️ 无需生成补丁文件。")
-                 patch_generated = False # No new patch was generated
 
-            # --- Restore the original file in build_dir ---
-            # This happens *after* diff is done
-            print(f"恢复原始文件: {source_file_rel}")
-            shutil.copy2(backup_file_in_temp, source_file_in_build_dir)
+        if already_modified:
+            print(f"ℹ️ 补丁 '{patch_path_rel}' 似乎已包含所需更改。")
+            patch_modified = False # Don't rewrite if already correct
+        elif not found_line_to_modify:
+            print(f"❌ 错误：未能在补丁 '{patch_path_rel}' 的 {target_file_in_patch} 部分找到包含 '{old_func}' 的行进行修改。")
+            # This implies the structure of patch 0001 changed or doesn't contain the expected context.
+            # Trying to generate a new patch might be the only option left, but let's fail for now.
+            return False
+        elif patch_modified:
+            print(f"准备写回修改后的补丁: {patch_path_rel}")
+            # Create a backup of the original patch
+            backup_patch_path = patch_path.with_suffix(patch_path.suffix + ".bak")
+            try:
+                shutil.copy2(patch_path, backup_patch_path)
+                print(f"创建原始补丁备份: {get_relative_path(str(backup_patch_path))}")
+            except Exception as backup_e:
+                print(f"⚠️ 创建补丁备份失败: {backup_e}")
+
+            # Write the modified content
+            with open(patch_path, 'w', encoding='utf-8') as f:
+                f.writelines(new_lines)
+            print(f"✅ 成功修改补丁文件 {patch_path_rel}。")
 
     except Exception as e:
-        print(f"❌ 生成动态补丁时出错: {e}")
-        patch_generated = False
-        # Attempt to restore if backup exists and modification happened in build_dir
-        if Path(str(source_file_in_build_dir) + ".orig").exists(): # Check for old backup style just in case
-             try:
-                 shutil.move(str(source_file_in_build_dir) + ".orig", source_file_in_build_dir)
-                 print(f"⚠️ 已尝试从旧式备份恢复 {source_file_rel}")
-             except Exception: pass
-    finally:
-        # Clean up temp patch file if it still exists
-        if temp_patch_file_path and temp_patch_file_path.exists():
-            try: temp_patch_file_path.unlink()
-            except OSError: pass
+        print(f"❌ 修改补丁文件 {patch_path_rel} 时出错: {e}")
+        return False
 
-
-    # 4. Clean the package to apply the patch on the next run
-    print("🧹 清理 batman-adv 包以应用补丁...")
+    # Always clean the package after detecting the error to force re-patching
+    print("🧹 清理 batman-adv 包以应用修改后的补丁...")
     clean_package()
 
-    # Return True if the patch was generated OR already existed before we started
-    return patch_generated or patch_path.exists()
+    # Return True because we've identified the error and taken the corrective action
+    return True
 
 def clean_package():
     """Runs make clean for the batman-adv package."""
@@ -246,35 +185,37 @@ def clean_package():
     except Exception as e:
         print(f"⚠️ 执行清理命令时出错: {e}")
 
-def handle_failed_patch():
-    """Handles the case where our generated patch failed to apply."""
-    print("❌ 检测到之前生成的补丁应用失败。")
-    patch_path = Path("feeds/routing/batman-adv/patches/0003-fix-multicast-implicit-declaration.patch")
-    patch_path_rel = get_relative_path(str(patch_path))
-    if patch_path.exists():
-        print(f"尝试删除无效补丁: {patch_path_rel}")
+def handle_failed_patch_0001():
+    """Handles the case where our *modified* patch 0001 failed to apply."""
+    print("❌ 检测到修改后的补丁 0001 应用失败。")
+    patch_path = Path("feeds/routing/batman-adv/patches/0001-Revert-batman-adv-Migrate-to-linux-container_of.h.patch")
+    backup_patch_path = patch_path.with_suffix(patch_path.suffix + ".bak")
+
+    if backup_patch_path.exists():
+        print(f"尝试从备份恢复原始补丁 0001...")
         try:
-            patch_path.unlink()
-            print("✅ 已删除补丁。将在下次尝试重新生成。")
-            # Clean again to ensure the failed patch state is cleared
+            shutil.move(str(backup_patch_path), patch_path)
+            print("✅ 已恢复原始补丁 0001。")
+            # Clean again after restoring
             clean_package()
-            return True # Indicate action was taken
+            return True # Indicate action taken
         except Exception as e:
-            print(f"❌ 删除补丁失败: {e}")
+            print(f"❌ 恢复原始补丁 0001 失败: {e}")
+            # If restore fails, maybe delete the modified one? Risky.
             return False
     else:
-        print("ℹ️ 未找到需要删除的补丁文件。")
+        print("⚠️ 未找到补丁 0001 的备份文件 (.bak)。无法自动恢复。")
         return False
 
 
 # --- Map Signatures to Fix Functions ---
 FIX_FUNCTIONS = {
-    "batman_adv_multicast_implicit_decl": fix_batman_adv_generate_patch,
-    "batman_adv_patch_0003_failed": handle_failed_patch, # Handle if our patch fails
+    "batman_adv_multicast_implicit_decl": fix_batman_adv_modify_patch_0001,
+    "batman_adv_patch_0001_failed": handle_failed_patch_0001, # Handle if our modified patch fails
     # Add other error signatures and their fix functions here if needed
 }
 
-# --- Main Logic ---
+# --- Main Logic (Mostly unchanged from previous version) ---
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt Batman-adv 编译修复脚本')
     parser.add_argument('make_command', help='原始编译命令，例如 "make package/feeds/routing/batman-adv/compile V=s"')
@@ -305,11 +246,10 @@ def main():
                                        text=True, encoding='utf-8', errors='replace', bufsize=1)
 
             with open(current_run_log, 'w', encoding='utf-8', errors='replace') as f:
-                # Ensure stdout/stderr are properly handled even if script is interrupted
                 for line in iter(process.stdout.readline, ''):
                     sys.stdout.write(line)
                     f.write(line)
-            process.stdout.close() # Close stdout pipe
+            process.stdout.close()
             status = process.wait()
 
         except KeyboardInterrupt:
@@ -337,9 +277,8 @@ def main():
         # Read log content for error analysis
         log_content_global = ""
         try:
-            # Ensure file is closed before reading
-            if process: process.wait() # Ensure process finished writing
-            time.sleep(0.2) # Short delay
+            if process: process.wait()
+            time.sleep(0.2)
             with open(current_run_log, 'r', encoding='utf-8', errors='replace') as f:
                 log_content_global = f.read()
         except FileNotFoundError:
@@ -354,31 +293,29 @@ def main():
         print(f"检测到的错误签名: {current_error_signature}")
 
         # --- Consecutive Error Check ---
-        # If the *same* specific error occurs immediately after we tried to fix it, stop.
         if fix_attempt_made_in_last_cycle and current_error_signature == last_error_signature:
              if current_error_signature == "batman_adv_multicast_implicit_decl":
                  print(f"错误 '{current_error_signature}' 在尝试修复后仍然立即出现，停止重试。")
                  break
-             elif current_error_signature == "batman_adv_patch_0003_failed":
-                  print(f"补丁应用 '{current_error_signature}' 在尝试修复后仍然失败，停止重试。")
+             elif current_error_signature == "batman_adv_patch_0001_failed":
+                  print(f"补丁 0001 应用在尝试修复后仍然失败，停止重试。")
                   break
-        # If a *different* error occurs right after the fix attempt, stop.
         elif fix_attempt_made_in_last_cycle and current_error_signature != last_error_signature:
              print(f"出现新的错误 '{current_error_signature}' 在尝试修复 '{last_error_signature}' 后，停止重试。")
              break
 
         last_error_signature = current_error_signature
-        fix_attempt_made_in_last_cycle = False # Reset flag for this cycle
+        fix_attempt_made_in_last_cycle = False # Reset flag
 
         # --- Attempt Fixes ---
         if current_error_signature in FIX_FUNCTIONS:
             fix_func = FIX_FUNCTIONS[current_error_signature]
-            if fix_func(): # Run the fix function
-                 fix_attempt_made_in_last_cycle = True # Mark that a fix was attempted
+            if fix_func():
+                 fix_attempt_made_in_last_cycle = True
             else:
-                 # If fix function returns False (e.g., couldn't find file, patch exists but clean fails?)
-                 print(f"修复函数针对 '{current_error_signature}' 执行但可能未成功完成所有步骤，停止重试。")
+                 print(f"修复函数针对 '{current_error_signature}' 执行但未成功完成，停止重试。")
                  break
+        # ... (rest of the error handling remains the same) ...
         elif current_error_signature == "unknown_error":
             print("未知错误，无法自动修复，停止重试。")
             break
@@ -390,13 +327,12 @@ def main():
              break
         else:
              print(f"未处理的错误类型: {current_error_signature}，无自动修复程序，停止重试。")
-             break # Stop for any other unhandled error
+             break
 
         # --- Prepare for next retry ---
         retry += 1
-        # No sleep needed if fix was attempted, proceed directly
         if not fix_attempt_made_in_last_cycle:
-             # This case should ideally not be reached if we break on unhandled errors
+             # Should not be reached if we break on unhandled errors
              print("未尝试修复，等待 2 秒...")
              time.sleep(2)
 
