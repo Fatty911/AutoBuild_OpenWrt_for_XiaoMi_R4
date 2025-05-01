@@ -9,4 +9,3 @@
     if (!br_multicast_has_router_adjacent(dev, ETH_P_IP))
 +   if (!br_multicast_has_querier_adjacent(dev, ETH_P_IP))
         return false;
-
