@@ -46,21 +46,27 @@ def get_error_signature(log_content):
         return f"kernel_config_missing:{pkg_name}"
 
     # --- Batman-adv multicast.c implicit declaration error ---
-    batman_adv_error_match = re.search(
+    batman_adv_multicast_match = re.search(
         r"batman-adv/multicast\.c.*error: implicit declaration of function 'br_multicast_has_router_adjacent'.*?did you mean 'br_multicast_has_querier_adjacent'.*?make\[\d+\]: \*\*\* .*?batman-adv.*? Error \d+",
         log_content, re.DOTALL | re.IGNORECASE
     )
-    if batman_adv_error_match:
+    if batman_adv_multicast_match:
         return "batman_adv_multicast_implicit_decl"
 
     # --- Batman-adv patch failed error (specifically 0003 if using pre-added patch) ---
-    patch_failed_match = re.search(
+    batman_patch_failed_match = re.search(
         r"Applying.*?patches/0003-fix-multicast-implicit-declaration\.patch.*?FAILED.*?Patch failed!",
         log_content, re.DOTALL | re.IGNORECASE
     )
-    if patch_failed_match:
+    if batman_patch_failed_match:
         return "batman_adv_patch_0003_failed"
-
+    batman_patch_other_error = re.search(
+        r"batman-adv.*Error",
+        log_content, re.DOTALL | re.IGNORECASE
+    )
+    if batman_patch_other_error:
+        return "batman_patch_other_error"
+    
     # --- Generic Error (fallback) ---
     generic_error_match = re.search(r'(error:|failed|fatal error:|collect2: error: ld returned 1 exit status)', log_content, re.IGNORECASE)
     if generic_error_match:
@@ -185,11 +191,87 @@ def handle_failed_patch_0003():
     # No automatic action here, requires manual patch fix.
     return False # Indicate automatic fix failed
 
+
+def switch_to_official_batman_adv(error_signature):
+    """
+    Attempts to switch the routing feed to official OpenWrt and reinstall batman-adv.
+    """
+    print("🔧 检测到 coolsnowwolf batman-adv 编译失败，尝试切换到 OpenWrt 官方 routing feed...")
+
+    feeds_conf_path = "feeds.conf.default"
+    try:
+        # 1. Modify feeds.conf.default
+        print(f"   1. 修改 {feeds_conf_path}...")
+        with open(feeds_conf_path, "r") as f:
+            lines = f.readlines()
+        with open(feeds_conf_path, "w") as f:
+            found_cs = False
+            found_owrt = False
+            for line in lines:
+                if line.strip().startswith("src-git routing https://github.com/coolsnowwolf/routing"):
+                    f.write("#" + line) # Comment out coolsnowwolf
+                    found_cs = True
+                elif line.strip().startswith("src-git routing https://git.openwrt.org/feed/routing.git") or \
+                     line.strip().startswith("src-git routing https://github.com/openwrt/routing.git"):
+                     # Uncomment if exists and commented, otherwise keep as is
+                     if line.startswith("#"):
+                         f.write(line[1:])
+                     else:
+                         f.write(line)
+                     found_owrt = True
+                else:
+                    f.write(line)
+            if not found_owrt: # Add official feed if not present at all
+                 # Prefer stable branch
+                 f.write("\nsrc-git routing https://git.openwrt.org/feed/routing.git;openwrt-23.05\n")
+                 print("      添加了 OpenWrt 官方 routing feed (openwrt-23.05)。")
+            elif found_cs:
+                 print("      注释了 coolsnowwolf routing feed。")
+            else:
+                 print("      coolsnowwolf routing feed 未找到，官方 feed 已存在或已添加。")
+
+
+        # 2. Update the routing feed
+        print("   2. 更新 routing feed...")
+        update_cmd = ["./scripts/feeds", "update", "routing"]
+        result = subprocess.run(update_cmd, capture_output=True, text=True, timeout=300)
+        if result.returncode != 0:
+            print(f"❌ 更新 routing feed 失败 (命令: {' '.join(update_cmd)}):\n{result.stderr[-500:]}")
+            return False
+        print("      ✅ routing feed 更新成功。")
+
+        # 3. Uninstall old batman-adv package (might fail if not installed, ignore error)
+        print("   3. 卸载旧的 batman-adv...")
+        uninstall_cmd = ["./scripts/feeds", "uninstall", "batman-adv"]
+        subprocess.run(uninstall_cmd, capture_output=True, text=True, timeout=60)
+        print("      尝试卸载完成 (忽略错误)。")
+
+        # 4. Install new batman-adv package
+        print("   4. 安装新的 batman-adv...")
+        install_cmd = ["./scripts/feeds", "install", "batman-adv"]
+        result = subprocess.run(install_cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            print(f"❌ 安装 batman-adv 失败 (命令: {' '.join(install_cmd)}):\n{result.stderr[-500:]}")
+            # Attempt to install dependencies explicitly? Maybe too complex here.
+            return False
+        print("      ✅ batman-adv 安装成功。")
+
+        # 5. Clean the package build directory
+        print("   5. 清理 batman-adv 构建目录...")
+        clean_package("feeds/routing/batman-adv") # Use your existing clean function
+
+        print("✅ 切换 batman-adv 到官方源完成，请重试编译。")
+        return True # Return True to indicate a fix was attempted
+
+    except Exception as e:
+        print(f"❌ 切换 batman-adv 源时发生严重错误: {e}")
+        return False
 # --- Map Signatures to Fix Functions ---
 FIX_FUNCTIONS = {
     "kernel_config_missing": fix_kernel_prepare, # Add handler for missing kernel config
     "batman_adv_multicast_implicit_decl": fix_batman_adv_patch_or_clean, # Use the cleaning approach
     "batman_adv_patch_0003_failed": handle_failed_patch_0003,
+    "batman_patch_other_error": switch_to_official_batman_adv
 }
 
 # --- Main Logic ---
