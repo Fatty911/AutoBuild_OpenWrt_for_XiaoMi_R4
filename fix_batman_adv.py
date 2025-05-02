@@ -51,7 +51,8 @@ def get_error_signature(log_content):
         log_content, re.DOTALL | re.IGNORECASE
     )
     if batman_adv_multicast_match:
-        return "batman_adv_multicast_implicit_decl"
+        # return "batman_adv_multicast_implicit_decl"
+        return "batman_patch_other_error"
         
 
     # --- Batman-adv patch failed error (specifically 0003 if using pre-added patch) ---
