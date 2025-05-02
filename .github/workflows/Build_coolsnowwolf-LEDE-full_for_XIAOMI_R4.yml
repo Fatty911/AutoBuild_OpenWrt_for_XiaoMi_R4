@@ -184,11 +184,25 @@ jobs:
           KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
 
+      - name: Check space usage after compile
+        if: (!cancelled())
+        run: df -hT
+        
+      - name: Organize files
+        id: organize
+        if: steps.compile.outputs.status == 'success'
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "firmware_path=$(pwd)" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT      
+          
       - name: Rename
         id: rename
-        if: steps.compile.conclusion == 'success'
+        if: steps.compile.outputs.status == 'success'
         run: |
           cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+          
           for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
             if [ -f "$file" ]; then
               new_file="openwrt_coolsnowwolf_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE}}}"
@@ -197,13 +211,10 @@ jobs:
             fi
           done
 
-      - name: Check space usage after compile
-        if: (!cancelled())
-        run: df -hT
 
       - name: Check for .bin files
         id: check_bin
-        if: steps.rename.conclusion == 'success' && !cancelled()
+        if: steps.organize.outputs.status == 'success' && !cancelled()
         run: |
           echo "Check File Sizes..."
           ls -lh ${{ env.firmware_path }}/*
@@ -223,18 +234,11 @@ jobs:
             openwrt/bin
             openwrt/.config
 
-      - name: Organize files
-        id: organize
-        if: steps.upload.conclusion == 'success'
-        run: |
-          cd openwrt/bin/targets/*/*
-          rm -rf packages
-          echo "firmware_path=$(pwd)" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+
 
       - name: Upload firmware directory
         uses: actions/upload-artifact@master
-        if: steps.organize.outputs.status == 'success' && !cancelled()
+        if: steps.compile.outputs.status == 'success' && !cancelled()
         with:
           name: OpenWrt_LEDE_coolsnowwolf_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: ${{ env.firmware_path }}
