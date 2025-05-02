@@ -52,18 +52,21 @@ def get_error_signature(log_content):
     )
     if batman_adv_multicast_match:
         return "batman_adv_multicast_implicit_decl"
+        
 
     # --- Batman-adv patch failed error (specifically 0003 if using pre-added patch) ---
-    batman_patch_failed_match = re.search(
-        r"Applying.*?patches/0003-fix-multicast-implicit-declaration\.patch.*?FAILED.*?Patch failed!",
-        log_content, re.DOTALL | re.IGNORECASE
-    )
-    if batman_patch_failed_match:
-        return "batman_adv_patch_0003_failed"
+    # batman_patch_failed_match = re.search(
+    #     r"Applying.*?patches/0003-fix-multicast-implicit-declaration\.patch.*?FAILED.*?Patch failed!",
+    #     log_content, re.DOTALL | re.IGNORECASE
+    # )
+    # if batman_patch_failed_match:
+    #     return "batman_adv_patch_0003_failed"
+
+    
     batman_patch_other_error = re.search(
         r"batman-adv.*Error",
         log_content, re.DOTALL | re.IGNORECASE
-    )
+    )    
     if batman_patch_other_error:
         return "batman_patch_other_error"
     
@@ -270,7 +273,7 @@ def switch_to_official_batman_adv(error_signature):
 FIX_FUNCTIONS = {
     "kernel_config_missing": fix_kernel_prepare, # Add handler for missing kernel config
     "batman_adv_multicast_implicit_decl": fix_batman_adv_patch_or_clean, # Use the cleaning approach
-    "batman_adv_patch_0003_failed": handle_failed_patch_0003,
+    # "batman_adv_patch_0003_failed": handle_failed_patch_0003,
     "batman_patch_other_error": switch_to_official_batman_adv
 }
 
