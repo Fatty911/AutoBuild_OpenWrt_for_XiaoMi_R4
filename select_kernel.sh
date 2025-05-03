@@ -6,6 +6,7 @@ set -e # Exit immediately if a command exits with a non-zero status.
 OPENWRT_DIR="openwrt" # Relative path to the OpenWrt source directory
 CONFIG_FILE=".config" # The configuration file name
 TARGET_BOARD="ramips" # Your target board (used to check kernel config availability)
+SUBTARGET="mt7621"
 # Prioritized kernel versions (Match format in target/linux/<board>/config-*)
 KERNELS_PRIORITY=("6.12" "6.6" "6.1" "5.15" "5.10")
 # --- End Configuration ---
@@ -22,6 +23,7 @@ fi
 echo "Current directory: $(pwd)"
 echo "Using config file: ${CONFIG_FILE_PATH}"
 echo "Target board: ${TARGET_BOARD}"
+echo "SUBTARGET: ${SUBTARGET}"
 echo "Kernel priority list: ${KERNELS_PRIORITY[*]}"
 
 SELECTED_KERNEL=""
@@ -31,7 +33,7 @@ echo "--- Checking kernel availability ---"
 for KERNEL_VER in "${KERNELS_PRIORITY[@]}"; do
     # Check if the config file for this kernel version exists for the target
     # Example path: target/linux/ramips/config-6.1
-    KERNEL_CONFIG_PATH="target/linux/${TARGET_BOARD}/config-${KERNEL_VER}"
+    KERNEL_CONFIG_PATH="target/linux/${TARGET_BOARD}/${SUBTARGET}/config-${KERNEL_VER}"
     echo -n "Checking for ${KERNEL_CONFIG_PATH}... "
     if [ -f "${KERNEL_CONFIG_PATH}" ]; then
         echo "Found."
@@ -68,7 +70,8 @@ else
         awk -v selected_option="${CONFIG_KERNEL_OPTION}" '
         /^CONFIG_LINUX_[0-9]+_[0-9]+=y/ {
             if ($0 == selected_option"=y") {
-                print $0 # Keep the selected one if it exists but wasn't "=y" before (unlikely here)
+                print $0 
+                # Keep the selected one if it exists but wasn't "=y"
             } else {
                 print "# " $0 " # (Disabled by select_kernel.sh)"
             }
