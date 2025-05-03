@@ -36,7 +36,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -192,24 +192,12 @@ jobs:
         id: organize
         if: steps.compile.outputs.status == 'success'
         run: |
-          cd openwrt/bin/targets/*/*
+          cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
           rm -rf packages
           echo "firmware_path=$(pwd)" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT      
           
-      - name: Rename
-        id: rename
-        if: steps.compile.outputs.status == 'success'
-        run: |
-          cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
-          
-          for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
-            if [ -f "$file" ]; then
-              new_file="openwrt_coolsnowwolf_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE}}}"
-              mv "$file" "$new_file"
-              echo "Renamed $file to $new_file"
-            fi
-          done
+
 
 
       - name: Check for .bin files
@@ -234,7 +222,25 @@ jobs:
             openwrt/bin
             openwrt/.config
 
-
+      - name: Rename
+        id: rename
+        if: steps.check_bin.outputs.check_bin_exist == 'success'
+        run: |
+          cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+          
+          for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
+            if [ -f "$file" ]; then
+              new_file="openwrt_${{ env.SOURCE }}_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE}}}"
+              #${file#*${{ env.TARGET_PROFILE}}}: 这是 Shell 参数扩展（Parameter Expansion）的用法。
+              # #: 表示从变量 $file 的 开头 删除最短匹配项。
+              # *${{ env.TARGET_PROFILE}}: 表示匹配任何字符 (*) 直到 ${{ env.TARGET_PROFILE}} 的值结束。
+              # 效果: 它会删除原始文件名中从开头到 ${{ env.TARGET_PROFILE}}（包含该profile名）的部分。
+              # 例如，如果原始文件名是 openwrt-ramips-mt7621-xiaomi_mi-router-3g-squashfs-sysupgrade.bin 且 ${{ env.TARGET_PROFILE}} 是 xiaomi_mi-router-3g，
+              # 那么这部分会得到 -squashfs-sysupgrade.bin（注意保留了 profile 名后面的连字符 - 和后续的文件类型/后缀）。
+              mv "$file" "$new_file"
+              echo "Renamed $file to $new_file"
+            fi
+          done
 
       - name: Upload firmware directory
         uses: actions/upload-artifact@master
