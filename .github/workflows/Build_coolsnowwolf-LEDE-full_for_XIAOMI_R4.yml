@@ -29,6 +29,7 @@ env:
   TZ: Asia/Shanghai
   ACTIONS_STEP_DEBUG: true
   SOURCE: coolsnowwolf
+  KERNEL_SELECTOR_SH: select_kernel.sh # Define script name
 
 permissions:
   contents: write
@@ -98,12 +99,25 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
 
+      - name: Select Kernel Version
+        id: select_kernel
+        run: |
+          if [ -f "$GITHUB_WORKSPACE/$KERNEL_SELECTOR_SH" ]; then
+            chmod +x "$GITHUB_WORKSPACE/$KERNEL_SELECTOR_SH"
+            # Run the script relative to the workspace, it will cd into openwrt internally
+            "$GITHUB_WORKSPACE/$KERNEL_SELECTOR_SH"
+            echo "kernel_selection_done=true" >> $GITHUB_OUTPUT
+          else
+            echo "Warning: Kernel selector script '$KERNEL_SELECTOR_SH' not found. Skipping kernel selection."
+            echo "kernel_selection_done=false" >> $GITHUB_OUTPUT
+          fi
+          
       - name: Download package
         id: package
         run: |
           cd openwrt
           make defconfig
-          make download
+          make download -j2 || make download -j1
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
