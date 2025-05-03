@@ -29,7 +29,7 @@ env:
   TZ: Asia/Shanghai
   ACTIONS_STEP_DEBUG: true
   SOURCE: coolsnowwolf
-  KERNEL_SELECTOR_SH: select_kernel.sh # Define script name
+  KERNEL_SELECTOR_PY: select_kernel.py # Define script name
 
 permissions:
   contents: write
@@ -57,7 +57,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install parallel cpulimit libpam0g-dev liblzma-dev libsnmp-dev gcc g++ build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc-s1 libc6-dev-i386 uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool
+          sudo -E apt-get -qq install python-is-python3 parallel cpulimit libpam0g-dev liblzma-dev libsnmp-dev gcc g++ build-essential asciidoc binutils bzip2 gawk gettext git libncurses5-dev libz-dev patch flex bison make autoconf texinfo unzip sharutils subversion ncurses-term zlib1g-dev ccache upx lib32gcc-s1 libc6-dev-i386 uglifyjs git-core gcc-multilib p7zip p7zip-full msmtp libssl-dev libglib2.0-dev xmlto qemu-utils automake libtool
           sudo -E apt-get -qq install libcrypto++-dev qtbase5-dev qtbase5-dev-tools qtchooser qt5-qmake qtbase5-private-dev libqt5sql5 libqt5sql5-mysql libqt5sql5-odbc libqt5sql5-psql libqt5sql5-sqlite libqt5sql5-tds qttools5-dev-tools
           UBUNTU_VERSION=$(lsb_release -rs)
           if [[ $UBUNTU_VERSION == 20.04 ]]; then
@@ -102,13 +102,12 @@ jobs:
       - name: Select Kernel Version
         id: select_kernel
         run: |
-          if [ -f "$GITHUB_WORKSPACE/$KERNEL_SELECTOR_SH" ]; then
-            chmod +x "$GITHUB_WORKSPACE/$KERNEL_SELECTOR_SH"
+          if [ -f "$GITHUB_WORKSPACE/$KERNEL_SELECTOR_PY" ]; then
             # Run the script relative to the workspace, it will cd into openwrt internally
-            "$GITHUB_WORKSPACE/$KERNEL_SELECTOR_SH"
+            python $GITHUB_WORKSPACE/$KERNEL_SELECTOR_PY
             echo "kernel_selection_done=true" >> $GITHUB_OUTPUT
           else
-            echo "Warning: Kernel selector script '$KERNEL_SELECTOR_SH' not found. Skipping kernel selection."
+            echo "Warning: Kernel selector script '$KERNEL_SELECTOR_PY' not found. Skipping kernel selection."
             echo "kernel_selection_done=false" >> $GITHUB_OUTPUT
           fi
           
