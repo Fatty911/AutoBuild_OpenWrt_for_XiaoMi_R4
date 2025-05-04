@@ -221,7 +221,6 @@ jobs:
           ls -lh ${{ env.firmware_path }}/*
           if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
             echo "No .bin files found in firmware_path. Stopping workflow."
-            exit 1
           fi
           echo "check_bin_exist=success" >> $GITHUB_OUTPUT
           
@@ -257,7 +256,7 @@ jobs:
 
       - name: Upload firmware directory
         uses: actions/upload-artifact@master
-        if: steps.compile.outputs.status == 'success' && !cancelled()
+        if: steps.check_bin.check_bin_exist.outcome == 'success'
         with:
           name: OpenWrt_LEDE_coolsnowwolf_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: ${{ env.firmware_path }}
