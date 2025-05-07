@@ -154,7 +154,7 @@ jobs:
           LOG_FILE="image.log"
           # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
           # cp ../compile_with_retry.py . 
-          python compile_with_retry.py "make -j1 V=s" "image.log" 
+          make -j2 V=s || python compile_with_retry.py "make -j2 V=s" "image.log"  || python compile_with_retry.py "make -j1 V=s" "image.log" 
 
           
           
