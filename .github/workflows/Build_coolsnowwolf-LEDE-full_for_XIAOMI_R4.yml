@@ -206,6 +206,7 @@ jobs:
         run: |
           cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
           rm -rf packages
+          ls -lh
           echo "firmware_path=$(pwd)" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT      
           
