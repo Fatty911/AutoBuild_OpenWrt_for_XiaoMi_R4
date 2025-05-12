@@ -196,10 +196,13 @@ jobs:
           KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
+
           
       - name: Check for .bin file after final compilation
         id: check_bin_final
         run: |
+          echo "查看生成固件的目录"
+          ls -lh openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
           if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
             echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
           else
