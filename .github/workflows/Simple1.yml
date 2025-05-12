@@ -1,0 +1,253 @@
+name: Simple Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages
+
+on:
+  #手动运行
+  workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: true
+        default: false
+  #文件修改时触发
+  push:
+    branches:
+      - main
+    # 添加路径过滤，仅当当前工作流文件被修改时触发
+    paths:
+      - .github/workflows/SimpleBuildOpenWRT_Official.yml  # 需替换为当前工作流文件的实际路径
+  repository_dispatch:
+    types: Openwrt.org Source Code Update
+env:
+  TERM: xterm
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 10240
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+      - name: Checkout Self Repo
+        uses: actions/checkout@main
+        
+          
+      - name: Clone OpenWRT.org_Official
+        run: |
+          git clone http://github.com/openwrt/openwrt openwrt
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential musl-tools libncurses5-dev libncursesw5-dev gawk git libssl-dev gettext zlib1g-dev swig rsync ruby unzip libpam0g-dev libcurl4-openssl-dev libdeflate-dev
+          pip install requests jq beautifulsoup4 || pip3 install requests jq beautifulsoup4
+
+      - name: Update feeds
+        run: |
+          cd openwrt
+          echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
+          echo 'src-git OpenClash https://github.com/vernesong/OpenClash' >>feeds.conf.default
+          echo 'src-git small8 https://github.com/kenzok8/small-package' >>feeds.conf.default
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          cp ../config_for_OpenWrt_org .config
+          make defconfig
+          echo "在defconfig之后查看配置文件"
+          cat .config | grep CONFIG_TARGET_.*=y
+          echo "移除相关组件对trojan-plus的依赖"
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              feeds/passwall/luci-app-passwall/Makefile || true
+          
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              package/feeds/passwall/luci-app-passwall/Makefile || true
+              
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              feeds/small8/luci-app-passwall/Makefile || true
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              package/feeds/small8/luci-app-passwall/Makefile || true
+
+          sed -i '/^ *DEPENDS:=/ s/$/ +libudebug/' package/network/config/netifd/Makefile || true
+          sed -i '/^ *CMAKE_OPTIONS/s/$/ -DENABLE_UDDEBUG=OFF/' package/network/config/netifd/Makefile || sed -i '/^define Package\/netifd/a\ \ \ CMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF' package/network/config/netifd/Makefile || true
+          echo "彻底移除 trojan-plus 包"
+          rm -rf feeds/small8/trojan-plus
+          rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
+          
+      - name: Download package
+        id: download_package
+        run: |
+          cd openwrt
+          make download -j2
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;   
+          
+
+      - name: Compile tools
+        id: compile_tools
+        run: |
+          cd openwrt
+          make tools/install -j2 V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
+
+      - name: Compile toolchain
+        id: compile_toolchain
+        run: |
+          cd openwrt
+          make toolchain/install -j2 V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
+          make -j2 package/feeds/luci/luci-base/compile V=s || make -j2 package/luci/modules/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s || make -j1 package/luci/modules/luci-base/compile V=s
+          if [ ! -f "staging_dir/target-mipsel_24kc_musl/usr/lib/libnl-tiny.so" ]; then
+            echo "libnl-tiny 未找到，正在尝试重新编译..."
+            make package/libs/libnl-tiny/clean V=s
+            make package/libs/libnl-tiny/compile V=s -j1
+          else
+            echo "libnl-tiny 已存在，路径：staging_dir/target-mipsel_24kc_musl/usr/lib/libnl-tiny.so"
+          fi
+          echo "确保 libnl-tiny 被正确安装"
+          make package/libs/libnl-tiny/compile V=s -j1
+          
+      - name: Compile kernel
+        id: compile_kernel
+        run: |
+          cd openwrt
+          make target/linux/compile -j2 V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
+          
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        with:
+          limit-access-to-actor: false
+          timeout-minutes: 300
+          
+      - name: Compile packages
+        id: compile_packages
+        run: |
+          cd openwrt
+          echo "尝试编译 dnsmasq 及其常见依赖，看具体是哪个环节出错"
+          make -j2 package/libs/ubus/compile V=s || make -j1 package/libs/ubus/compile V=s || echo "ubus compile failed"
+          make -j2 package/system/uci/compile V=s || make -j1 package/system/uci/compile V=s || echo "uci compile failed"
+          make -j2 package/network/config/libnl-tiny/compile V=s || make -j1 package/network/config/libnl-tiny/compile V=s || echo "libnl-tiny compile failed" # dnsmasq 可能依赖
+          make package/network/services/dnsmasq/compile V=s -j1 # 单线程编译 dnsmasq，看详细错误
+          cp ../compile_with_retry.py .
+          # echo "先尝试编译容易失败的lua-neturl"
+          # cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/feeds/small8/lua-neturl/compile V=s" "packages.log" 8
+          #echo "先尝试编译容易失败的trojan-plus"
+          #python compile_with_retry.py "make -j1 package/feeds/small8/trojan-plus/compile V=s" "packages.log" 6
+          echo "开始尝试编译所有packages" 
+          # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
+          #cp ../compile_with_retry.py .
+          make -j2 package/compile V=s || python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
+          
+
+
+      
+      - name: Build image
+        id: build_image
+        run: |
+          cd openwrt
+          LOG_FILE="image.log"
+          # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
+          # cp ../compile_with_retry.py . 
+          make -j2 V=s || make -j1 V=s 
+          # python compile_with_retry.py "make -j2 V=s" "image.log"  || python compile_with_retry.py "make -j1 V=s" "image.log" 
+
+          
+          
+      - name: 查看日志结尾300行
+        if: always()
+        run: |
+          cd openwrt
+          if [ "${{ steps.compile_tools.outcome }}" = "failure" ]; then             
+            echo "Compile tools failed. Showing last 300 lines of tools.log:"             
+            tail -300 tools.log           
+          elif [ "${{ steps.compile_toolchain.outcome }}" = "failure" ]; then             
+            echo "Compile toolchain failed. Showing last 300 lines of toolchain.log:"             
+            tail -300 toolchain.log           
+          elif [ "${{ steps.compile_kernel.outcome }}" = "failure" ]; then             
+            echo "Compile kernel failed. Showing last 300 lines of kernel.log:"             
+            tail -300 kernel.log           
+          elif [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
+            echo "编译packages失败，查看日志结尾300 lines of packages.log:"             
+            tail -300 packages.log     
+          elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
+            echo "Build image failed. Showing last 300 lines of image.log:"             
+            tail -300 image.log           
+          else             
+            echo "All steps completed successfully. No log to show."           
+          fi 
+          
+      - name: Set environment variables
+        id: setEnv
+        if: steps.build_image.outcome == 'success'
+        run: |
+          cd openwrt
+          grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+          [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+          echo "TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+          echo "TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+          echo "TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')" >> $GITHUB_ENV
+          echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
+          KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
+          echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+
+          
+      - name: Check for .bin file after final compilation
+        id: check_bin_final
+        run: |
+          echo "查看生成固件的目录"
+          ls -lh openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+          if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+            echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
+          else
+            echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Upload firmware
+        # if: steps.check_bin_final.conclusion == 'success'
+        if: env.FINAL_BIN_EXISTS == 'true'
+        uses: actions/upload-artifact@master
+        with:
+          name: openwrt-firmware
+          path: openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+      
+      - name: Generate release tag
+        id: generate_release_tag
+        if: env.FINAL_BIN_EXISTS == 'true' 
+        run: |
+          echo "release_tag=OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+          echo "release_tag_status=success" >> $GITHUB_OUTPUT
+          echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
+
+      - name: Upload firmware to release
+        id: up-release
+        uses: softprops/action-gh-release@master
+        if: steps.generate_release_tag.outputs.release_tag_status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+        with:
+            token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+            files: |
+              ${{ env.firmware_path }}/*
+              openwrt/.config
+            name: ${{ steps.generate_release_tag.outputs.release_tag }}
+            tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
+                
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 2
