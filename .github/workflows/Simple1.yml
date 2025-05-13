@@ -84,6 +84,26 @@ jobs:
           echo "彻底移除 trojan-plus 包"
           rm -rf feeds/small8/trojan-plus
           rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
+          echo "修改 netifd Makefile 以禁用 UDDEBUG"
+          NETIFD_MAKEFILE="package/network/config/netifd/Makefile"
+          if [ -f "$NETIFD_MAKEFILE" ]; then
+            # 检查 CMAKE_OPTIONS 是否已存在
+            if grep -q "^CMAKE_OPTIONS" "$NETIFD_MAKEFILE"; then
+              # 如果存在，确保 -DENABLE_UDDEBUG=OFF 被正确添加
+              sed -i '/^CMAKE_OPTIONS/s/\(-DDL_LIBRARY=\S*\)/\1 -DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
+              # 如果上面的 sed 没能正确处理（比如 CMAKE_OPTIONS 没有 -DDL_LIBRARY），则尝试更通用的追加
+              if ! grep -q "ENABLE_UDDEBUG=OFF" "$NETIFD_MAKEFILE"; then
+                sed -i '/^CMAKE_OPTIONS/s/$/ -DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
+              fi
+            else
+              # 如果不存在，则在 define Package/netifd 块之后添加
+              sed -i '/^define Package\/netifd/,/endef/ { /endef/i\CMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF\n }' "$NETIFD_MAKEFILE"
+            fi
+            echo "netifd Makefile 修改尝试完成. 内容如下:"
+            cat "$NETIFD_MAKEFILE" | grep CMAKE_OPTIONS
+          else
+            echo "警告: netifd Makefile ($NETIFD_MAKEFILE) 未找到!"
+          fi
           
       - name: Download package
         id: download_package
@@ -114,7 +134,7 @@ jobs:
             echo "libnl-tiny 已存在，路径：staging_dir/target-mipsel_24kc_musl/usr/lib/libnl-tiny.so"
           fi
           echo "确保 libnl-tiny 被正确安装"
-          make package/libs/libnl-tiny/compile V=s -j1
+          make package/libs/libnl-tiny/install V=s -j1
           
       - name: Compile kernel
         id: compile_kernel
@@ -137,7 +157,7 @@ jobs:
           make -j2 package/libs/ubus/compile V=s || make -j1 package/libs/ubus/compile V=s || echo "ubus compile failed"
           make -j2 package/system/uci/compile V=s || make -j1 package/system/uci/compile V=s || echo "uci compile failed"
           make -j2 package/network/config/libnl-tiny/compile V=s || make -j1 package/network/config/libnl-tiny/compile V=s || echo "libnl-tiny compile failed" # dnsmasq 可能依赖
-          make package/network/services/dnsmasq/compile V=s -j1 # 单线程编译 dnsmasq，看详细错误
+          make -j1 package/network/services/dnsmasq/compile V=s # 单线程编译 dnsmasq，看详细错误
           cp ../compile_with_retry.py .
           # echo "先尝试编译容易失败的lua-neturl"
           # cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/feeds/small8/lua-neturl/compile V=s" "packages.log" 8
@@ -146,7 +166,8 @@ jobs:
           echo "开始尝试编译所有packages" 
           # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
           #cp ../compile_with_retry.py .
-          make -j2 package/compile V=s || python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
+          make -j2 package/compile V=s || make -j1 package/compile V=s 
+          #python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
           
 
 
