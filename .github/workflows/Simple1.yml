@@ -87,20 +87,29 @@ jobs:
           echo "修改 netifd Makefile 以禁用 UDDEBUG"
           NETIFD_MAKEFILE="package/network/config/netifd/Makefile"
           if [ -f "$NETIFD_MAKEFILE" ]; then
-            # 检查 CMAKE_OPTIONS 是否已存在
-            if grep -q "^CMAKE_OPTIONS" "$NETIFD_MAKEFILE"; then
-              # 如果存在，确保 -DENABLE_UDDEBUG=OFF 被正确添加
-              sed -i '/^CMAKE_OPTIONS/s/\(-DDL_LIBRARY=\S*\)/\1 -DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
-              # 如果上面的 sed 没能正确处理（比如 CMAKE_OPTIONS 没有 -DDL_LIBRARY），则尝试更通用的追加
-              if ! grep -q "ENABLE_UDDEBUG=OFF" "$NETIFD_MAKEFILE"; then
-                sed -i '/^CMAKE_OPTIONS/s/$/ -DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
-              fi
+            # 检查是否已经包含 -DENABLE_UDDEBUG=OFF
+            if grep -q "CMAKE_OPTIONS.*-DENABLE_UDDEBUG=OFF" "$NETIFD_MAKEFILE"; then
+              echo "netifd Makefile 已经包含 -DENABLE_UDDEBUG=OFF"
             else
-              # 如果不存在，则在 define Package/netifd 块之后添加
-              sed -i '/^define Package\/netifd/,/endef/ { /endef/i\CMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF\n }' "$NETIFD_MAKEFILE"
+              # 尝试在已有的 CMAKE_OPTIONS 行追加
+              # 优先在 CMAKE_OPTIONS += 后面追加
+              if grep -q "^CMAKE_OPTIONS *+=" "$NETIFD_MAKEFILE"; then
+                sed -i '/^CMAKE_OPTIONS *+=/s/$/ \\\n\t-DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
+                echo "已尝试在 CMAKE_OPTIONS += 之后追加 -DENABLE_UDDEBUG=OFF"
+              # 其次在 CMAKE_OPTIONS = 后面追加
+              elif grep -q "^CMAKE_OPTIONS *=" "$NETIFD_MAKEFILE"; then
+                sed -i '/^CMAKE_OPTIONS *=/s/$/ -DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
+                echo "已尝试在 CMAKE_OPTIONS = 之后追加 -DENABLE_UDDEBUG=OFF"
+              else
+                # 如果没有 CMAKE_OPTIONS 定义，则在 define Package/netifd 块的 PKG_BUILD_DIR 前或合适位置添加
+                # 这是一个更复杂的场景，可能需要手动检查 Makefile 结构
+                # 作为备选，尝试在 define Package/netifd 后添加
+                sed -i '/^define Package\/netifd/a CMAKE_OPTIONS := -DENABLE_UDDEBUG=OFF' "$NETIFD_MAKEFILE"
+                echo "未找到现有的 CMAKE_OPTIONS，已尝试在 define Package/netifd 后添加新的 CMAKE_OPTIONS"
+              fi
             fi
             echo "netifd Makefile 修改尝试完成. 内容如下:"
-            cat "$NETIFD_MAKEFILE" | grep CMAKE_OPTIONS
+            cat "$NETIFD_MAKEFILE" | grep -A 3 CMAKE_OPTIONS # 显示 CMAKE_OPTIONS 及其后几行
           else
             echo "警告: netifd Makefile ($NETIFD_MAKEFILE) 未找到!"
           fi
@@ -142,12 +151,7 @@ jobs:
           cd openwrt
           make target/linux/compile -j2 V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
           
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
-        with:
-          limit-access-to-actor: false
-          timeout-minutes: 300
+
           
       - name: Compile packages
         id: compile_packages
@@ -206,6 +210,13 @@ jobs:
           else             
             echo "All steps completed successfully. No log to show."           
           fi 
+          
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@main
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        with:
+          limit-access-to-actor: false
+          timeout-minutes: 300        
           
       - name: Set environment variables
         id: setEnv
