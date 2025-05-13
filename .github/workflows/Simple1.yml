@@ -134,7 +134,7 @@ jobs:
             echo "libnl-tiny 已存在，路径：staging_dir/target-mipsel_24kc_musl/usr/lib/libnl-tiny.so"
           fi
           echo "确保 libnl-tiny 被正确安装"
-          make package/libs/libnl-tiny/install V=s -j1
+          # make package/libs/libnl-tiny/install V=s -j1
           
       - name: Compile kernel
         id: compile_kernel
