@@ -1,0 +1,11 @@
+--- CMakeLists.txt.orig 2025-05-14 03:44:30.488862335 +0000
++++ CMakeLists.txt      2025-05-14 03:44:57.788976009 +0000
+@@ -42,7 +42,7 @@
+ 
+ IF (NOT DEFINED LIBNL_LIBS)
+        include(FindPkgConfig)
+-       pkg_search_module(LIBNL libnl-3.0 libnl-3 libnl nl-3 nl)
++       pkg_search_module(LIBNL libnl-tiny REQUIRED)
+        IF (LIBNL_FOUND)
+                include_directories(${LIBNL_INCLUDE_DIRS})
+                SET(LIBNL_LIBS ${LIBNL_LIBRARIES})
