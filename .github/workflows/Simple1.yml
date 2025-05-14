@@ -84,35 +84,39 @@ jobs:
           echo "彻底移除 trojan-plus 包"
           rm -rf feeds/small8/trojan-plus
           rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
-          echo "修改 netifd Makefile 以禁用 UDDEBUG"
+          echo "应用 netifd 源码补丁"
+          # 假设你的补丁文件在仓库的 my_patches/001-netifd-force-libnl-tiny.patch
+          # OpenWrt 构建系统会自动应用 package/network/config/netifd/patches/ 目录下的补丁
+          # 所以我们将补丁复制到那里
+          if [ -f "../my_patches/001-netifd-force-libnl-tiny.patch" ]; then # 路径相对于 openwrt 目录
+            mkdir -p package/network/config/netifd/patches
+            cp ../my_patches/netifd/001-netifd-force-libnl-tiny.patch package/network/config/netifd/patches/
+            echo "netifd 源码补丁已复制到 package/network/config/netifd/patches/"
+          else
+            echo "警告: 未找到 netifd 源码补丁文件 ../my_patches/netifd/001-netifd-force-libnl-tiny.patch"
+          fi
+          echo "注释掉 netifd Makefile 中的 LIBNL_LIBS 定义"
           NETIFD_MAKEFILE="package/network/config/netifd/Makefile"
           if [ -f "$NETIFD_MAKEFILE" ]; then
-            # 检查是否已经包含 -DENABLE_UDDEBUG=OFF
-            if grep -q "CMAKE_OPTIONS.*-DENABLE_UDDEBUG=OFF" "$NETIFD_MAKEFILE"; then
-              echo "netifd Makefile 已经包含 -DENABLE_UDDEBUG=OFF"
-            else
-              # 尝试在已有的 CMAKE_OPTIONS 行追加
-              # 优先在 CMAKE_OPTIONS += 后面追加
-              if grep -q "^CMAKE_OPTIONS *+=" "$NETIFD_MAKEFILE"; then
-                sed -i '/^CMAKE_OPTIONS *+=/s/$/ \\\n\t-DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
-                echo "已尝试在 CMAKE_OPTIONS += 之后追加 -DENABLE_UDDEBUG=OFF"
-              # 其次在 CMAKE_OPTIONS = 后面追加
-              elif grep -q "^CMAKE_OPTIONS *=" "$NETIFD_MAKEFILE"; then
-                sed -i '/^CMAKE_OPTIONS *=/s/$/ -DENABLE_UDDEBUG=OFF/' "$NETIFD_MAKEFILE"
-                echo "已尝试在 CMAKE_OPTIONS = 之后追加 -DENABLE_UDDEBUG=OFF"
-              else
-                # 如果没有 CMAKE_OPTIONS 定义，则在 define Package/netifd 块的 PKG_BUILD_DIR 前或合适位置添加
-                # 这是一个更复杂的场景，可能需要手动检查 Makefile 结构
-                # 作为备选，尝试在 define Package/netifd 后添加
-                sed -i '/^define Package\/netifd/a CMAKE_OPTIONS := -DENABLE_UDDEBUG=OFF' "$NETIFD_MAKEFILE"
-                echo "未找到现有的 CMAKE_OPTIONS，已尝试在 define Package/netifd 后添加新的 CMAKE_OPTIONS"
-              fi
+            # 主要尝试的 sed 命令
+            sed -i.bak -E '/^[[:space:]]*(-DLIBNL_LIBS[[:space:]]*=[^[:space:]]+)[[:space:]]*(\\?)$/s/^/# /' "$NETIFD_MAKEFILE"
+            if ! grep -q "^# [[:space:]]*-DLIBNL_LIBS" "$NETIFD_MAKEFILE" && grep -q "^[[:space:]]*[^#]*LIBNL_LIBS" "$NETIFD_MAKEFILE"; then
+              echo "主要 sed 未生效，尝试备用 sed..."
+              sed -i.bak2 '/^[[:space:]]*[^#]*LIBNL_LIBS/s/^/# /' "$NETIFD_MAKEFILE"
             fi
-            echo "netifd Makefile 修改尝试完成. 内容如下:"
-            cat "$NETIFD_MAKEFILE" | grep -A 3 CMAKE_OPTIONS # 显示 CMAKE_OPTIONS 及其后几行
+            if grep -q "^# [[:space:]]*-DLIBNL_LIBS" "$NETIFD_MAKEFILE"; then
+              echo "成功注释了 ${NETIFD_MAKEFILE} 中的 LIBNL_LIBS 行。"
+            else
+              echo "警告: 未能注释 ${NETIFD_MAKEFILE} 中的 LIBNL_LIBS 行，或该行不存在/已被注释。"
+            fi
+            echo "修改后的 ${NETIFD_MAKEFILE} CMAKE_OPTIONS 相关内容:"
+            grep -A 4 -B 2 "CMAKE_OPTIONS" "$NETIFD_MAKEFILE" || cat "$NETIFD_MAKEFILE"
           else
-            echo "警告: netifd Makefile ($NETIFD_MAKEFILE) 未找到!"
+            echo "警告: ${NETIFD_MAKEFILE} 未找到!"
           fi
+
+          echo "在defconfig之后查看配置文件中的目标设置"
+          cat .config | grep CONFIG_TARGET_.*=y
           
       - name: Download package
         id: download_package
