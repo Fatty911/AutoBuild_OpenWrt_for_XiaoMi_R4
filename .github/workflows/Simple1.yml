@@ -90,10 +90,10 @@ jobs:
           # 所以我们将补丁复制到那里
           if [ -f "../my_patches/001-netifd-force-libnl-tiny.patch" ]; then # 路径相对于 openwrt 目录
             mkdir -p package/network/config/netifd/patches
-            cp ../my_patches/netifd/001-netifd-force-libnl-tiny.patch package/network/config/netifd/patches/
+            cp ../my_patches/001-netifd-force-libnl-tiny.patch package/network/config/netifd/patches/
             echo "netifd 源码补丁已复制到 package/network/config/netifd/patches/"
           else
-            echo "警告: 未找到 netifd 源码补丁文件 ../my_patches/netifd/001-netifd-force-libnl-tiny.patch"
+            echo "警告: 未找到 netifd 源码补丁文件 ../my_patches/001-netifd-force-libnl-tiny.patch"
           fi
           echo "注释掉 netifd Makefile 中的 LIBNL_LIBS 定义"
           NETIFD_MAKEFILE="package/network/config/netifd/Makefile"
