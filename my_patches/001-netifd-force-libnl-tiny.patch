@@ -1,5 +1,5 @@
---- CMakeLists.txt.orig 2025-05-14 03:44:30.488862335 +0000
-+++ CMakeLists.txt      2025-05-14 03:44:57.788976009 +0000
+--- CMakeLists.txt     
++++ CMakeLists.txt     
 @@ -42,7 +42,7 @@
  
  IF (NOT DEFINED LIBNL_LIBS)
