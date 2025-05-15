@@ -1,5 +1,5 @@
---- a/CMakeLists.txt     
-+++ b/CMakeLists.txt     
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
 @@ -42,7 +42,7 @@
  
  IF (NOT DEFINED LIBNL_LIBS)
