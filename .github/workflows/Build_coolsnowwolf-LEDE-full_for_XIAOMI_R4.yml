@@ -10,11 +10,12 @@ on:
   repository_dispatch:
     types: coolsnowwolf Source Code Update
   workflow_dispatch:
-    # inputs:
-    #   ssh:
-    #     description: 'SSH connection to Actions'
-    #     required: false
-    #     default: 'false'
+    inputs:
+      tmate_debug_enabled:
+        type: boolean
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: true
+        default: false
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
@@ -173,7 +174,7 @@ jobs:
           # cp ../0003-fix-multicast-implicit-declaration.patch ./feeds/routing/batman-adv/patches/
           cp ../fix_batman_adv.py . 
           #make -j1 package/feeds/routing/batman-adv/compile V=s
-          make -j2 package/feeds/routing/batman-adv/compile V=s || python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log"
+          make -j2 package/feeds/routing/batman-adv/compile V=s || { python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" && make -j1 package/feeds/routing/batman-adv/compile V=s }
           
 
       - name: Compile the firmware
@@ -221,9 +222,18 @@ jobs:
           ls -lh ${{ env.firmware_path }}/*
           if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
             echo "No .bin files found in firmware_path. Stopping workflow."
+            echo "check_bin_exist=false" >> $GITHUB_OUTPUT
           else
             echo "check_bin_exist=success" >> $GITHUB_OUTPUT
           fi
+          
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tmate_debug_enabled }} || ${{ failure() }} || ${{ steps.check_bin.outputs.check_bin_exist == 'false' }} 
+        with:
+          limit-access-to-actor: false 
+            #设为false即为通过链接可直接访问，设为true得保存密钥比较麻烦
+          timeout-minutes: 300
           
       - name: Upload bin directory
         id: upload
