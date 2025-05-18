@@ -120,27 +120,28 @@ jobs:
           cd openwrt
           NETIFD_MAKEFILE="package/network/config/netifd/Makefile"
           if [ -f "$NETIFD_MAKEFILE" ]; then
-            echo "正在尝试修改 ${NETIFD_MAKEFILE} 添加 -DENABLE_UDDEBUG=OFF"
-            # 使用更健壮的 sed 语法，确保无论 CMAKE_OPTIONS 是否已存在都添加
-            # 尝试在包含 CMAKE_OPTIONS 的行末尾添加
-            LINE_COUNT_BEFORE=$(grep -c 'CMAKE_OPTIONS.*-DENABLE_UDDEBUG=OFF' "$NETIFD_MAKEFILE")
-            sed -i.bak '/^CMAKE_OPTIONS/ { s/$/ -DENABLE_UDDEBUG=OFF/ }' "$NETIFD_MAKEFILE"
-            LINE_COUNT_AFTER=$(grep -c 'CMAKE_OPTIONS.*-DENABLE_UDDEBUG=OFF' "$NETIFD_MAKEFILE")
+            echo "正在尝试修改 ${NETIFD_MAKEFILE} 添加 EXTRA_CMAKE_ARGS += -DENABLE_UDDEBUG=OFF"
 
-            # 如果之前不存在且现在仍然不存在 (说明 CMAKE_OPTIONS 行不存在)，则在 Package 定义后添加
-            if [ "$LINE_COUNT_BEFORE" -eq 0 ] && [ "$LINE_COUNT_AFTER" -eq 0 ]; then
-               echo "CMAKE_OPTIONS 行可能不存在或格式不同，尝试在 Package 定义后添加"
-               sed -i.bak2 "/^define Package\/netifd/a\\nCMAKE_OPTIONS += -DENABLE_UDDEBUG=OFF" "$NETIFD_MAKEFILE"
+            # 检查是否已经添加过，避免重复添加
+            if ! grep -q '^EXTRA_CMAKE_ARGS.*-DENABLE_UDDEBUG=OFF' "$NETIFD_MAKEFILE"; then
+              # 在 Package 定义块的 endef 之前插入 EXTRA_CMAKE_ARGS 行
+              # 这个位置通常是安全的，且 EXTRA_CMAKE_ARGS 会被 Configure 阶段使用
+              sed -i.bak "/^endef.*Package\/netifd/i\\
+                    EXTRA_CMAKE_ARGS += -DENABLE_UDDEBUG=OFF\\
+                    " "$NETIFD_MAKEFILE"
+              echo "Added EXTRA_CMAKE_ARGS line."
+            else
+              echo "EXTRA_CMAKE_ARGS line already present."
             fi
 
             # 验证修改是否生效
-            if grep -q "CMAKE_OPTIONS.*-DENABLE_UDDEBUG=OFF" "$NETIFD_MAKEFILE"; then
-              echo "成功添加 -DENABLE_UDDEBUG=OFF 到 ${NETIFD_MAKEFILE} 的 CMAKE_OPTIONS."
-              echo "修改后的 CMAKE_OPTIONS 相关内容:"
-              grep -A 5 -B 2 "CMAKE_OPTIONS" "$NETIFD_MAKEFILE" || cat "$NETIFD_MAKEFILE" # 打印周边内容确认
+            if grep -q '^EXTRA_CMAKE_ARGS.*-DENABLE_UDDEBUG=OFF' "$NETIFD_MAKEFILE"; then
+              echo "成功添加 EXTRA_CMAKE_ARGS += -DENABLE_UDDEBUG=OFF 到 ${NETIFD_MAKEFILE}."
+              echo "修改后的 EXTRA_CMAKE_ARGS 相关内容:"
+              # 打印包含 EXTRA_CMAKE_ARGS 的行及其附近几行
+              grep -A 5 -B 2 "EXTRA_CMAKE_ARGS" "$NETIFD_MAKEFILE" || cat "$NETIFD_MAKEFILE"
             else
-              echo "错误: 未能添加 -DENABLE_UDDEBUG=OFF 到 ${NETIFD_MAKEFILE} 的 CMAKE_OPTIONS."
-              echo "请手动检查文件内容."
+              echo "错误: 未能添加 EXTRA_CMAKE_ARGS += -DENABLE_UDDEBUG=OFF 到 ${NETIFD_MAKEFILE}."
               cat "$NETIFD_MAKEFILE" # 打印整个文件协助排查
               exit 1 # 让 workflow 失败，以便检查
             fi
@@ -151,8 +152,6 @@ jobs:
             echo "错误: ${NETIFD_MAKEFILE} 未找到!"
             exit 1
           fi
-          echo "在defconfig之后查看配置文件中的目标设置"
-          cat .config | grep CONFIG_TARGET_.*=y
           
       - name: Download package
         id: download_package
