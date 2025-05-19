@@ -4,6 +4,12 @@ on:
   repository_dispatch:
     types: Openwrt.org Source Code Update
   workflow_dispatch:
+    inputs:
+      debug_enabled:
+        type: boolean
+        description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
+        required: true
+        default: false
   push:
     branches: 
       - master
