@@ -76,7 +76,30 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P1_SH
 
       - name: Update feeds and Install feeds
-        run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+        run: |
+          cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+          echo "移除相关组件对trojan-plus的依赖"
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              feeds/passwall/luci-app-passwall/Makefile || true
+          
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              package/feeds/passwall/luci-app-passwall/Makefile || true
+              
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              feeds/small8/luci-app-passwall/Makefile || true
+          sed -i \
+              -e '/select PACKAGE_trojan-plus/d' \
+              -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
+              package/feeds/small8/luci-app-passwall/Makefile || true
+          echo "彻底移除 trojan-plus 包"
+          rm -rf feeds/small8/trojan-plus
+          rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
 
       
           
@@ -94,6 +117,7 @@ jobs:
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Lost after defconfig, reapplying..." && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config)
           echo "Final check after reapplication:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
+          
       - name: Checking .config After diy-part2.sh
         run: |
           cd openwrt
