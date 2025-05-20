@@ -272,7 +272,16 @@ jobs:
           # tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
           tar -czf ${{ env.SOURCE }}.tar.gz openwrt 
           
-
+      - name: Verify Archive Contents
+        run: |
+          echo "Checking contents of ${{ env.SOURCE }}.tar.gz"
+          tar -tzf ${{ env.SOURCE }}.tar.gz | head -n 50 # List first 50 entries
+          tar -tzf ${{ env.SOURCE }}.tar.gz Makefile # Check if Makefile is in the archive
+          tar -tzf ${{ env.SOURCE }}.tar.gz openwrt/.config # Check if .config is in the archive
+          tar -tzf ${{ env.SOURCE }}.tar.gz openwrt/Makefile # This is the correct path inside the archive
+          tar -tzf ${{ env.SOURCE }}.tar.gz openwrt/build_dir/ # Check if build_dir is included
+          tar -tzf ${{ env.SOURCE }}.tar.gz openwrt/staging_dir/ # Check if staging_dir is included
+          
       - name: Upload to MEGA
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
