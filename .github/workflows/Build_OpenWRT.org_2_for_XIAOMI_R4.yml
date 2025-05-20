@@ -86,9 +86,30 @@ jobs:
           echo "解压前"
           pwd && ls -la
           tar -xzf ${{ env.SOURCE }}.tar.gz
-          echo "解压完成后查看压缩包内"
-          ls -la openwrt
 
+      - name: Verify Extracted Contents
+        run: |
+          echo "Checking contents after extraction in ${{ github.workspace }}/openwrt\n在解压后查看文件目录"
+          ls -la ${{ github.workspace }}/openwrt/ # List files in the extracted directory
+          if [ -f "${{ github.workspace }}/openwrt/Makefile" ]; then
+            echo "Makefile found. First 20 lines:"
+            head -n 20 ${{ github.workspace }}/openwrt/Makefile
+          else
+            echo "Makefile NOT found!"
+            exit 1 # Fail the step if Makefile is missing
+          fi
+          if [ -f "${{ github.workspace }}/openwrt/.config" ]; then
+            echo ".config found. First 20 lines:"
+            head -n 20 ${{ github.workspace }}/openwrt/.config
+          else
+            echo ".config NOT found!"
+            # Decide if missing .config should fail the build, maybe just warn
+            echo "Warning: .config NOT found!"
+          fi
+          echo "Checking build_dir and staging_dir presence:"
+          ls -la ${{ github.workspace }}/openwrt/build_dir/ || echo "build_dir missing"
+          ls -la ${{ github.workspace }}/openwrt/staging_dir/ || echo "staging_dir missing"
+          df -hT # Check disk space again
 
       
       - name: Build image
