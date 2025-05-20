@@ -124,12 +124,14 @@ jobs:
           echo "Final check after reapplication:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
           
-      - name: Checking .config After diy-part2.sh
+      - name: Checking files After diy-part2.sh
         run: |
           cd openwrt
           echo "After diy-part2.sh, checking .config:"
           #grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Not found, exit" && exit 1)
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
+          echo "ls -la查看目录"
+          ls -la
           
       - name: Download package
         id: download_package
