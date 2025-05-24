@@ -119,7 +119,7 @@ jobs:
           LOG_FILE="image.log"
           #cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7
           #cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 8　
-          cp ../fix_makefile_metadata.py . &&　python3 ./fix_makefile_metadata.py　--all
+          cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
           make V=s -j2 || make V=s -j1
           
       - name: Setup tmate session
