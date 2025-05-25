@@ -170,7 +170,7 @@ jobs:
         id: compile_packages
         run: |
           cd openwrt
-          make package/compile V=s -j2 || make package/compile V=s -j1 || true
+          make package/compile V=s -j2 || make package/compile V=s -j1 || make V=s -j2 || make V=s -j1 || true
       
       
      
