@@ -110,16 +110,8 @@ jobs:
           ls -la ${{ github.workspace }}/openwrt/build_dir/ || echo "build_dir missing"
           ls -la ${{ github.workspace }}/openwrt/staging_dir/ || echo "staging_dir missing"
           df -hT # Check disk space again
-      - name: Fix Rust configuration for CI
-        run: |
-          cd openwrt
-          CONFIG_TOML="feeds/packages/lang/rust/files/config.toml"
-          if [ -f "$CONFIG_TOML" ]; then
-            sed -i 's/download-ci-llvm = true/download-ci-llvm = "if-unchanged"/' "$CONFIG_TOML"
-            echo "已将 $CONFIG_TOML 中的 llvm.download-ci-llvm 设置为 'if-unchanged'"
-          else
-            echo "警告：未找到 $CONFIG_TOML 文件，请确认 rust 包的配置路径"
-          fi
+          
+
       
       - name: Build image
         id: build_image
