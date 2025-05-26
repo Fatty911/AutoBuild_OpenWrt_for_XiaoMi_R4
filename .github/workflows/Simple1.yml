@@ -170,6 +170,7 @@ jobs:
         id: compile_packages
         run: |
           cd openwrt
+          cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
           make package/compile V=s -j2 || make package/compile V=s -j1 || make V=s -j2 || make V=s -j1 || true
       
       
