@@ -14,8 +14,8 @@ on:
     branches: 
       - master
       - main
-    #paths:
-      #- .github/workflows/Build_OpenWRT.org_1_for_XIAOMI_R4.yml
+    paths:
+      - .github/workflows/Simple1.yml
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
@@ -62,7 +62,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-          sudo -E apt-get -y purge azure-cli* docker* ghc* llvm* 
+          sudo -E apt-get -y purge azure-cli* docker* ghc*  
           sudo sed -i 's/^# deb/deb/g' /etc/apt/sources.list || true
           sudo -E apt-get -qq update
           sudo apt install software-properties-common -y || true
@@ -107,40 +107,40 @@ jobs:
         run: |
           cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
           
-          echo "Attempting to patch Rust Makefile for CI build..."
-          RUST_MAKEFILE_PATH="feeds/packages/lang/rust/Makefile" # Path relative to 'openwrt'
+          # echo "Attempting to patch Rust Makefile for CI build..."
+          # RUST_MAKEFILE_PATH="feeds/packages/lang/rust/Makefile" # Path relative to 'openwrt'
 
-          if [ -f "$RUST_MAKEFILE_PATH" ]; then
-              echo "--- Content of $RUST_MAKEFILE_PATH before patching (first 150 lines and relevant grep): ---"
-              head -n 150 "$RUST_MAKEFILE_PATH"
-              echo "--- Grepping for '--set llvm.download-ci-llvm=true' before patch: ---"
-              grep --color=always -C 5 -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH" || echo "Target string NOT found before patch."
-              echo "-------------------------------------------------------------------------------------------"
+          # if [ -f "$RUST_MAKEFILE_PATH" ]; then
+          #     echo "--- Content of $RUST_MAKEFILE_PATH before patching (first 150 lines and relevant grep): ---"
+          #     head -n 150 "$RUST_MAKEFILE_PATH"
+          #     echo "--- Grepping for '--set llvm.download-ci-llvm=true' before patch: ---"
+          #     grep --color=always -C 5 -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH" || echo "Target string NOT found before patch."
+          #     echo "-------------------------------------------------------------------------------------------"
 
-              # Check if the target string exists before attempting to replace
-              if grep -q -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH"; then
-                  echo "Patching $RUST_MAKEFILE_PATH..."
-                  # Using a very specific sed to target the argument, assuming it's part of CONFIGURE_ARGS or similar
-                  sed -i 's|--set llvm.download-ci-llvm=true|--set llvm.download-ci-llvm=if-unchanged|g' "$RUST_MAKEFILE_PATH"
+          #     # Check if the target string exists before attempting to replace
+          #     if grep -q -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH"; then
+          #         echo "Patching $RUST_MAKEFILE_PATH..."
+          #         # Using a very specific sed to target the argument, assuming it's part of CONFIGURE_ARGS or similar
+          #         sed -i 's|--set llvm.download-ci-llvm=true|--set llvm.download-ci-llvm=if-unchanged|g' "$RUST_MAKEFILE_PATH"
                   
-                  echo "--- Content of $RUST_MAKEFILE_PATH after patching (first 150 lines and relevant grep): ---"
-                  head -n 150 "$RUST_MAKEFILE_PATH"
-                  echo "--- Grepping for '--set llvm.download-ci-llvm=if-unchanged' after patch: ---"
-                  grep --color=always -C 5 -- '--set llvm.download-ci-llvm=if-unchanged' "$RUST_MAKEFILE_PATH" || echo "Patched string NOT found after sed!"
-                  echo "--- Grepping for '--set llvm.download-ci-llvm=true' after patch (should NOT be found): ---"
-                  grep --color=always -C 5 -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH" || echo "Original string correctly removed/replaced."
-                  echo "--------------------------------------------------------------------------------------------"
-              else
-                  echo "Target string '--set llvm.download-ci-llvm=true' not found in $RUST_MAKEFILE_PATH."
-                  if grep -q -- '--set llvm.download-ci-llvm=if-unchanged' "$RUST_MAKEFILE_PATH"; then
-                      echo "Rust Makefile already contains 'if-unchanged'."
-                  else
-                      echo "Rust Makefile does not contain 'true' or 'if-unchanged' for llvm.download-ci-llvm. Manual check of Makefile needed."
-                  fi
-              fi
-          else
-              echo "WARNING: Rust Makefile not found at $PWD/$RUST_MAKEFILE_PATH. Rust build might fail if it's included."
-          fi
+          #         echo "--- Content of $RUST_MAKEFILE_PATH after patching (first 150 lines and relevant grep): ---"
+          #         head -n 150 "$RUST_MAKEFILE_PATH"
+          #         echo "--- Grepping for '--set llvm.download-ci-llvm=if-unchanged' after patch: ---"
+          #         grep --color=always -C 5 -- '--set llvm.download-ci-llvm=if-unchanged' "$RUST_MAKEFILE_PATH" || echo "Patched string NOT found after sed!"
+          #         echo "--- Grepping for '--set llvm.download-ci-llvm=true' after patch (should NOT be found): ---"
+          #         grep --color=always -C 5 -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH" || echo "Original string correctly removed/replaced."
+          #         echo "--------------------------------------------------------------------------------------------"
+          #     else
+          #         echo "Target string '--set llvm.download-ci-llvm=true' not found in $RUST_MAKEFILE_PATH."
+          #         if grep -q -- '--set llvm.download-ci-llvm=if-unchanged' "$RUST_MAKEFILE_PATH"; then
+          #             echo "Rust Makefile already contains 'if-unchanged'."
+          #         else
+          #             echo "Rust Makefile does not contain 'true' or 'if-unchanged' for llvm.download-ci-llvm. Manual check of Makefile needed."
+          #         fi
+          #     fi
+          # else
+          #     echo "WARNING: Rust Makefile not found at $PWD/$RUST_MAKEFILE_PATH. Rust build might fail if it's included."
+          # fi
           
           echo "移除相关组件对trojan-plus的依赖"
           # Ensure these paths are correct relative to the current directory (openwrt)
@@ -203,59 +203,65 @@ jobs:
           key: ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/.config', env.DIY_P1_SH, env.DIY_P2_SH) }}
           restore-keys: |
             ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-
-      - name: Clean Rust host build artifacts post-cache
-        # Always run this step. If build_dir doesn't exist or cache wasn't hit, find will do nothing.
-        # if: steps.cache-build.outputs.cache-hit == 'true' 
-        working-directory: openwrt # Ensure commands run within the openwrt directory
-        run: |
-          echo "Attempting to clean Rust host build artifacts..."
-          if [ -d "build_dir" ]; then
-            echo "Found build_dir. Searching for Rust host build directories to clean..."
-            # The error log shows: /openwrt/build_dir/target-mipsel_24kc_musl/host/rustc-1.87.0-src/
-            # And the x.py script uses: --build-dir /.../openwrt/build_dir/target-mipsel_24kc_musl/host/rustc-1.87.0-src/build
-            # We need to clean the ".built" stamp file and the "build" subdirectory within rustc-*-src/
 
-            echo "Cleaning specific rustc-*-src directories in build_dir/target-*/host/ ..."
-            find build_dir/target-*/host/ -name 'rustc-*-src' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
 
-            echo "Cleaning specific rustc-*-src directories in build_dir/host/ (if any)..."
-            find build_dir/host/ -name 'rustc-*-src' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
             
-            echo "Cleaning rust-bootstrap directories in build_dir/host/ (if any)..."
-            find build_dir/host/ -name 'rust-bootstrap-*' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
+      # - name: Clean Rust host build artifacts post-cache
+      #   # Always run this step. If build_dir doesn't exist or cache wasn't hit, find will do nothing.
+      #   # if: steps.cache-build.outputs.cache-hit == 'true' 
+      #   working-directory: openwrt # Ensure commands run within the openwrt directory
+      #   run: |
+      #     echo "Attempting to clean Rust host build artifacts..."
+      #     if [ -d "build_dir" ]; then
+      #       echo "Found build_dir. Searching for Rust host build directories to clean..."
+      #       # The error log shows: /openwrt/build_dir/target-mipsel_24kc_musl/host/rustc-1.87.0-src/
+      #       # And the x.py script uses: --build-dir /.../openwrt/build_dir/target-mipsel_24kc_musl/host/rustc-1.87.0-src/build
+      #       # We need to clean the ".built" stamp file and the "build" subdirectory within rustc-*-src/
 
-            echo "Rust host build artifact cleaning attempt finished."
-          else
-            echo "build_dir not found at $PWD/build_dir. Skipping clean of Rust host build artifacts. This is normal if cache was not hit or it's the first full run."
-          fi
-      - name: Clean Go build artifacts and module cache post-cache
-        working-directory: openwrt # Ensure commands run within the openwrt directory
-        run: |
-          echo "Attempting to clean Go build artifacts and module cache..."
-          # Clean the global Go build cache (if used by OpenWrt's Go build scripts)
-          # The error log shows: GOCACHE="/.../openwrt/tmp/go-build"
-          if [ -d "tmp/go-build" ]; then
-            echo "Cleaning tmp/go-build..."
-            rm -rf tmp/go-build/* # Clean contents, not the directory itself if it's expected to exist
-          fi
+      #       echo "Cleaning specific rustc-*-src directories in build_dir/target-*/host/ ..."
+      #       find build_dir/target-*/host/ -name 'rustc-*-src' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
 
-          # Clean the Go module download cache
-          # The error log shows: GOMODCACHE="/.../openwrt/dl/go-mod-cache"
-          if [ -d "dl/go-mod-cache" ]; then
-            echo "Cleaning dl/go-mod-cache..."
-            rm -rf dl/go-mod-cache/* # Clean contents
-          fi
+      #       echo "Cleaning specific rustc-*-src directories in build_dir/host/ (if any)..."
+      #       find build_dir/host/ -name 'rustc-*-src' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
+            
+      #       echo "Cleaning rust-bootstrap directories in build_dir/host/ (if any)..."
+      #       find build_dir/host/ -name 'rust-bootstrap-*' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
 
-          # Clean specific Go package build directories within build_dir
-          # The error log shows: /openwrt/build_dir/target-mipsel_24kc_musl/hysteria-app-v2.6.1/
-          # We'll be more general to catch other Go packages too.
-          echo "Cleaning Go package build directories in build_dir/target-*/ ..."
-          find build_dir/target-*/ -name '*.go_work' -type d -print -exec rm -rf {} \; || true
-          find build_dir/target-*/ -name '*-app-*' -type d -print -exec sh -c 'echo "Cleaning Go app build stamps in $1"; rm -f "$1/.built"; rm -f "$1/.built_check"' sh {} \; || true
-          # Also clean any potential host Go tools if they exist and cause issues
-          find build_dir/host/ -name '*.go_work' -type d -print -exec rm -rf {} \; || true
+      #       echo "Rust host build artifact cleaning attempt finished."
+      #     else
+      #       echo "build_dir not found at $PWD/build_dir. Skipping clean of Rust host build artifacts. This is normal if cache was not hit or it's the first full run."
+      #     fi
+      # - name: Clean Go build artifacts and module cache post-cache
+      #   working-directory: openwrt # Ensure commands run within the openwrt directory
+      #   run: |
+      #     echo "Attempting to clean Go build artifacts and module cache..."
+      #     # Clean the global Go build cache (if used by OpenWrt's Go build scripts)
+      #     # The error log shows: GOCACHE="/.../openwrt/tmp/go-build"
+      #     if [ -d "tmp/go-build" ]; then
+      #       echo "Cleaning tmp/go-build..."
+      #       rm -rf tmp/go-build/* # Clean contents, not the directory itself if it's expected to exist
+      #     fi
+
+      #     # Clean the Go module download cache
+      #     # The error log shows: GOMODCACHE="/.../openwrt/dl/go-mod-cache"
+      #     if [ -d "dl/go-mod-cache" ]; then
+      #       echo "Cleaning dl/go-mod-cache..."
+      #       rm -rf dl/go-mod-cache/* # Clean contents
+      #     fi
+
+      #     # Clean specific Go package build directories within build_dir
+      #     # The error log shows: /openwrt/build_dir/target-mipsel_24kc_musl/hysteria-app-v2.6.1/
+      #     # We'll be more general to catch other Go packages too.
+      #     echo "Cleaning Go package build directories in build_dir/target-*/ ..."
+      #     find build_dir/target-*/ -name '*.go_work' -type d -print -exec rm -rf {} \; || true
+      #     find build_dir/target-*/ -name '*-app-*' -type d -print -exec sh -c 'echo "Cleaning Go app build stamps in $1"; rm -f "$1/.built"; rm -f "$1/.built_check"' sh {} \; || true
+      #     # Also clean any potential host Go tools if they exist and cause issues
+      #     find build_dir/host/ -name '*.go_work' -type d -print -exec rm -rf {} \; || true
           
-          echo "Go build artifact and module cache cleaning attempt finished."      
+      #     echo "Go build artifact and module cache cleaning attempt finished."      
+
+
+      
       - name: Checking files After diy-part2.sh
         run: |
           cd openwrt
@@ -278,28 +284,16 @@ jobs:
         run: df -hT
         
 
-      - name: Compile tools
-        id: compile_tools
+      - name: Compile tools toolchain kernel
+        id: compile_1
         run: |
           cd openwrt
           make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
-
-
-      - name: Compile toolchain
-        id: compile_toolchain
-        run: |
-          cd openwrt
           make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
-
-
-      - name: Compile kernel
-        id: compile_kernel
-        run: |
-          cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
 
-      - name: Compile packages
-        id: compile_packages
+      - name: Compile 2
+        id: compile_2
         run: |
           cd openwrt
           cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
@@ -311,8 +305,8 @@ jobs:
         run: |
           echo "压缩前先看一下目录结构"
           ls -la openwrt
-          # tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
-          tar -czf ${{ env.SOURCE }}.tar.gz openwrt 
+          tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
+          #tar -czf ${{ env.SOURCE }}.tar.gz openwrt 
           
       - name: Verify Archive Contents
         run: |
