@@ -106,6 +106,34 @@ jobs:
       - name: Update feeds and Install feeds
         run: |
           cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+          # Fix for Rust build error: llvm.download-ci-llvm=true is not allowed in CI
+          # The error message suggests using 'if-unchanged'
+          echo "Attempting to patch Rust Makefile for CI build..."
+          # The Makefile could be in feeds/packages or package/feeds/packages after installation
+          RUST_MAKEFILE_PATH_PRIMARY="feeds/packages/lang/rust/Makefile"
+          RUST_MAKEFILE_PATH_SECONDARY="package/feeds/packages/lang/rust/Makefile"
+
+          TARGET_LINE_OLD="--set llvm.download-ci-llvm=true"
+          TARGET_LINE_NEW="--set llvm.download-ci-llvm=if-unchanged" # Note: no quotes around if-unchanged for --set
+
+          if [ -f "$RUST_MAKEFILE_PATH_PRIMARY" ]; then
+              if grep -qF "$TARGET_LINE_OLD" "$RUST_MAKEFILE_PATH_PRIMARY"; then
+                  echo "Patching $RUST_MAKEFILE_PATH_PRIMARY"
+                  sed -i "s|$TARGET_LINE_OLD|$TARGET_LINE_NEW|g" "$RUST_MAKEFILE_PATH_PRIMARY"
+              else
+                  echo "Target line for Rust fix not found in $RUST_MAKEFILE_PATH_PRIMARY. Skipping patch or already patched."
+              fi
+          elif [ -f "$RUST_MAKEFILE_PATH_SECONDARY" ]; then
+              if grep -qF "$TARGET_LINE_OLD" "$RUST_MAKEFILE_PATH_SECONDARY"; then
+                  echo "Patching $RUST_MAKEFILE_PATH_SECONDARY (symlinked location)"
+                  sed -i "s|$TARGET_LINE_OLD|$TARGET_LINE_NEW|g" "$RUST_MAKEFILE_PATH_SECONDARY"
+              else
+                  echo "Target line for Rust fix not found in $RUST_MAKEFILE_PATH_SECONDARY. Skipping patch or already patched."
+              fi
+          else
+              echo "WARNING: Rust Makefile not found at expected locations ($RUST_MAKEFILE_PATH_PRIMARY or $RUST_MAKEFILE_PATH_SECONDARY). Rust build might fail if it's included."
+          fi
+          
           echo "移除相关组件对trojan-plus的依赖"
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
@@ -115,7 +143,7 @@ jobs:
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
               -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
-              package/feeds/passwall/luci-app-passwall/Makefile || true
+              package/feeds/passwall/luci-app-passwall/Makefile || true # Covers case where feeds are symlinked
               
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
@@ -124,7 +152,7 @@ jobs:
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
               -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
-              package/feeds/small8/luci-app-passwall/Makefile || true
+              package/feeds/small8/luci-app-passwall/Makefile || true # Covers case where feeds are symlinked
           echo "彻底移除 trojan-plus 包"
           rm -rf feeds/small8/trojan-plus
           rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
