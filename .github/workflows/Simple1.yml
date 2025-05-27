@@ -228,7 +228,34 @@ jobs:
           else
             echo "build_dir not found at $PWD/build_dir. Skipping clean of Rust host build artifacts. This is normal if cache was not hit or it's the first full run."
           fi
-            
+      - name: Clean Go build artifacts and module cache post-cache
+        working-directory: openwrt # Ensure commands run within the openwrt directory
+        run: |
+          echo "Attempting to clean Go build artifacts and module cache..."
+          # Clean the global Go build cache (if used by OpenWrt's Go build scripts)
+          # The error log shows: GOCACHE="/.../openwrt/tmp/go-build"
+          if [ -d "tmp/go-build" ]; then
+            echo "Cleaning tmp/go-build..."
+            rm -rf tmp/go-build/* # Clean contents, not the directory itself if it's expected to exist
+          fi
+
+          # Clean the Go module download cache
+          # The error log shows: GOMODCACHE="/.../openwrt/dl/go-mod-cache"
+          if [ -d "dl/go-mod-cache" ]; then
+            echo "Cleaning dl/go-mod-cache..."
+            rm -rf dl/go-mod-cache/* # Clean contents
+          fi
+
+          # Clean specific Go package build directories within build_dir
+          # The error log shows: /openwrt/build_dir/target-mipsel_24kc_musl/hysteria-app-v2.6.1/
+          # We'll be more general to catch other Go packages too.
+          echo "Cleaning Go package build directories in build_dir/target-*/ ..."
+          find build_dir/target-*/ -name '*.go_work' -type d -print -exec rm -rf {} \; || true
+          find build_dir/target-*/ -name '*-app-*' -type d -print -exec sh -c 'echo "Cleaning Go app build stamps in $1"; rm -f "$1/.built"; rm -f "$1/.built_check"' sh {} \; || true
+          # Also clean any potential host Go tools if they exist and cause issues
+          find build_dir/host/ -name '*.go_work' -type d -print -exec rm -rf {} \; || true
+          
+          echo "Go build artifact and module cache cleaning attempt finished."      
       - name: Checking files After diy-part2.sh
         run: |
           cd openwrt
