@@ -46,7 +46,17 @@ jobs:
             
       - name: Checkout
         uses: actions/checkout@main
-
+        
+      - name: Cache APT packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            /var/cache/apt/archives
+            /var/lib/apt/lists
+          key: ${{ runner.os }}-apt-${{ hashFiles('/etc/apt/sources.list') }}-${{ hashFiles('**/Breaks') }} # Added Breaks file for more robustness
+          restore-keys: |
+            ${{ runner.os }}-apt-
+            
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -66,7 +76,19 @@ jobs:
           sudo chown -R $USER:$GROUPS /workdir/openwrt
           sudo apt install -y jq parallel python3-pip pigz
           pip install mega.py || pip3 install mega.py || exit 1
-          
+          echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
+          echo "USE_CCACHE=1" >> $GITHUB_ENV
+
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.ccache
+          key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE, env.DIY_P1_SH, env.DIY_P2_SH) }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
+
+            
       - name: Clone source code
         working-directory: ${{ github.workspace }}
         run: |
@@ -107,7 +129,15 @@ jobs:
           rm -rf feeds/small8/trojan-plus
           rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
 
-      
+  
+      - name: Cache OpenWRT dl directory
+        uses: actions/cache@v4
+        id: cache-dl
+        with:
+          path: openwrt/dl
+          key: ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/feeds.conf.default', env.CONFIG_FILE, env.DIY_P1_SH) }}
+          restore-keys: |
+            ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-    
           
       - name: Load custom configuration
         run: |
@@ -123,7 +153,21 @@ jobs:
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Lost after defconfig, reapplying..." && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config)
           echo "Final check after reapplication:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
-          
+
+
+      - name: Cache OpenWRT build directories (staging_dir, build_dir)
+        uses: actions/cache@v4
+        id: cache-build
+        with:
+          path: |
+            openwrt/staging_dir
+            openwrt/build_dir
+            openwrt/tmp # Caching tmp can sometimes help, but can also lead to issues. Monitor.
+          key: ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/.config', env.DIY_P1_SH, env.DIY_P2_SH) }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-
+
+            
       - name: Checking files After diy-part2.sh
         run: |
           cd openwrt
