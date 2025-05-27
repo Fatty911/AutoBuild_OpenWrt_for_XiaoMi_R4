@@ -270,6 +270,7 @@ jobs:
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
           echo "ls -la查看目录"
           ls -la
+          sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile 
           
       - name: Download package
         id: download_package
