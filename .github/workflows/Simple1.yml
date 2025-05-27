@@ -106,35 +106,44 @@ jobs:
       - name: Update feeds and Install feeds
         run: |
           cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
-          # Fix for Rust build error: llvm.download-ci-llvm=true is not allowed in CI
-          # The error message suggests using 'if-unchanged'
+          
           echo "Attempting to patch Rust Makefile for CI build..."
-          # The Makefile could be in feeds/packages or package/feeds/packages after installation
-          RUST_MAKEFILE_PATH_PRIMARY="feeds/packages/lang/rust/Makefile"
-          RUST_MAKEFILE_PATH_SECONDARY="package/feeds/packages/lang/rust/Makefile"
+          RUST_MAKEFILE_PATH="feeds/packages/lang/rust/Makefile" # Path relative to 'openwrt'
 
-          TARGET_LINE_OLD="--set llvm.download-ci-llvm=true"
-          TARGET_LINE_NEW="--set llvm.download-ci-llvm=if-unchanged" # Note: no quotes around if-unchanged for --set
+          if [ -f "$RUST_MAKEFILE_PATH" ]; then
+              echo "--- Content of $RUST_MAKEFILE_PATH before patching (first 150 lines and relevant grep): ---"
+              head -n 150 "$RUST_MAKEFILE_PATH"
+              echo "--- Grepping for '--set llvm.download-ci-llvm=true' before patch: ---"
+              grep --color=always -C 5 -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH" || echo "Target string NOT found before patch."
+              echo "-------------------------------------------------------------------------------------------"
 
-          if [ -f "$RUST_MAKEFILE_PATH_PRIMARY" ]; then
-              if grep -qF "$TARGET_LINE_OLD" "$RUST_MAKEFILE_PATH_PRIMARY"; then
-                  echo "Patching $RUST_MAKEFILE_PATH_PRIMARY"
-                  sed -i "s|$TARGET_LINE_OLD|$TARGET_LINE_NEW|g" "$RUST_MAKEFILE_PATH_PRIMARY"
+              # Check if the target string exists before attempting to replace
+              if grep -q -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH"; then
+                  echo "Patching $RUST_MAKEFILE_PATH..."
+                  # Using a very specific sed to target the argument, assuming it's part of CONFIGURE_ARGS or similar
+                  sed -i 's|--set llvm.download-ci-llvm=true|--set llvm.download-ci-llvm=if-unchanged|g' "$RUST_MAKEFILE_PATH"
+                  
+                  echo "--- Content of $RUST_MAKEFILE_PATH after patching (first 150 lines and relevant grep): ---"
+                  head -n 150 "$RUST_MAKEFILE_PATH"
+                  echo "--- Grepping for '--set llvm.download-ci-llvm=if-unchanged' after patch: ---"
+                  grep --color=always -C 5 -- '--set llvm.download-ci-llvm=if-unchanged' "$RUST_MAKEFILE_PATH" || echo "Patched string NOT found after sed!"
+                  echo "--- Grepping for '--set llvm.download-ci-llvm=true' after patch (should NOT be found): ---"
+                  grep --color=always -C 5 -- '--set llvm.download-ci-llvm=true' "$RUST_MAKEFILE_PATH" || echo "Original string correctly removed/replaced."
+                  echo "--------------------------------------------------------------------------------------------"
               else
-                  echo "Target line for Rust fix not found in $RUST_MAKEFILE_PATH_PRIMARY. Skipping patch or already patched."
-              fi
-          elif [ -f "$RUST_MAKEFILE_PATH_SECONDARY" ]; then
-              if grep -qF "$TARGET_LINE_OLD" "$RUST_MAKEFILE_PATH_SECONDARY"; then
-                  echo "Patching $RUST_MAKEFILE_PATH_SECONDARY (symlinked location)"
-                  sed -i "s|$TARGET_LINE_OLD|$TARGET_LINE_NEW|g" "$RUST_MAKEFILE_PATH_SECONDARY"
-              else
-                  echo "Target line for Rust fix not found in $RUST_MAKEFILE_PATH_SECONDARY. Skipping patch or already patched."
+                  echo "Target string '--set llvm.download-ci-llvm=true' not found in $RUST_MAKEFILE_PATH."
+                  if grep -q -- '--set llvm.download-ci-llvm=if-unchanged' "$RUST_MAKEFILE_PATH"; then
+                      echo "Rust Makefile already contains 'if-unchanged'."
+                  else
+                      echo "Rust Makefile does not contain 'true' or 'if-unchanged' for llvm.download-ci-llvm. Manual check of Makefile needed."
+                  fi
               fi
           else
-              echo "WARNING: Rust Makefile not found at expected locations ($RUST_MAKEFILE_PATH_PRIMARY or $RUST_MAKEFILE_PATH_SECONDARY). Rust build might fail if it's included."
+              echo "WARNING: Rust Makefile not found at $PWD/$RUST_MAKEFILE_PATH. Rust build might fail if it's included."
           fi
           
           echo "移除相关组件对trojan-plus的依赖"
+          # Ensure these paths are correct relative to the current directory (openwrt)
           sed -i \
               -e '/select PACKAGE_trojan-plus/d' \
               -e '/config PACKAGE_.*_INCLUDE_Trojan_Plus/,/default /s/default y/default n/' \
@@ -194,7 +203,31 @@ jobs:
           key: ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/.config', env.DIY_P1_SH, env.DIY_P2_SH) }}
           restore-keys: |
             ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-
+      - name: Clean Rust host build artifacts post-cache
+        # Always run this step. If build_dir doesn't exist or cache wasn't hit, find will do nothing.
+        # if: steps.cache-build.outputs.cache-hit == 'true' 
+        working-directory: openwrt # Ensure commands run within the openwrt directory
+        run: |
+          echo "Attempting to clean Rust host build artifacts..."
+          if [ -d "build_dir" ]; then
+            echo "Found build_dir. Searching for Rust host build directories to clean..."
+            # The error log shows: /openwrt/build_dir/target-mipsel_24kc_musl/host/rustc-1.87.0-src/
+            # And the x.py script uses: --build-dir /.../openwrt/build_dir/target-mipsel_24kc_musl/host/rustc-1.87.0-src/build
+            # We need to clean the ".built" stamp file and the "build" subdirectory within rustc-*-src/
 
+            echo "Cleaning specific rustc-*-src directories in build_dir/target-*/host/ ..."
+            find build_dir/target-*/host/ -name 'rustc-*-src' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
+
+            echo "Cleaning specific rustc-*-src directories in build_dir/host/ (if any)..."
+            find build_dir/host/ -name 'rustc-*-src' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
+            
+            echo "Cleaning rust-bootstrap directories in build_dir/host/ (if any)..."
+            find build_dir/host/ -name 'rust-bootstrap-*' -type d -print -exec sh -c 'echo "Cleaning in $1"; rm -rf "$1/.built"; rm -rf "$1/build"' sh {} \;
+
+            echo "Rust host build artifact cleaning attempt finished."
+          else
+            echo "build_dir not found at $PWD/build_dir. Skipping clean of Rust host build artifacts. This is normal if cache was not hit or it's the first full run."
+          fi
             
       - name: Checking files After diy-part2.sh
         run: |
