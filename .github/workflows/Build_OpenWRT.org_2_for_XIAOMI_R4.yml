@@ -121,6 +121,7 @@ jobs:
           #cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7
           #cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 8　
           cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
+          sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile package/feeds/packages/lang/rust/Makefile
           make V=s -j2 || make V=s -j1
           
       - name: Setup tmate session
