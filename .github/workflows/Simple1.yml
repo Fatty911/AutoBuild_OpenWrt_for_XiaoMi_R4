@@ -64,7 +64,8 @@ jobs:
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
           sudo -E apt-get -y purge azure-cli* docker* ghc*  
           sudo sed -i 's/^# deb/deb/g' /etc/apt/sources.list || true
-          sudo -E apt-get -qq update
+          #sudo -E apt-get -qq update
+          sudo apt update
           sudo apt -y install software-properties-common 
           sudo add-apt-repository universe || true
           sudo add-apt-repository multiverse || true
