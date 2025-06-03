@@ -160,17 +160,17 @@ jobs:
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
 
 
-      - name: Cache OpenWRT build directories (staging_dir, build_dir)
-        uses: actions/cache@v4
-        id: cache-build
-        with:
-          path: |
-            openwrt/staging_dir
-            openwrt/build_dir
-            openwrt/tmp # Caching tmp can sometimes help, but can also lead to issues. Monitor.
-          key: ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/.config', env.DIY_P1_SH, env.DIY_P2_SH) }}
-          restore-keys: |
-            ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-
+      # - name: Cache OpenWRT build directories (staging_dir, build_dir)
+      #   uses: actions/cache@v4
+      #   id: cache-build
+      #   with:
+      #     path: |
+      #       openwrt/staging_dir
+      #       openwrt/build_dir
+      #       openwrt/tmp # Caching tmp can sometimes help, but can also lead to issues. Monitor.
+      #     key: ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/.config', env.DIY_P1_SH, env.DIY_P2_SH) }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-
 
 
       
