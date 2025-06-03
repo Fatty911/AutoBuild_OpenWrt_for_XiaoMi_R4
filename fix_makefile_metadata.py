@@ -75,91 +75,99 @@ def process_makefile_version_and_release(makefile_path: Path):
             print(f"  ℹ️ [{relative_makefile_path}] [VERSION/RELEASE] Not a recognized OpenWrt package Makefile. Skipping version/release fixes.")
             return False
 
-        # --- Fix PKG_VERSION ---
+        # --- Step 1: Process PKG_VERSION first to extract base version and potential embedded release ---
         version_match = re.search(r'^(PKG_VERSION\s*:=)(.*)$', current_content, re.MULTILINE)
-        current_version_val = "" # Initialize
+        base_version_val = ""
+        version_embedded_release = None # Release part found inside PKG_VERSION string
+        original_pkg_version_line = ""
+        original_pkg_version_value_str = ""
+
         if version_match:
-            current_version_line = version_match.group(0)
-            current_version_val_raw = version_match.group(2)
-            current_version_val = re.sub(r'\s*#.*$', '', current_version_val_raw).strip()
-            new_version_val = current_version_val
+            original_pkg_version_line = version_match.group(0)
+            original_pkg_version_value_raw = version_match.group(2)
+            original_pkg_version_value_str = re.sub(r'\s*#.*$', '', original_pkg_version_value_raw).strip()
+            
+            temp_version_val = original_pkg_version_value_str
+            
+            # Remove 'v' prefix
+            if temp_version_val.startswith('v'):
+                temp_version_val = temp_version_val.lstrip('v')
+                if temp_version_val != original_pkg_version_value_str:
+                    print(f"    🔧 [{relative_makefile_path}] PKG_VERSION: Stripped 'v': '{original_pkg_version_value_str}' -> '{temp_version_val}'")
+                    # We will reconstruct the PKG_VERSION line later with the final base_version_val
 
-            if new_version_val.startswith('v'):
-                new_version_val = new_version_val.lstrip('v')
-                if new_version_val != current_version_val:
-                    print(f"    🔧 [{relative_makefile_path}] PKG_VERSION: Stripped 'v': '{current_version_val}' -> '{new_version_val}'")
-                    current_content = current_content.replace(current_version_line, f"{version_match.group(1)}{new_version_val}", 1)
-                    modified_in_file = True
-                    current_version_val = new_version_val
-
-        # --- Fix PKG_RELEASE (and potentially PKG_VERSION if release was embedded) ---
-        release_match = re.search(r'^(PKG_RELEASE\s*:=)(.*)$', current_content, re.MULTILINE)
-        version_present_in_content = bool(re.search(r'^PKG_VERSION\s*:=', current_content, re.MULTILINE))
-
-
-        if release_match: # PKG_RELEASE is explicitly defined
-            current_release_line = release_match.group(0)
-            current_release_val_raw = release_match.group(2)
-            current_release_val_str = re.sub(r'\s*#.*$', '', current_release_val_raw).strip()
-            new_release_val_str = current_release_val_str
-
-            if not current_release_val_str.isdigit() or int(current_release_val_str) <= 0:
-                num_part_match = re.search(r'(\d+)$', current_release_val_str)
-                if num_part_match:
-                    temp_release_num = num_part_match.group(1)
-                    if int(temp_release_num) > 0:
-                        new_release_val_str = temp_release_num
-                    else:
-                        new_release_val_str = "1"
+            # Try to split version into base and embedded release (e.g., "1.2.3-5")
+            version_release_split_match = re.match(r'^(.*?)-(\d+)$', temp_version_val)
+            if version_release_split_match:
+                base_version_val = version_release_split_match.group(1)
+                potential_release_part = version_release_split_match.group(2)
+                if potential_release_part.isdigit() and int(potential_release_part) > 0:
+                    version_embedded_release = potential_release_part
+                    print(f"    ℹ️ [{relative_makefile_path}] PKG_VERSION: Found embedded release: base='{base_version_val}', embedded_release='{version_embedded_release}' from '{temp_version_val}'")
                 else:
-                    new_release_val_str = "1" # Default if no valid number found
-
-                if new_release_val_str != current_release_val_str:
-                    print(f"    🔧 [{relative_makefile_path}] PKG_RELEASE: Corrected invalid value: '{current_release_val_str}' -> '{new_release_val_str}'")
-                    current_content = current_content.replace(current_release_line, f"{release_match.group(1)}{new_release_val_str}", 1)
-                    modified_in_file = True
-        
-        elif version_present_in_content: # PKG_RELEASE is missing, but PKG_VERSION is present
-            # We need current_version_val from the PKG_VERSION processing step above.
-            # If PKG_VERSION wasn't found, current_version_val would be empty.
-            if not current_version_val: # Should not happen if version_present_in_content is true and PKG_VERSION exists
-                 print(f"    ⚠️ [{relative_makefile_path}] PKG_VERSION found but its value could not be parsed. Skipping PKG_RELEASE addition/split for safety.")
+                    base_version_val = temp_version_val # No valid embedded release, use full temp_version_val
             else:
-                release_from_version_val = None
-                base_version_val = current_version_val # current_version_val is already 'v'-stripped
+                base_version_val = temp_version_val # No embedded release pattern found
 
-                version_release_split_match = re.match(r'^(.*?)-(\d+)$', current_version_val)
-                if version_release_split_match:
-                    base_version_val = version_release_split_match.group(1)
-                    potential_release_part = version_release_split_match.group(2)
-                    if potential_release_part.isdigit() and int(potential_release_part) > 0:
-                        release_from_version_val = potential_release_part
+        # --- Step 2: Determine final PKG_RELEASE value ---
+        release_match = re.search(r'^(PKG_RELEASE\s*:=)(.*)$', current_content, re.MULTILINE)
+        final_pkg_release_val = "1" # Default
+        original_pkg_release_line = ""
+        original_pkg_release_value_str = ""
 
-                if release_from_version_val:
-                    # PKG_VERSION had release, split it. Find the PKG_VERSION line in current_content.
-                    current_pkg_version_line_match = re.search(r'^(PKG_VERSION\s*:=.*)$', current_content, re.MULTILINE)
-                    if current_pkg_version_line_match:
-                        the_pkg_version_line_to_replace = current_pkg_version_line_match.group(1)
-                        new_version_line_content = f"PKG_VERSION:={base_version_val}"
-                        new_release_line_content = f"PKG_RELEASE:={release_from_version_val}"
-                        print(f"    🔧 [{relative_makefile_path}] PKG_VERSION/RELEASE: Split: '{current_version_val}' -> VERSION='{base_version_val}', RELEASE='{release_from_version_val}'")
-                        # Ensure PKG_RELEASE is added after PKG_VERSION
-                        replacement_block = f"{new_version_line_content}\n{new_release_line_content}"
-                        current_content = current_content.replace(the_pkg_version_line_to_replace, replacement_block, 1)
-                        modified_in_file = True
-                    else:
-                        print(f"    ⚠️ [{relative_makefile_path}] Could not find PKG_VERSION line to split release. Adding default PKG_RELEASE:=1 instead.")
-                        new_release_line_content = "PKG_RELEASE:=1"
-                        current_content = re.sub(r'^(PKG_VERSION\s*:=.*)$', rf'\1\n{new_release_line_content}', current_content, 1, re.MULTILINE)
-                        modified_in_file = True
+        if release_match:
+            original_pkg_release_line = release_match.group(0)
+            original_pkg_release_value_raw = release_match.group(2)
+            original_pkg_release_value_str = re.sub(r'\s*#.*$', '', original_pkg_release_value_raw).strip()
+
+            if original_pkg_release_value_str.isdigit() and int(original_pkg_release_value_str) > 0:
+                final_pkg_release_val = original_pkg_release_value_str
+                print(f"    ℹ️ [{relative_makefile_path}] PKG_RELEASE: Using existing valid value: '{final_pkg_release_val}'")
+            else:
+                print(f"    ⚠️ [{relative_makefile_path}] PKG_RELEASE: Existing value '{original_pkg_release_value_str}' is invalid.")
+                if version_embedded_release:
+                    final_pkg_release_val = version_embedded_release
+                    print(f"      -> Using release '{version_embedded_release}' from PKG_VERSION instead.")
                 else:
-                    # Version doesn't contain release, just add PKG_RELEASE:=1
-                    new_release_line_content = "PKG_RELEASE:=1"
-                    print(f"    🔧 [{relative_makefile_path}] PKG_RELEASE: Added missing default: '{new_release_line_content}'")
-                    current_content = re.sub(r'^(PKG_VERSION\s*:=.*)$', rf'\1\n{new_release_line_content}', current_content, 1, re.MULTILINE)
-                    modified_in_file = True
-        else: # No PKG_VERSION and no PKG_RELEASE found, or not a package Makefile
-             pass
+                    final_pkg_release_val = "1"
+                    print(f"      -> Defaulting to PKG_RELEASE: '1'.")
+        elif version_embedded_release: # PKG_RELEASE not defined, but found one in PKG_VERSION
+            final_pkg_release_val = version_embedded_release
+            print(f"    🔧 [{relative_makefile_path}] PKG_RELEASE: Using release '{version_embedded_release}' from PKG_VERSION as PKG_RELEASE was not defined.")
+        else: # PKG_RELEASE not defined, no embedded release in PKG_VERSION
+            print(f"    🔧 [{relative_makefile_path}] PKG_RELEASE: Not defined and no embedded release in PKG_VERSION. Defaulting to '1'.")
+            final_pkg_release_val = "1"
+
+
+        # --- Step 3: Apply changes to current_content ---
+        # Update PKG_VERSION line to only contain base_version_val
+        if version_match and base_version_val and (base_version_val != original_pkg_version_value_str):
+            new_pkg_version_line = f"PKG_VERSION:={base_version_val}"
+            print(f"    🔧 [{relative_makefile_path}] PKG_VERSION: Corrected to base version: '{original_pkg_version_value_str}' -> '{base_version_val}'")
+            current_content = current_content.replace(original_pkg_version_line, new_pkg_version_line, 1)
+            modified_in_file = True
+        elif not version_match and base_version_val: # Should not happen if PKG_VERSION is required for a package
+             print(f"    ⚠️ [{relative_makefile_path}] PKG_VERSION line not found, but base_version_val ('{base_version_val}') was derived. This is unusual.")
+
+
+        # Update or add PKG_RELEASE line
+        if release_match: # PKG_RELEASE was defined
+            if final_pkg_release_val != original_pkg_release_value_str:
+                new_pkg_release_line = f"PKG_RELEASE:={final_pkg_release_val}"
+                print(f"    🔧 [{relative_makefile_path}] PKG_RELEASE: Updated value: '{original_pkg_release_value_str}' -> '{final_pkg_release_val}'")
+                current_content = current_content.replace(original_pkg_release_line, new_pkg_release_line, 1)
+                modified_in_file = True
+        elif version_present_in_content: # PKG_RELEASE was not defined, add it after PKG_VERSION
+            new_pkg_release_line = f"PKG_RELEASE:={final_pkg_release_val}"
+            # Find the (potentially modified) PKG_VERSION line to insert after
+            current_pkg_version_line_match_for_insert = re.search(r'^(PKG_VERSION\s*:=.*)$', current_content, re.MULTILINE)
+            if current_pkg_version_line_match_for_insert:
+                line_to_insert_after = current_pkg_version_line_match_for_insert.group(1)
+                print(f"    🔧 [{relative_makefile_path}] PKG_RELEASE: Added new line: '{new_pkg_release_line}'")
+                current_content = current_content.replace(line_to_insert_after, f"{line_to_insert_after}\n{new_pkg_release_line}", 1)
+                modified_in_file = True
+            else:
+                print(f"    ⚠️ [{relative_makefile_path}] Could not find PKG_VERSION line to insert new PKG_RELEASE after. PKG_RELEASE not added.")
 
 
         if modified_in_file:
@@ -405,7 +413,216 @@ def process_makefile_depends(makefile_path: Path):
     except Exception as e:
         print(f"  ⚠️ [DEPENDS] Processing {relative_makefile_path} failed: {e}", file=sys.stderr)
         return False
+def process_luci_depends(makefile_path: Path):
+    """
+    修复单个 Makefile 中的 LUCI_DEPENDS 和 LUCI_EXTRA_DEPENDS 字段。
+    - 从两者中提取依赖项。
+    - 移除版本约束和括号。
+    - 合并、去重，并用干净的列表重写 LUCI_DEPENDS。
+    - 如果 LUCI_EXTRA_DEPENDS 处理后为空，则注释掉它。
+    """
+    relative_makefile_path = get_relative_path(makefile_path)
+    print(f"  ℹ️ [LUCI_DEPENDS] Processing: {relative_makefile_path}")
+    try:
+        if makefile_path.is_symlink():
+            try:
+                real_path = makefile_path.resolve(strict=True)
+                if not real_path.is_file():
+                    print(f"  ⚠️ [LUCI_DEPENDS] Symlink {relative_makefile_path} does not point to a valid file. Skipping.", file=sys.stderr)
+                    return False
+                makefile_path = real_path
+                relative_makefile_path = get_relative_path(makefile_path)
+            except FileNotFoundError:
+                print(f"  ⚠️ [LUCI_DEPENDS] Symlink {relative_makefile_path} points to a non-existent file. Skipping.", file=sys.stderr)
+                return False
+            except Exception as e:
+                print(f"  ⚠️ [LUCI_DEPENDS] Error resolving symlink {relative_makefile_path}: {e}. Skipping.", file=sys.stderr)
+                if not makefile_path.exists(): return False
 
+        if not makefile_path.is_file():
+            return False
+
+        try:
+            with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
+                content = f.read()
+        except UnicodeDecodeError as e:
+            print(f"  ⚠️ [{relative_makefile_path}] [LUCI_DEPENDS] Skipping due to UnicodeDecodeError: {e}. Check file encoding.", file=sys.stderr)
+            return False
+        except Exception as e:
+            print(f"  ⚠️ [{relative_makefile_path}] [LUCI_DEPENDS] Error reading file: {e}. Skipping.", file=sys.stderr)
+            return False
+
+        original_content = content
+        current_content = content # Start with original content for modifications
+        file_modified_flag = False
+
+        # Check if it's a LuCI package Makefile (heuristic)
+        is_luci_makefile = ('include $(TOPDIR)/feeds/luci/luci.mk' in content or \
+                            'LUCI_TITLE:=' in content)
+        if not is_luci_makefile:
+            print(f"  ℹ️ [{relative_makefile_path}] [LUCI_DEPENDS] Not a recognized LuCI package Makefile. Skipping LuCI depends fixes.")
+            return False
+
+        all_luci_deps_raw = []
+        luci_depends_match = re.search(r'^(LUCI_DEPENDS\s*[:+]?=\s*)((?:.*?\\\n)*.*)$', current_content, re.MULTILINE | re.IGNORECASE)
+        luci_extra_depends_match = re.search(r'^(LUCI_EXTRA_DEPENDS\s*[:+]?=\s*)((?:.*?\\\n)*.*)$', current_content, re.MULTILINE | re.IGNORECASE)
+
+        original_luci_depends_line = ""
+        original_luci_extra_depends_line = ""
+
+        if luci_depends_match:
+            original_luci_depends_line = luci_depends_match.group(0)
+            depends_value_raw = luci_depends_match.group(2).replace('\\\n', ' ')
+            depends_value_cleaned = re.sub(r'\s*#.*', '', depends_value_raw, flags=re.MULTILINE).strip()
+            if depends_value_cleaned:
+                all_luci_deps_raw.extend(re.split(r'\s+', depends_value_cleaned))
+            print(f"    🔍 [{relative_makefile_path}] Found LUCI_DEPENDS: {depends_value_cleaned}")
+
+
+        if luci_extra_depends_match:
+            original_luci_extra_depends_line = luci_extra_depends_match.group(0)
+            extra_depends_value_raw = luci_extra_depends_match.group(2).replace('\\\n', ' ')
+            extra_depends_value_cleaned = re.sub(r'\s*#.*', '', extra_depends_value_raw, flags=re.MULTILINE).strip()
+            if extra_depends_value_cleaned:
+                all_luci_deps_raw.extend(re.split(r'\s+', extra_depends_value_cleaned))
+            print(f"    🔍 [{relative_makefile_path}] Found LUCI_EXTRA_DEPENDS: {extra_depends_value_cleaned}")
+
+        if not all_luci_deps_raw:
+            print(f"  ℹ️ [{relative_makefile_path}] [LUCI_DEPENDS] No LUCI_DEPENDS or LUCI_EXTRA_DEPENDS found or they are empty.")
+            return False
+
+        processed_luci_deps = []
+        items_were_modified_in_luci_processing = False
+
+        for item_str_raw in all_luci_deps_raw:
+            item_str = item_str_raw.strip()
+            if not item_str:
+                continue
+
+            original_item_for_comparison = item_str
+            
+            # Remove version constraints like (>=1.0), (=1.2), etc. and surrounding parentheses
+            # This regex tries to find a package name optionally followed by space and (...)
+            # It's a bit greedy, assumes simple structure.
+            item_cleaned = re.sub(r'\s*\([<>=~].*?\)', '', item_str).strip()
+            item_cleaned = item_cleaned.replace('(', '').replace(')', '').strip() # Remove stray parentheses
+
+            if item_cleaned != original_item_for_comparison:
+                items_were_modified_in_luci_processing = True
+                print(f"        🔧 [{relative_makefile_path}] [LuCI Dep Item] Cleaned: '{original_item_for_comparison}' -> '{item_cleaned or '(removed)'}'")
+            
+            if item_cleaned: # Add if not empty after cleaning
+                 # Check for structural complexity after cleaning version constraints
+                if is_structurally_complex_item(item_cleaned):
+                    print(f"          ⚠️ [{relative_makefile_path}] [LuCI Dep Item] Cleaned item '{item_cleaned}' still contains Makefile syntax. Preserving as is.")
+                    processed_luci_deps.append(item_cleaned) # Add as is if complex
+                elif not re.match(r'^[+@a-zA-Z0-9._~-]+$', item_cleaned): # Allow +, @, and typical package name chars
+                    print(f"          ⚠️ [{relative_makefile_path}] [LuCI Dep Item] Cleaned item '{item_cleaned}' contains invalid characters. Reverting to '{original_item_for_comparison}'.")
+                    processed_luci_deps.append(original_item_for_comparison) # Revert if invalid simple name
+                else:
+                    processed_luci_deps.append(item_cleaned)
+            elif original_item_for_comparison: # Log if a non-empty item was removed
+                items_were_modified_in_luci_processing = True
+
+
+        # De-duplicate, preferring items with prefixes (@ > + > none)
+        # This logic is similar to the one in process_makefile_depends
+        temp_final_items = {}
+        for item in processed_luci_deps:
+            dep_prefix = ""
+            dep_name = item
+            if item.startswith('+') or item.startswith('@'):
+                dep_prefix = item[0]
+                dep_name = item[1:]
+            
+            if not dep_name: # Handle standalone prefix like "+" or "@"
+                if dep_prefix and dep_prefix not in temp_final_items:
+                    temp_final_items[dep_prefix] = dep_prefix
+                continue
+
+            if dep_name not in temp_final_items:
+                temp_final_items[dep_name] = item
+            else:
+                existing_item = temp_final_items[dep_name]
+                existing_prefix = ""
+                if existing_item.startswith('+') or existing_item.startswith('@'):
+                    existing_prefix = existing_item[0]
+                
+                if dep_prefix == '@':
+                    temp_final_items[dep_name] = item
+                elif dep_prefix == '+' and existing_prefix == '':
+                    temp_final_items[dep_name] = item
+        
+        unique_luci_deps_ordered = []
+        added_names_to_final_list = set()
+        for item in processed_luci_deps: # Iterate original processed items for order
+            dep_prefix = ""
+            dep_name = item
+            if item.startswith('+') or item.startswith('@'):
+                dep_prefix = item[0]
+                dep_name = item[1:]
+            key_for_lookup = dep_name if dep_name else dep_prefix
+            if key_for_lookup and key_for_lookup not in added_names_to_final_list:
+                if key_for_lookup in temp_final_items:
+                    unique_luci_deps_ordered.append(temp_final_items[key_for_lookup])
+                    added_names_to_final_list.add(key_for_lookup)
+        
+        final_luci_depends_string = ' '.join(unique_luci_deps_ordered)
+        
+        # Construct the original full string of all deps for comparison
+        original_all_deps_string_for_comparison_list = []
+        if luci_depends_match:
+            original_all_deps_string_for_comparison_list.append(re.sub(r'\s*#.*', '', luci_depends_match.group(2).replace('\\\n', ' ')).strip())
+        if luci_extra_depends_match:
+             original_all_deps_string_for_comparison_list.append(re.sub(r'\s*#.*', '', luci_extra_depends_match.group(2).replace('\\\n', ' ')).strip())
+        original_combined_deps_str = ' '.join(filter(None, original_all_deps_string_for_comparison_list))
+
+
+        if final_luci_depends_string != original_combined_deps_str or items_were_modified_in_luci_processing:
+            file_modified_flag = True
+            print(f"    ✅ [{relative_makefile_path}] [LUCI_DEPENDS] Consolidated and cleaned. Original combined: '{original_combined_deps_str}', New: '{final_luci_depends_string}'")
+
+            # Replace or add LUCI_DEPENDS
+            new_luci_depends_line = f"LUCI_DEPENDS:={final_luci_depends_string}"
+            if luci_depends_match: # LUCI_DEPENDS existed
+                current_content = current_content.replace(original_luci_depends_line, new_luci_depends_line, 1)
+            else: # LUCI_DEPENDS did not exist, try to add it (e.g., after LUCI_TITLE)
+                luci_title_match = re.search(r'^(LUCI_TITLE\s*:=.*)$', current_content, re.MULTILINE)
+                if luci_title_match:
+                    title_line = luci_title_match.group(1)
+                    current_content = current_content.replace(title_line, f"{title_line}\n{new_luci_depends_line}", 1)
+                    print(f"      🔧 [{relative_makefile_path}] Added new LUCI_DEPENDS line.")
+                else: # Fallback: add at the top after include rules.mk
+                    rules_mk_match = re.search(r'^(include \$\(TOPDIR\)/rules\.mk.*)$', current_content, re.MULTILINE)
+                    if rules_mk_match:
+                        rules_line = rules_mk_match.group(1)
+                        current_content = current_content.replace(rules_line, f"{rules_line}\n\n{new_luci_depends_line}", 1)
+                        print(f"      🔧 [{relative_makefile_path}] Added new LUCI_DEPENDS line (after rules.mk).")
+                    else:
+                        print(f"      ⚠️ [{relative_makefile_path}] Could not determine where to add new LUCI_DEPENDS line.")
+                        file_modified_flag = False # Can't make this change
+
+            # Comment out LUCI_EXTRA_DEPENDS if it existed
+            if luci_extra_depends_match and original_luci_extra_depends_line.strip():
+                commented_extra_depends_line = f"#{original_luci_extra_depends_line.lstrip()}" # Preserve indentation
+                current_content = current_content.replace(original_luci_extra_depends_line, commented_extra_depends_line, 1)
+                print(f"      🔧 [{relative_makefile_path}] Commented out original LUCI_EXTRA_DEPENDS.")
+        else:
+            print(f"  ℹ️ [{relative_makefile_path}] [LUCI_DEPENDS] No changes needed for LuCI dependencies.")
+
+
+        if file_modified_flag and current_content != original_content:
+            print(f"  💾 [{relative_makefile_path}] [LUCI_DEPENDS] Saving changes.")
+            with open(makefile_path, 'w', encoding='utf-8') as f:
+                f.write(current_content)
+            return True
+        elif file_modified_flag and current_content == original_content:
+            print(f"  ℹ️ [{relative_makefile_path}] [LUCI_DEPENDS] Modifications attempted but result is identical to original. No save needed.")
+        return False
+
+    except Exception as e:
+        print(f"  ⚠️ [LUCI_DEPENDS] Processing {relative_makefile_path} failed: {e}", file=sys.stderr)
+        return False
 def main():
     parser = argparse.ArgumentParser(description='OpenWrt Makefile 元数据和依赖修复脚本')
     parser.add_argument('--makefile', type=str, help='要修复的单个 Makefile 路径。如果未指定，则扫描所有相关 Makefile。')
@@ -441,19 +658,15 @@ def main():
         base_path = Path('.')
         all_found_makefiles = []
         try:
-            # Scan for 'Makefile' and 'makefile'
             for pattern in ['Makefile', 'makefile']:
                 for p in base_path.rglob(pattern):
-                    # Check if any part of the path is in ignore_dirs
                     if not any(ignored_dir in p.parts for ignored_dir in ignore_dirs):
-                        # Avoid adding duplicates if both Makefile and makefile point to the same resolved path (e.g. on case-insensitive fs)
-                        resolved_p = p.resolve() # Resolve to handle symlinks and case variations
+                        resolved_p = p.resolve()
                         if resolved_p not in [m.resolve() for m in all_found_makefiles]:
-                             all_found_makefiles.append(p) # Store original path for processing
+                             all_found_makefiles.append(p)
         except Exception as e:
             print(f"Error during Makefile scanning: {e}", file=sys.stderr)
             sys.exit(1)
-            
         makefiles_to_process = all_found_makefiles
         print(f"找到 {len(makefiles_to_process)} 个潜在的 Makefile 文件进行检查。")
 
@@ -462,31 +675,32 @@ def main():
 
     for makefile_path_obj in makefiles_to_process:
         processed_count += 1
-        # More frequent progress reporting for large numbers of files
         if total_files > 100 and (processed_count % (total_files // 20) == 0 or processed_count == 1 or processed_count == total_files) :
             print(f"PROGRESS: 已检查 {processed_count}/{total_files} 文件... (Current: {get_relative_path(makefile_path_obj)})")
         elif total_files <= 100 and (processed_count % 10 == 0 or processed_count == 1 or processed_count == total_files):
              print(f"PROGRESS: 已检查 {processed_count}/{total_files} 文件... (Current: {get_relative_path(makefile_path_obj)})")
 
-
         file_actually_modified_this_run = False
         try:
-            current_target_path = makefile_path_obj
-            # Symlink resolution and file check is now inside each process_makefile_* function
-            # This allows them to log contextually if a symlink is bad.
+            current_target_path = makefile_path_obj # process_* functions handle symlinks now
 
             made_version_changes = False
-            made_depends_changes = False
+            made_std_depends_changes = False
+            made_luci_depends_changes = False
 
             if args.fix_version:
                 if process_makefile_version_and_release(current_target_path):
                     made_version_changes = True
             
-            if args.fix_depends:
+            if args.fix_depends: # This flag now covers both standard and LuCI depends
+                # Process standard DEPENDS first
                 if process_makefile_depends(current_target_path):
-                    made_depends_changes = True
+                    made_std_depends_changes = True
+                # Then process LuCI specific depends
+                if process_luci_depends(current_target_path):
+                    made_luci_depends_changes = True
             
-            if made_version_changes or made_depends_changes:
+            if made_version_changes or made_std_depends_changes or made_luci_depends_changes:
                 file_actually_modified_this_run = True
 
         except Exception as e_main_loop:
