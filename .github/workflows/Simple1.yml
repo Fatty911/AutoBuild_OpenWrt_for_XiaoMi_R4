@@ -153,7 +153,13 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P2_SH
           echo "Before defconfig, setting CONFIG_TARGET_ROOTFS_PARTSIZE:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
+          echp "===================================================================================================================================="
+          echp "===================================================================================================================================="
+          sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile 
+          cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
           make defconfig
+          echp "===================================================================================================================================="
+          echp "===================================================================================================================================="
           echo "After defconfig, checking CONFIG_TARGET_ROOTFS_PARTSIZE:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Lost after defconfig, reapplying..." && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config)
           echo "Final check after reapplication:"
@@ -182,8 +188,7 @@ jobs:
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "Not found, exit But continuing..."
           echo "ls -la查看目录"
           ls -la
-          sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile 
-          cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
+
           
       - name: Download package
         id: download_package
