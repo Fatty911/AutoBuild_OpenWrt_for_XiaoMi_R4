@@ -153,8 +153,8 @@ jobs:
           $GITHUB_WORKSPACE/$DIY_P2_SH
           echo "Before defconfig, setting CONFIG_TARGET_ROOTFS_PARTSIZE:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
-          echp "===================================================================================================================================="
-          echp "===================================================================================================================================="
+          echO "===================================================================================================================================="
+          echO "===================================================================================================================================="
           sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile || true
           cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
           sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile || true
