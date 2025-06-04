@@ -14,8 +14,8 @@ on:
     branches: 
       - master
       - main
-    paths:
-      - .github/workflows/Simple1.yml
+    # paths:
+    #   - .github/workflows/Simple1.yml
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
@@ -133,6 +133,9 @@ jobs:
           echo "彻底移除 trojan-plus 包"
           rm -rf feeds/small8/trojan-plus
           rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
+
+          echo "删除luci-app-bypass"
+          rm -rf feeds/small8/luci-app-bypass  && rm -rf package/feeds/small8/luci-app-bypass 
 
   
       - name: Cache OpenWRT dl directory
