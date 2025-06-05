@@ -148,13 +148,19 @@ jobs:
             ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-    
 
 
-      # - name: Setup tmate session
-      #   uses: mxschmitt/action-tmate@v3
-      #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} || ${{ failure() }}
-      #   with:
-      #     limit-access-to-actor: false
-      #     timeout-minutes: 300          
-
+      - name: Setup tmate session manually
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        with:
+          limit-access-to-actor: false
+          timeout-minutes: 300          
+          
+      - name: Setup tmate session if failed
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ failure() }}
+        with:
+          limit-access-to-actor: false
+          timeout-minutes: 300       
           
       - name: Load custom configuration
         run: |
