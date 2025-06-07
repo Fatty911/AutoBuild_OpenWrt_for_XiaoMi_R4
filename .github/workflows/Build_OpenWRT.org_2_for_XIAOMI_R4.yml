@@ -124,12 +124,18 @@ jobs:
       #     sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
       #     make V=s -j2 || make V=s -j1
           
-      - name: Setup tmate session
+      - name: Setup tmate session Manually
         uses: mxschmitt/action-tmate@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} || ${{ failure() }}
-        with:
-          limit-access-to-actor: false
-          timeout-minutes: 300          
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
+        # with:
+        #   limit-access-to-actor: false
+
+      - name: Setup tmate session if failed
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ failure() }}
+        # with:
+        #   limit-access-to-actor: false
+ 
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
