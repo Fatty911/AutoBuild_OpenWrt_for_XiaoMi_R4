@@ -129,7 +129,8 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
         with:
           limit-access-to-actor: false
-          install-dependencies: true
+          #install-dependencies: true
+          timeout-minutes: 300
 
       - name: Setup tmate session if failed
         uses: mxschmitt/action-tmate@v3
