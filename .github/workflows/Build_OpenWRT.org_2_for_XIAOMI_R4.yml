@@ -51,7 +51,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Setup tmate session Manually 1
-        uses: mxschmitt/action-tmate@v4
+        uses: mxschmitt/action-tmate@v3
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
         with:
           limit-access-to-actor: false
@@ -112,7 +112,7 @@ jobs:
         with:
           limit-access-to-actor: false
           #install-dependencies: true
-          timeout-minutes: 300
+          # timeout-minutes: 300
 
       - name: Setup tmate session if failed
         uses: mxschmitt/action-tmate@v3
