@@ -51,12 +51,12 @@ jobs:
         uses: actions/checkout@main
 
       - name: Setup tmate session Manually 1
-        uses: mxschmitt/action-tmate@v3
+        uses: mxschmitt/action-tmate@v4
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
         with:
           limit-access-to-actor: false
-          install-dependencies: true
-          timeout-minutes: 15
+          install-dependencies: false
+          # timeout-minutes: 15
           
       - name: Initialization environment
         env:
