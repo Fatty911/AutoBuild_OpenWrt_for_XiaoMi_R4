@@ -50,12 +50,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@main
 
-      - name: Setup tmate session Manually 1
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
-        with:
-          limit-access-to-actor: false
-          install-dependencies: false
+      # - name: Setup tmate session Manually 1
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
+      #   with:
+      #     limit-access-to-actor: false
+      #     install-dependencies: false
           # timeout-minutes: 15
           
       - name: Initialization environment
@@ -105,6 +105,13 @@ jobs:
       #     cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
       #     sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
       #     make V=s -j2 || make V=s -j1
+      
+      - name: Manually install tmate
+        run: |
+          sudo apt-get update
+          # 使用 install 而不是 upgrade。这只会安装 tmate 及其缺失的依赖，
+          # 不会升级已经存在的包，比如 openssh-client。
+          sudo apt-get install -y tmate --no-install-recommends  
           
       - name: Setup tmate session Manually
         uses: mxschmitt/action-tmate@v3
