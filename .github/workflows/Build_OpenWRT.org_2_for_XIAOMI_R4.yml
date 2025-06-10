@@ -34,7 +34,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push'}}
     steps:
       - name: Maximize build space
@@ -50,6 +50,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@main
 
+      - name: Setup tmate session Manually 1
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
+        with:
+          limit-access-to-actor: false
+          install-dependencies: true
+          timeout-minutes: 15
+          
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -61,7 +69,7 @@ jobs:
           sudo apt install software-properties-common -y || true
           sudo add-apt-repository universe || true
           sudo add-apt-repository multiverse || true
-          sudo apt upgrade -y
+          # sudo apt upgrade -y
           sudo apt install -y python-is-python3 python3-pip parallel jq perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-distutils rsync bc wget ccache flex bison libelf-dev || sudo apt install -y flex bison libelf-dev build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-venv python3-pip rsync bc wget ccache perl || sudo apt policy build-essential git gettext subversion ccache python3-distutils
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
@@ -86,32 +94,6 @@ jobs:
           echo "解压前"
           pwd && ls -la
           tar -xzf ${{ env.SOURCE }}.tar.gz
-
-      - name: Verify Extracted Contents
-        run: |
-          echo "Checking contents after extraction in ${{ github.workspace }}/openwrt\n在解压后查看文件目录"
-          ls -la ${{ github.workspace }}/openwrt/ # List files in the extracted directory
-          if [ -f "${{ github.workspace }}/openwrt/Makefile" ]; then
-            echo "Makefile found. First 20 lines:"
-            head -n 20 ${{ github.workspace }}/openwrt/Makefile
-          else
-            echo "Makefile NOT found!"
-            exit 1 # Fail the step if Makefile is missing
-          fi
-          if [ -f "${{ github.workspace }}/openwrt/.config" ]; then
-            echo ".config found. First 20 lines:"
-            head -n 20 ${{ github.workspace }}/openwrt/.config
-          else
-            echo ".config NOT found!"
-            # Decide if missing .config should fail the build, maybe just warn
-            echo "Warning: .config NOT found!"
-          fi
-          echo "Checking build_dir and staging_dir presence:"
-          ls -la ${{ github.workspace }}/openwrt/build_dir/ || echo "build_dir missing"
-          ls -la ${{ github.workspace }}/openwrt/staging_dir/ || echo "staging_dir missing"
-          df -hT # Check disk space again
-          
-
       
       # - name: Build image
       #   id: build_image
