@@ -20,6 +20,18 @@ on:
     types: Openwrt.org Source Code Update
 env:
   TERM: xterm
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: main
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: config_for_OpenWrt_org
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  SOURCE: OpenWrt.org_official
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -49,7 +61,7 @@ jobs:
           
       - name: Load custom feeds
         run: |
-          # [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+          [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
           chmod +x $DIY_P1_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P1_SH
