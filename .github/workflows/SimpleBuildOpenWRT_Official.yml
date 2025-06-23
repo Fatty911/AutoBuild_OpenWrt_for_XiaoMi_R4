@@ -72,7 +72,9 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           cp ../config_for_OpenWrt_org .config
+          sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile || true
           make defconfig
+          sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile || true
           echo "在defconfig之后查看配置文件"
           cat .config | grep CONFIG_TARGET_.*=y
       
