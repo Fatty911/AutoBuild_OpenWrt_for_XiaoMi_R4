@@ -178,13 +178,16 @@ jobs:
         run: |
           echo "查看生成固件的目录"
           ls -lh openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
-          if [ -f "openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}/*.bin" ]; then
-            echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
-            echo "设置环境变量env.FINAL_BIN_EXISTS = true"
-          else
-            echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
-            echo "设置环境变量env.FINAL_BIN_EXISTS = false"
-          fi
+          for file in openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}/*.bin; do
+            if [ -f "$file" ]; then
+              echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
+              echo "设置环境变量env.FINAL_BIN_EXISTS = true"
+              break
+            else
+              echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
+              echo "设置环境变量env.FINAL_BIN_EXISTS = false"
+            fi
+          done
 
       - name: Upload firmware
         # if: steps.check_bin_final.conclusion == 'success'
