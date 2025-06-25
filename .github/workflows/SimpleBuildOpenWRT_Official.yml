@@ -167,10 +167,8 @@ jobs:
           echo "TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
           echo "TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
           echo "TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')" >> $GITHUB_ENV
-          echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
           KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
-          echo "firmware_path=openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
 
           
@@ -189,7 +187,10 @@ jobs:
               echo "设置环境变量env.FINAL_BIN_EXISTS = false"
             fi
           done
-
+          echo "firmware_path=openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}" >> $GITHUB_ENV
+          echo "设置固件目录为：${{ env.firmware_path }}"
+          echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
+          
       - name: Upload firmware
         # if: steps.check_bin_final.conclusion == 'success'
         if: env.FINAL_BIN_EXISTS == 'true'
