@@ -819,6 +819,7 @@ CONFIG_LUCI_CSSTIDY=y
 CONFIG_LUCI_LANG_zh_Hans=y
 CONFIG_PACKAGE_luci-compat=y
 CONFIG_PACKAGE_luci-lua-runtime=y
+CONFIG_PACKAGE_luci-app-usteer=y
 CONFIG_PACKAGE_luci-app-adblock-fast=y
 CONFIG_PACKAGE_luci-app-adguardhome=n
 CONFIG_PACKAGE_luci-app-adguardhome_INCLUDE_binary=n
