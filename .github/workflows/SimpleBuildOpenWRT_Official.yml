@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Maximize build space
-        uses: easimon/maximize-build-space@master
+        uses: easimon/maximize-build-space@v10
         with:
           root-reserve-mb: 10240
           remove-dotnet: 'true'
@@ -46,7 +46,7 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
       - name: Checkout Self Repo
-        uses: actions/checkout@main
+        uses: actions/checkout@v4
         
           
       - name: Clone OpenWRT.org_Official
@@ -194,7 +194,7 @@ jobs:
       - name: Upload firmware
         # if: steps.check_bin_final.conclusion == 'success'
         if: env.FINAL_BIN_EXISTS == 'true'
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v4
         with:
           name: openwrt-firmware
           path: openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
@@ -209,7 +209,7 @@ jobs:
 
       - name: Upload firmware to release
         id: up-release
-        uses: softprops/action-gh-release@master
+        uses: softprops/action-gh-release@v2
         if: steps.generate_release_tag.outputs.release_tag_status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
@@ -222,7 +222,7 @@ jobs:
             tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
                 
       - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@v2.0.0
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           repository: ${{ github.repository }}
