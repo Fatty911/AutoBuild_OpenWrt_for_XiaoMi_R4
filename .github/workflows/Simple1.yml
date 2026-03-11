@@ -37,7 +37,7 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
-            root-reserve-mb: 10240
+            root-reserve-mb: 5120
             remove-dotnet: 'true'
             remove-android: 'true'
             remove-haskell: 'true'
@@ -72,14 +72,14 @@ jobs:
           echo "USE_CCACHE=1" >> $GITHUB_ENV
 
 
-      - name: Cache ccache
-        uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/.ccache
-          key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE, env.DIY_P1_SH, env.DIY_P2_SH) }}
-          restore-keys: |
-            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
-          save-always: false
+      # - name: Cache ccache
+      #   uses: actions/cache@v4
+      #   with:
+      #     path: ${{ github.workspace }}/.ccache
+      #     key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE, env.DIY_P1_SH, env.DIY_P2_SH) }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
+      #     save-always: false
 
             
       - name: Clone source code
