@@ -129,14 +129,14 @@ jobs:
           rm -rf feeds/small8/luci-app-bypass  && rm -rf package/feeds/small8/luci-app-bypass 
 
   
-      - name: Cache OpenWRT dl directory
-        uses: actions/cache@v4
-        id: cache-dl
-        with:
-          path: openwrt/dl
-          key: ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/feeds.conf.default', env.CONFIG_FILE, env.DIY_P1_SH) }}
-          restore-keys: |
-            ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-    
+      # - name: Cache OpenWRT dl directory
+      #   uses: actions/cache@v4
+      #   id: cache-dl
+      #   with:
+      #     path: openwrt/dl
+      #     key: ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/feeds.conf.default', env.CONFIG_FILE, env.DIY_P1_SH) }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-    
 
 
       - name: Setup tmate session manually
