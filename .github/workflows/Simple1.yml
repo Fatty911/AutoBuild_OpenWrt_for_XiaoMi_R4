@@ -46,16 +46,6 @@ jobs:
             
       - name: Checkout
         uses: actions/checkout@main
-        
-      - name: Cache APT packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            /var/cache/apt/archives
-            /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-${{ hashFiles('/etc/apt/sources.list') }}-${{ hashFiles('**/Breaks') }} # Added Breaks file for more robustness
-          restore-keys: |
-            ${{ runner.os }}-apt-
             
       - name: Initialization environment
         env:
@@ -89,6 +79,7 @@ jobs:
           key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE, env.DIY_P1_SH, env.DIY_P2_SH) }}
           restore-keys: |
             ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
+          save-always: false
 
             
       - name: Clone source code
@@ -223,6 +214,14 @@ jobs:
         if: (!cancelled())
         run: df -hT
         
+      - name: Clean up before compile
+        run: |
+          cd openwrt
+          rm -rf .git
+          sudo apt-get clean
+          docker rmi $(docker images -q) 2>/dev/null || true
+          df -hT
+        
 
       - name: Compile 1
         id: compile_1
@@ -253,8 +252,16 @@ jobs:
         id: compile_5
         run: |
           cd openwrt
-
           make V=s -j2 || make V=s -j1 || true
+          
+      - name: Clean up build artifacts
+        run: |
+          cd openwrt
+          rm -rf build_dir/target-*/root-* 
+          rm -rf build_dir/toolchain-*
+          rm -rf staging_dir/toolchain-*
+          rm -rf .ccache
+          df -hT
       
       
      
