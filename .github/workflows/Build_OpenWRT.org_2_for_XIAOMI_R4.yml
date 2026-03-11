@@ -176,10 +176,8 @@ jobs:
         if: steps.transplant.outputs.isFixed == 'true'
         run: |
             pwd && ls
-            cp compile_with_retry.sh openwrt/ 
+            cp compile_with_retry.py openwrt/
             cd openwrt
-            # bash compile_with_retry.sh "make -j1 V=s" "compile.log" 6 &&  echo "status=success" >> $GITHUB_OUTPUT
-            cp compile_with_retry.py openwrt/ 
             python compile_with_retry.py "make -j1 V=s" "compile.log" 7 &&  echo "status=success" >> $GITHUB_OUTPUT
 
           
