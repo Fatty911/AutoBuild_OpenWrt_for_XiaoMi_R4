@@ -62,7 +62,7 @@ jobs:
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
-          pip install --upgrade "tenacity>=8.0.0" && pip install "mega.py==1.0.8" || exit 1
+          pip install "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" && pip install "mega.py==1.0.8" --no-deps || exit 1
 
 
       - name: Download from MEGA
