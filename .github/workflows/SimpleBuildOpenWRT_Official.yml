@@ -172,6 +172,22 @@ jobs:
           echo "status=success" >> $GITHUB_OUTPUT
 
           
+      - name: Rename firmware files
+        if: steps.setEnv.outputs.status == 'success'
+        run: |
+          cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+          echo "重命名固件文件..."
+          ls -la *.bin 2>/dev/null || echo "No .bin files found"
+          for file in *.bin; do
+            if [ -f "$file" ]; then
+              suffix=$(echo "$file" | sed 's/.*-\(squashfs.*\)/\1/')
+              new_file="${{ env.TARGET_PROFILE }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}_${suffix}"
+              mv "$file" "$new_file"
+              echo "Renamed $file to $new_file"
+            fi
+          done
+          ls -la *.bin 2>/dev/null || echo "No .bin files after rename"
+          
       - name: Check for .bin file after final compilation
         id: check_bin_final
         run: |
