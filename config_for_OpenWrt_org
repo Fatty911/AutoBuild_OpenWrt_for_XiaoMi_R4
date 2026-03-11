@@ -188,7 +188,7 @@ CONFIG_FEED_packages=y
 CONFIG_FEED_luci=y
 CONFIG_FEED_routing=y
 CONFIG_FEED_telephony=y
-CONFIG_FEED_OpenClash=y
+# CONFIG_FEED_OpenClash is not set
 CONFIG_FEED_small8=y
 CONFIG_PACKAGE_attendedsysupgrade-common=y
 CONFIG_PACKAGE_base-files=y
