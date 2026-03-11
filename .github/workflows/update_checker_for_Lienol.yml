@@ -58,7 +58,7 @@ jobs:
         client-payload: '{"repo_url": "${{ env.REPO_URL }}"}' # 传递源码仓库的URL
 
     - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@v2.0.0
+      uses: Mattraks/delete-workflow-runs@v2
       with:
         token: ${{ github.token }}
         repository: ${{ github.repository }}

@@ -45,7 +45,7 @@ jobs:
     steps:    
     
     - name: Maximize build space
-      uses: easimon/maximize-build-space@v10
+      uses: easimon/maximize-build-space@master
       with:
           root-reserve-mb: 10240
           # temp-reserve-mb: 150
@@ -57,7 +57,7 @@ jobs:
           remove-docker-images: 'true'
           
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@main
 
     - name: Initialization environment
       env:
@@ -251,7 +251,7 @@ jobs:
 
 
     - name: Upload bin directory
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@master
       if: env.FINAL_BIN_EXISTS == 'true' 
       with:
         name: OpenWrt_${{ env.SOURCE }}_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
@@ -269,7 +269,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@master
       if: env.FINAL_BIN_EXISTS == 'true' 
       with:
         name: OpenWrt_${{ env.SOURCE }}_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
@@ -286,7 +286,7 @@ jobs:
 
     - name: Upload firmware to release
       id: up-release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@master
       if: steps.generate_release_tag.outputs.release_tag_status == 'success'
       env:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
@@ -315,7 +315,7 @@ jobs:
         "
         
     - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@v2.0.0
+      uses: Mattraks/delete-workflow-runs@v2
       with:
         token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         repository: ${{ github.repository }}
@@ -323,7 +323,7 @@ jobs:
         keep_minimum_runs: 2
 
     - name: Delete Older Releases
-      uses: dev-drprasad/delete-older-releases@v0.3.3
+      uses: dev-drprasad/delete-older-releases@master
       with:
         keep_latest: 3
         delete_tag_pattern: .*${{ env.SOURCE }}.*
