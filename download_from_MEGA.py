@@ -22,8 +22,9 @@ def main():
 
     try:
         from mega import Mega  # type: ignore
-    except ImportError:
-        print("错误: mega.py 未安装，请先运行 pip install mega.py")
+        import requests
+    except ImportError as e:
+        print(f"错误: 缺少依赖 {e}，请先运行 pip install mega.py requests")
         sys.exit(1)
 
     print("登录 MEGA 账号...")
@@ -35,7 +36,7 @@ def main():
     files = m.get_files()
 
     # 找到目标文件夹节点
-    target_folder_id: str | None = None
+    target_folder_id = None
     for node_id, node in files.items():
         if node.get("t") == 1 and node.get("a") and node["a"].get("n") == folder_name:
             target_folder_id = node_id
@@ -63,7 +64,9 @@ def main():
         filename = node["a"]["n"]
         dest_path = os.path.join(dest_dir, filename)
         print(f"开始下载: {filename} -> {dest_path}")
-        m.download(node, dest_dir)
+
+        # download() 需要传入 (node_id, node) 元组
+        m.download((nid, node), dest_dir)
         print(f"下载完成: {filename}")
 
 
