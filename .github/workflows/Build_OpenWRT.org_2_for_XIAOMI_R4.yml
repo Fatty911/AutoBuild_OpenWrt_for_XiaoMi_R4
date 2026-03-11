@@ -207,13 +207,17 @@ jobs:
         run: |
           cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
           echo "进入文件夹：$(pwd)"
-          for file in openwrt-${{ env.TARGET_BOARD }}-${{ env.TARGET_SUBTARGET }}-${{ env.TARGET_PROFILE}}-*; do
+          ls -la *.bin 2>/dev/null || echo "No .bin files found"
+          for file in *.bin; do
             if [ -f "$file" ]; then
-              new_file="openwrt_org_${{ env.TARGET_BOARD }}_${{ env.TARGET_SUBTARGET }}_${{ env.TARGET_PROFILE}}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}${file#*${{ env.TARGET_PROFILE }}}"
+              # 提取文件类型后缀，如 squashfs-kernel1.bin 或 squashfs-rootfs0.bin
+              suffix=$(echo "$file" | sed 's/.*-\(squashfs.*\)/\1/')
+              new_file="${{ env.TARGET_PROFILE }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}_${suffix}"
               mv "$file" "$new_file"
               echo "Renamed $file to $new_file"
             fi
           done
+          ls -la *.bin 2>/dev/null || echo "No .bin files after rename"
           
       - name: 查看日志结尾200行
         if: always()
