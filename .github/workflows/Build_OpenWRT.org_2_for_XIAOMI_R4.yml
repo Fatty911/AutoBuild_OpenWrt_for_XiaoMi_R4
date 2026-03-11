@@ -255,8 +255,10 @@ jobs:
         run: |
           if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
             echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
+            echo "存在.bin固件"
           else
             echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
+            echo "没找到.bin固件"
           fi
 
 
