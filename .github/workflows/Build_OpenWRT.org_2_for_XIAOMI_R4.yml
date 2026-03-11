@@ -64,22 +64,6 @@ jobs:
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
           pip install mega.py || pip3 install mega.py || python -m pip install mega.py || exit 1
-          echo "--- 安装 MEGAcmd ---"
-          UBUNTU_VER=$(lsb_release -rs)
-          wget -q "https://mega.nz/linux/repo/xUbuntu_${UBUNTU_VER}/amd64/megacmd-xUbuntu_${UBUNTU_VER}_amd64.deb" -O megacmd.deb
-          sudo dpkg -i megacmd.deb || sudo apt-get install -f -y
-          rm -f megacmd.deb
-          hash -r
-          echo "--- 查找 mega-login 实际位置 ---"
-          MEGA_LOGIN_PATH=$(find / -name 'mega-login' -type f 2>/dev/null | head -1)
-          if [ -z "$MEGA_LOGIN_PATH" ]; then
-            echo "错误: 安装后仍找不到 mega-login，列出 dpkg 安装的文件："
-            dpkg -L megacmd 2>/dev/null || true
-            exit 1
-          fi
-          MEGA_PREFIX=$(dirname "$MEGA_LOGIN_PATH")
-          echo "MEGA_CMD_PREFIX=${MEGA_PREFIX}" >> $GITHUB_ENV
-          echo "MEGAcmd 路径: ${MEGA_PREFIX}"
 
 
       - name: Download from MEGA

@@ -1,123 +1,69 @@
 #!/usr/bin/env python3
+"""
+使用 mega.py 上传文件到 MEGA 网盘，无需安装 MEGAcmd。
+环境变量: MEGA_USERNAME, MEGA_PASSWORD, SOURCE
+"""
+
 import os
 import sys
-import subprocess
-import shutil
-
-
-def get_mega_cmd(name):
-    """
-    优先从 MEGA_CMD_PREFIX 环境变量定位 MEGAcmd 命令，
-    其次用 shutil.which，最后在常见路径搜索。
-    """
-    prefix = os.environ.get("MEGA_CMD_PREFIX", "").strip()
-    if prefix:
-        candidate = os.path.join(prefix, name)
-        if os.path.isfile(candidate):
-            return candidate
-
-    found = shutil.which(name)
-    if found:
-        return found
-
-    for search_dir in ["/usr/bin", "/usr/local/bin", "/opt/megacmd/bin"]:
-        candidate = os.path.join(search_dir, name)
-        if os.path.isfile(candidate):
-            return candidate
-
-    print(f"错误: 找不到命令 '{name}'，请确保 MEGAcmd 已安装且 MEGA_CMD_PREFIX 已设置")
-    sys.exit(1)
-
-
-def mega_login(username, password):
-    result = subprocess.run(
-        [get_mega_cmd("mega-login"), username, password],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        print("登录失败:", result.stderr)
-        sys.exit(1)
-
-
-def mega_ensure_folder(folder):
-    result = subprocess.run(
-        [get_mega_cmd("mega-ls"), folder], capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print(f"文件夹 '{folder}' 不存在，正在创建...")
-        result = subprocess.run(
-            [get_mega_cmd("mega-mkdir"), "-p", folder], capture_output=True, text=True
-        )
-        if result.returncode != 0:
-            check = subprocess.run(
-                [get_mega_cmd("mega-ls"), folder], capture_output=True, text=True
-            )
-            if check.returncode == 0:
-                print(
-                    f"文件夹 '{folder}' 已存在（创建过程中可能返回错误码），继续操作。"
-                )
-            else:
-                err_msg = result.stderr or result.stdout
-                print("创建文件夹失败:", err_msg)
-                sys.exit(1)
-        else:
-            print(f"文件夹 '{folder}' 创建成功.")
-    else:
-        print(f"找到现有文件夹: {folder}")
-
-
-def mega_remove_file_if_exists(folder, filename):
-    result = subprocess.run(
-        [get_mega_cmd("mega-ls"), folder], capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print("无法列出文件夹内容:", result.stderr)
-        sys.exit(1)
-    if filename in result.stdout:
-        print(f"检测到同名文件 '{filename}'，正在删除...")
-        result = subprocess.run(
-            [get_mega_cmd("mega-rm"), f"{folder}/{filename}"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print("删除文件失败:", result.stderr)
-            sys.exit(1)
-        print(f"旧文件 '{filename}' 已删除.")
-    else:
-        print(f"文件夹中未发现文件 '{filename}'。")
-
-
-def mega_upload_file(folder, local_file):
-    if not os.path.exists(local_file):
-        raise FileNotFoundError(f"本地文件 {local_file} 不存在")
-    print(f"开始上传文件: {local_file} 到文件夹: {folder}")
-    result = subprocess.run(
-        [get_mega_cmd("mega-put"), local_file, folder], capture_output=True, text=True
-    )
-    if result.returncode != 0:
-        print("上传过程中出错:", result.stderr)
-        sys.exit(1)
-    print("上传完成.")
 
 
 def main():
-    MEGA_USERNAME = os.getenv("MEGA_USERNAME")
-    MEGA_PASSWORD = os.getenv("MEGA_PASSWORD")
-    SOURCE = os.getenv("SOURCE")
-    if not (MEGA_USERNAME and MEGA_PASSWORD and SOURCE):
+    mega_username = os.getenv("MEGA_USERNAME")
+    mega_password = os.getenv("MEGA_PASSWORD")
+    source = os.getenv("SOURCE")
+
+    if not (mega_username and mega_password and source):
         print("请确保环境变量 MEGA_USERNAME, MEGA_PASSWORD 和 SOURCE 已设置")
         sys.exit(1)
 
-    mega_login(MEGA_USERNAME, MEGA_PASSWORD)
-    mega_ensure_folder(SOURCE)
+    try:
+        from mega import Mega  # type: ignore
+    except ImportError:
+        print("错误: mega.py 未安装，请先运行 pip install mega.py")
+        sys.exit(1)
 
-    target_filename = f"{SOURCE}.tar.gz"
-    mega_remove_file_if_exists(SOURCE, target_filename)
+    local_file = f"./{source}.tar.gz"
+    if not os.path.exists(local_file):
+        print(f"错误: 本地文件 {local_file} 不存在")
+        sys.exit(1)
 
-    local_file = f"./{target_filename}"
-    mega_upload_file(SOURCE, local_file)
+    print("登录 MEGA 账号...")
+    mega = Mega()
+    m = mega.login(mega_username, mega_password)
+    print("登录成功")
+
+    # 查找或创建目标文件夹
+    print(f"查找文件夹: {source}")
+    folder = m.find(source)
+    if folder is None:
+        print(f"文件夹 '{source}' 不存在，正在创建...")
+        folder = m.create_folder(source)
+        # create_folder 返回 dict，取根节点
+        folder = m.find(source)
+        if folder is None:
+            print(f"错误: 创建文件夹 '{source}' 失败")
+            sys.exit(1)
+    print(f"找到/创建文件夹: {source}")
+
+    # 删除同名旧文件
+    target_filename = f"{source}.tar.gz"
+    files = m.get_files()
+    folder_id = folder[0] if isinstance(folder, tuple) else list(folder.keys())[0]
+    for node_id, node in files.items():
+        if (
+            node.get("p") == folder_id
+            and node.get("t") == 0
+            and node.get("a", {}).get("n") == target_filename
+        ):
+            print(f"删除旧文件: {target_filename}")
+            m.destroy(node_id)
+            break
+
+    # 上传
+    print(f"开始上传: {local_file} -> MEGA:/{source}/")
+    m.upload(local_file, folder_id)
+    print("上传完成")
 
 
 if __name__ == "__main__":
