@@ -4,61 +4,36 @@ import sys
 import subprocess
 import shutil
 
-MEGACMD_PATHS = ["/usr/bin/mega-login", "/usr/local/bin/mega-login"]
 
+def get_mega_cmd(name):
+    """
+    优先从 MEGA_CMD_PREFIX 环境变量定位 MEGAcmd 命令，
+    其次用 shutil.which，最后在常见路径搜索。
+    """
+    prefix = os.environ.get("MEGA_CMD_PREFIX", "").strip()
+    if prefix:
+        candidate = os.path.join(prefix, name)
+        if os.path.isfile(candidate):
+            return candidate
 
-def find_megacmd():
-    """返回 mega-login 的路径，找不到返回 None"""
-    for p in MEGACMD_PATHS:
-        if os.path.isfile(p):
-            return p
-    return shutil.which("mega-login")
+    found = shutil.which(name)
+    if found:
+        return found
 
+    for search_dir in ["/usr/bin", "/usr/local/bin", "/opt/megacmd/bin"]:
+        candidate = os.path.join(search_dir, name)
+        if os.path.isfile(candidate):
+            return candidate
 
-def install_megacmd():
-    print("未检测到 MEGAcmd，正在尝试安装...")
-    subprocess.run(["sudo", "apt-get", "update"])
-    install = subprocess.run(["sudo", "apt-get", "install", "-y", "megacmd"])
-    if install.returncode == 0:
-        print("MEGAcmd apt 安装完成")
-        return
-
-    print("apt-get 安装失败，尝试动态下载并安装 MEGAcmd...")
-    result = subprocess.run(["lsb_release", "-rs"], capture_output=True, text=True)
-    if result.returncode != 0:
-        print("获取 Ubuntu 版本失败:", result.stderr)
-        sys.exit(1)
-    ubuntu_version = result.stdout.strip()
-    print(f"检测到 Ubuntu 版本: {ubuntu_version}")
-    download_url = f"https://mega.nz/linux/repo/xUbuntu_{ubuntu_version}/amd64/megacmd-xUbuntu_{ubuntu_version}_amd64.deb"
-    print(f"正在下载: {download_url}")
-    download = subprocess.run(["wget", "-q", download_url, "-O", "megacmd.deb"])
-    if download.returncode != 0:
-        print("下载 MEGAcmd 失败，请手动安装。")
-        sys.exit(1)
-    dpkg = subprocess.run(["sudo", "dpkg", "-i", "megacmd.deb"])
-    if dpkg.returncode != 0:
-        fix = subprocess.run(["sudo", "apt-get", "install", "-f", "-y"])
-        if fix.returncode != 0:
-            print("动态安装 MEGAcmd 失败，请手动安装。")
-            sys.exit(1)
-    if os.path.exists("megacmd.deb"):
-        os.remove("megacmd.deb")
-    print("MEGAcmd .deb 安装完成")
-
-
-def check_megacmd_installed():
-    if find_megacmd() is None:
-        install_megacmd()
-        if find_megacmd() is None:
-            print("MEGAcmd 安装失败，mega-login 命令不存在")
-            sys.exit(1)
-    print("MEGAcmd 已就绪")
+    print(f"错误: 找不到命令 '{name}'，请确保 MEGAcmd 已安装且 MEGA_CMD_PREFIX 已设置")
+    sys.exit(1)
 
 
 def mega_login(username, password):
     result = subprocess.run(
-        ["mega-login", username, password], capture_output=True, text=True
+        [get_mega_cmd("mega-login"), username, password],
+        capture_output=True,
+        text=True,
     )
     if result.returncode != 0:
         print("登录失败:", result.stderr)
@@ -66,18 +41,17 @@ def mega_login(username, password):
 
 
 def mega_ensure_folder(folder):
-    # 尝试列出目标文件夹
-    result = subprocess.run(["mega-ls", f"{folder}"], capture_output=True, text=True)
+    result = subprocess.run(
+        [get_mega_cmd("mega-ls"), folder], capture_output=True, text=True
+    )
     if result.returncode != 0:
         print(f"文件夹 '{folder}' 不存在，正在创建...")
-        # 增加 -p 参数以递归创建目录
         result = subprocess.run(
-            ["mega-mkdir", "-p", f"{folder}"], capture_output=True, text=True
+            [get_mega_cmd("mega-mkdir"), "-p", folder], capture_output=True, text=True
         )
         if result.returncode != 0:
-            # 再次检查是否创建成功
             check = subprocess.run(
-                ["mega-ls", f"{folder}"], capture_output=True, text=True
+                [get_mega_cmd("mega-ls"), folder], capture_output=True, text=True
             )
             if check.returncode == 0:
                 print(
@@ -94,14 +68,18 @@ def mega_ensure_folder(folder):
 
 
 def mega_remove_file_if_exists(folder, filename):
-    result = subprocess.run(["mega-ls", f"{folder}"], capture_output=True, text=True)
+    result = subprocess.run(
+        [get_mega_cmd("mega-ls"), folder], capture_output=True, text=True
+    )
     if result.returncode != 0:
         print("无法列出文件夹内容:", result.stderr)
         sys.exit(1)
     if filename in result.stdout:
         print(f"检测到同名文件 '{filename}'，正在删除...")
         result = subprocess.run(
-            ["mega-rm", f"{folder}/{filename}"], capture_output=True, text=True
+            [get_mega_cmd("mega-rm"), f"{folder}/{filename}"],
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             print("删除文件失败:", result.stderr)
@@ -116,7 +94,7 @@ def mega_upload_file(folder, local_file):
         raise FileNotFoundError(f"本地文件 {local_file} 不存在")
     print(f"开始上传文件: {local_file} 到文件夹: {folder}")
     result = subprocess.run(
-        ["mega-put", local_file, f"{folder}"], capture_output=True, text=True
+        [get_mega_cmd("mega-put"), local_file, folder], capture_output=True, text=True
     )
     if result.returncode != 0:
         print("上传过程中出错:", result.stderr)
@@ -125,7 +103,6 @@ def mega_upload_file(folder, local_file):
 
 
 def main():
-    check_megacmd_installed()
     MEGA_USERNAME = os.getenv("MEGA_USERNAME")
     MEGA_PASSWORD = os.getenv("MEGA_PASSWORD")
     SOURCE = os.getenv("SOURCE")

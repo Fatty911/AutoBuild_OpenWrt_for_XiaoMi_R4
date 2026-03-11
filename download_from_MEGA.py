@@ -4,76 +4,39 @@ import subprocess
 import shutil
 import os
 
-MEGACMD_PATHS = ["/usr/bin/mega-login", "/usr/local/bin/mega-login"]
 
+def get_mega_cmd(name):
+    """
+    优先从 MEGA_CMD_PREFIX 环境变量定位 MEGAcmd 命令，
+    其次用 shutil.which，最后在常见路径搜索。
+    """
+    prefix = os.environ.get("MEGA_CMD_PREFIX", "").strip()
+    if prefix:
+        candidate = os.path.join(prefix, name)
+        if os.path.isfile(candidate):
+            return candidate
 
-def find_megacmd():
-    """返回 mega-login 的路径，找不到返回 None"""
-    for p in MEGACMD_PATHS:
-        if os.path.isfile(p):
-            return p
-    return shutil.which("mega-login")
+    found = shutil.which(name)
+    if found:
+        return found
 
+    for search_dir in ["/usr/bin", "/usr/local/bin", "/opt/megacmd/bin"]:
+        candidate = os.path.join(search_dir, name)
+        if os.path.isfile(candidate):
+            return candidate
 
-def install_megacmd():
-    print("未检测到 MEGAcmd，正在尝试安装...")
-    subprocess.run(["sudo", "apt-get", "update"], capture_output=True)
-    install = subprocess.run(
-        ["sudo", "apt-get", "install", "-y", "megacmd"], capture_output=True
-    )
-    if install.returncode == 0:
-        print("MEGAcmd apt 安装完成")
-        return
-
-    print("apt-get 安装失败，尝试动态下载并安装 MEGAcmd...")
-    result = subprocess.run(["lsb_release", "-rs"], capture_output=True, text=True)
-    if result.returncode != 0:
-        print("获取 Ubuntu 版本失败:", result.stderr)
-        sys.exit(1)
-    ubuntu_version = result.stdout.strip()
-    download_url = f"https://mega.nz/linux/repo/xUbuntu_{ubuntu_version}/amd64/megacmd-xUbuntu_{ubuntu_version}_amd64.deb"
-    print(f"下载安装包: {download_url}")
-    download = subprocess.run(
-        ["wget", "-q", download_url, "-O", "megacmd.deb"], capture_output=True
-    )
-    if download.returncode != 0:
-        print("下载失败:", download.stderr.decode())
-        sys.exit(1)
-
-    dpkg = subprocess.run(["sudo", "dpkg", "-i", "megacmd.deb"], capture_output=True)
-    if dpkg.returncode != 0:
-        fix = subprocess.run(
-            ["sudo", "apt-get", "install", "-f", "-y"], capture_output=True
-        )
-        if fix.returncode != 0:
-            print("依赖修复失败:", fix.stderr.decode())
-            sys.exit(1)
-
-    if os.path.exists("megacmd.deb"):
-        os.remove("megacmd.deb")
-    print("MEGAcmd .deb 安装完成")
-
-
-def check_megacmd_installed():
-    if find_megacmd() is None:
-        install_megacmd()
-        # 安装后再次检查
-        if find_megacmd() is None:
-            print("MEGAcmd 安装失败，mega-login 命令不存在")
-            sys.exit(1)
-    print("MEGAcmd 已就绪")
+    print(f"错误: 找不到命令 '{name}'，请确保 MEGAcmd 已安装且 MEGA_CMD_PREFIX 已设置")
+    sys.exit(1)
 
 
 def mega_login(username, password):
-    login = subprocess.run(
-        ["mega-login", username, password], capture_output=True, text=True
-    )
+    cmd = get_mega_cmd("mega-login")
+    login = subprocess.run([cmd, username, password], capture_output=True, text=True)
     if login.returncode != 0:
         print("登录失败:", login.stderr)
         sys.exit(1)
 
-    # 验证登录状态
-    whoami = subprocess.run(["mega-whoami"], capture_output=True, text=True)
+    whoami = subprocess.run([get_mega_cmd("mega-whoami")], capture_output=True, text=True)
     if whoami.returncode != 0:
         print("登录状态检查失败:", whoami.stderr)
         sys.exit(1)
@@ -81,16 +44,14 @@ def mega_login(username, password):
 
 
 def mega_download_folder(folder, dest_dir="."):
-    # 创建目标目录
     os.makedirs(dest_dir, exist_ok=True)
     if not os.access(dest_dir, os.W_OK):
         print(f"错误: 目录 '{dest_dir}' 不可写")
         sys.exit(1)
 
-    # 检查远程文件夹是否存在
     print(f"Checking remote path: {folder}")
     check_folder = subprocess.run(
-        ["mega-ls", f"{folder}"], capture_output=True, text=True
+        [get_mega_cmd("mega-ls"), folder], capture_output=True, text=True
     )
     if check_folder.returncode != 0:
         print(f"错误: 远程文件夹 '{folder}' 可能不存在或访问出错。")
@@ -98,16 +59,12 @@ def mega_download_folder(folder, dest_dir="."):
         print("mega-ls stderr:", check_folder.stderr)
         sys.exit(1)
     else:
+        preview = check_folder.stdout.strip()
         print(f"远程文件夹 '{folder}' 存在。内容预览:")
-        print(
-            check_folder.stdout.strip()[:500] + "..."
-            if len(check_folder.stdout.strip()) > 500
-            else check_folder.stdout.strip()
-        )
+        print(preview[:500] + "..." if len(preview) > 500 else preview)
 
-    # 执行下载
     print(f"开始下载: {folder} -> {dest_dir}")
-    download_command = ["mega-get", "-vvv", f"{folder}", dest_dir]
+    download_command = [get_mega_cmd("mega-get"), "-vvv", folder, dest_dir]
     print("Executing:", " ".join(download_command))
     download = subprocess.run(download_command, capture_output=True, text=True)
 
@@ -121,7 +78,6 @@ def mega_download_folder(folder, dest_dir="."):
         sys.exit(1)
     print("下载成功完成")
 
-    # 移动文件并删除空文件夹
     downloaded_folder = os.path.basename(folder.rstrip("/"))
     downloaded_folder_path = os.path.join(dest_dir, downloaded_folder)
     if os.path.exists(downloaded_folder_path):
@@ -131,7 +87,6 @@ def mega_download_folder(folder, dest_dir="."):
             dest_path = os.path.join(dest_dir, item)
             shutil.move(item_path, dest_path)
             print(f"已移动 {item} 到 {dest_dir}")
-        # 删除空文件夹
         os.rmdir(downloaded_folder_path)
         print(f"已删除空文件夹 {downloaded_folder_path}")
     else:
@@ -141,12 +96,9 @@ def mega_download_folder(folder, dest_dir="."):
 
 def main():
     if len(sys.argv) < 4 or len(sys.argv) > 5:
-        print(
-            "用法: python3 download_from_mega.py <用户名> <密码> <远程文件夹> [本地目录]"
-        )
+        print("用法: python3 download_from_mega.py <用户名> <密码> <远程文件夹> [本地目录]")
         sys.exit(1)
 
-    check_megacmd_installed()
     username = sys.argv[1]
     password = sys.argv[2]
     folder = sys.argv[3]

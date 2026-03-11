@@ -64,6 +64,14 @@ jobs:
           sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir/openwrt
           pip install mega.py || pip3 install mega.py || python -m pip install mega.py || exit 1
+          echo "--- 安装 MEGAcmd ---"
+          UBUNTU_VER=$(lsb_release -rs)
+          wget -q "https://mega.nz/linux/repo/xUbuntu_${UBUNTU_VER}/amd64/megacmd-xUbuntu_${UBUNTU_VER}_amd64.deb" -O megacmd.deb
+          sudo dpkg -i megacmd.deb || sudo apt-get install -f -y
+          rm -f megacmd.deb
+          MEGA_PREFIX=$(dirname "$(find /usr /opt -name 'mega-login' 2>/dev/null | head -1)")
+          echo "MEGA_CMD_PREFIX=${MEGA_PREFIX}" >> $GITHUB_ENV
+          echo "MEGAcmd 路径: ${MEGA_PREFIX}"
 
 
       - name: Download from MEGA
