@@ -1,0 +1,8 @@
+config autoupdate 'config'
+    option enabled '1'
+    option github_repo 'Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4'
+    option workflow_name 'OpenWRT.org'
+    option proxy_url ''
+    option check_interval 'daily'
+    option current_version ''
+    option auto_install '0'

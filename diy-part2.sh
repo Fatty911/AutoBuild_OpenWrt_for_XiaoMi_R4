@@ -56,3 +56,39 @@ sed -i 's/192.168.1.1/192.168.88.1/g' package/base-files/files/bin/config_genera
 #   echo "警告: 未找到 Rust Makefile ($RUST_MAKEFILE_PATH)。无法应用修复。"
 # fi
 # echo "Rust Makefile 修复尝试完成。"
+
+# ========================================
+# 集成自动更新插件
+# ========================================
+echo "集成自动更新插件..."
+
+# 复制 luci-app-autoupdate 到 package 目录
+if [ -d "$GITHUB_WORKSPACE/package/luci-app-autoupdate" ]; then
+    cp -r "$GITHUB_WORKSPACE/package/luci-app-autoupdate" package/
+    echo "已复制 luci-app-autoupdate"
+fi
+
+# 从环境变量读取配置并注入
+AUTOPDATE_GITHUB_REPO="${AUTOPDATE_GITHUB_REPO:-Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4}"
+AUTOPDATE_WORKFLOW="${AUTOPDATE_WORKFLOW:-OpenWRT.org}"
+AUTOPDATE_PROXY="${AUTOPDATE_PROXY:-}"
+
+echo "自动更新配置:"
+echo "  GitHub仓库: $AUTOPDATE_GITHUB_REPO"
+echo "  工作流名称: $AUTOPDATE_WORKFLOW"
+echo "  代理地址: ${AUTOPDATE_PROXY:-未配置}"
+
+# 创建默认配置
+mkdir -p files/etc/config
+cat > files/etc/config/autoupdate << EOF
+config autoupdate 'config'
+    option enabled '1'
+    option github_repo '$AUTOPDATE_GITHUB_REPO'
+    option workflow_name '$AUTOPDATE_WORKFLOW'
+    option proxy_url '$AUTOPDATE_PROXY'
+    option check_interval 'daily'
+    option current_version ''
+    option auto_install '0'
+EOF
+
+echo "自动更新插件配置完成"

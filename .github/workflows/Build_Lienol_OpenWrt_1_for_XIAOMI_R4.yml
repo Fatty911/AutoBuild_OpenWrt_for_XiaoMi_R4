@@ -33,6 +33,10 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   SOURCE: Lienol
+  # 自动更新插件配置
+  AUTOPDATE_GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
+  AUTOPDATE_WORKFLOW: Lienol
+  AUTOPDATE_PROXY: ${{ secrets.UPDATE_PROXY_URL }}
 
 jobs:
   build:    

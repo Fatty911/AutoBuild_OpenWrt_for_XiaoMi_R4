@@ -1,0 +1,21 @@
+#!/bin/sh /etc/rc.common
+# Copyright (C) 2025
+
+START=99
+
+start() {
+    # 确保日志目录存在
+    mkdir -p /var/log
+    touch /var/log/autoupdate.log
+    
+    # 确保 cron 任务存在
+    if [ ! -L "/etc/cron.d/autoupdate" ]; then
+        ln -sf /etc/cron.d/autoupdate /etc/crontabs/root 2>/dev/null
+    fi
+    
+    /etc/init.d/cron restart
+}
+
+stop() {
+    :
+}

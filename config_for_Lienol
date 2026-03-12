@@ -982,3 +982,6 @@ CONFIG_DNSMASQ_STATIC_DNS2=114.114.114.114
 CONFIG_LUCI_LANG_zh_Hans=y
 CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
 CONFIG_PACKAGE_luci-i18n-chinese=y
+
+# Auto Update Plugin
+CONFIG_PACKAGE_luci-app-autoupdate=y

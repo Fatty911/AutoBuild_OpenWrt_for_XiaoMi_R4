@@ -962,3 +962,6 @@ CONFIG_PACKAGE_TAR_XZ=y
 CONFIG_PACKAGE_TAR_ZSTD=y
 CONFIG_PACKAGE_taskd=y
 CONFIG_PACKAGE_ubi-utils=y
+
+# Auto Update Plugin
+CONFIG_PACKAGE_luci-app-autoupdate=y
