@@ -1,0 +1,144 @@
+#
+# 固件自动更新检查器
+# 每天凌晨3:30检查GitHub Release是否有新版本
+#
+
+name: Firmware Auto Update Checker
+
+on:
+  schedule:
+    - cron: '30 19 * * *'  # UTC 19:30 = 北京时间 3:30
+  workflow_dispatch:
+    inputs:
+      workflow_name:
+        description: '指定要检查的工作流名称 (留空检查所有)'
+        required: false
+        default: ''
+
+env:
+  GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Get current installed version
+        id: current
+        run: |
+          # 从缓存或文件读取当前安装的版本
+          if [ -f ".installed_version" ]; then
+            echo "version=$(cat .installed_version)" >> $GITHUB_OUTPUT
+          else
+            echo "version=none" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for updates
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+        run: |
+          echo "=== 检查固件更新 ==="
+          echo "检查时间: $(date '+%Y-%m-%d %H:%M:%S')"
+          
+          # 工作流列表
+          WORKFLOWS=(
+            "Build_OpenWRT.org_2_for_XIAOMI_R4"
+            "SimpleBuildOpenWRT_Official"
+            "Build_Lienol_OpenWrt_2_for_XIAOMI_R4"
+            "Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware"
+          )
+          
+          # 获取所有releases
+          echo "获取最新Release..."
+          RELEASES=$(gh release list --repo ${{ env.GITHUB_REPO }} --limit 20)
+          
+          UPDATES_FOUND="false"
+          UPDATE_INFO=""
+          
+          for workflow in "${WORKFLOWS[@]}"; do
+            echo ""
+            echo "--- 检查工作流: $workflow ---"
+            
+            # 找到该工作流对应的最新release
+            LATEST_RELEASE=$(echo "$RELEASES" | grep -i "$workflow\|OpenWRT.org\|Lienol\|coolsnowwolf" | head -1 | awk '{print $1}')
+            
+            if [ -n "$LATEST_RELEASE" ]; then
+              echo "最新Release: $LATEST_RELEASE"
+              
+              # 检查是否有.bin文件
+              ASSETS=$(gh release view "$LATEST_RELEASE" --repo ${{ env.GITHUB_REPO }} --json assets --jq '.assets[].name' | grep '\.bin$' | head -2)
+              
+              if [ -n "$ASSETS" ]; then
+                echo "固件文件:"
+                echo "$ASSETS"
+                UPDATES_FOUND="true"
+                UPDATE_INFO="${UPDATE_INFO}工作流: $workflow\n最新版本: $LATEST_RELEASE\n固件:\n$ASSETS\n\n"
+              fi
+            fi
+          done
+          
+          echo "updates_found=$UPDATES_FOUND" >> $GITHUB_OUTPUT
+          echo "update_info<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$UPDATE_INFO" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create update notification
+        if: steps.check.outputs.updates_found == 'true'
+        run: |
+          echo "=== 发现固件更新 ==="
+          echo -e "${{ steps.check.outputs.update_info }}"
+          
+          # 保存更新信息到文件供后续使用
+          cat > update_notification.md << EOF
+          # 固件更新通知
+          
+          **检查时间:** $(date '+%Y-%m-%d %H:%M:%S')
+          
+          ${{ steps.check.outputs.update_info }}
+          
+          ---
+          
+          ## 下载地址
+          
+          [前往Release页面下载](https://github.com/${{ env.GITHUB_REPO }}/releases)
+          EOF
+          
+          echo "notification_file=update_notification.md" >> $GITHUB_ENV
+
+      - name: Upload notification artifact
+        if: steps.check.outputs.updates_found == 'true'
+        uses: actions/upload-artifact@v3
+        with:
+          name: firmware-update-notification
+          path: update_notification.md
+          retention-days: 7
+
+      - name: Send notification (optional)
+        if: steps.check.outputs.updates_found == 'true'
+        env:
+          WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK }}
+        run: |
+          # 如果配置了Webhook，发送通知
+          if [ -n "$WEBHOOK_URL" ]; then
+            echo "发送通知到Webhook..."
+            curl -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "{\"text\": \"固件更新检查完成\", \"content\": \"$(cat update_notification.md | sed ':a;N;$!ba;s/\n/\\n/g')\"}" || true
+          else
+            echo "未配置通知Webhook，跳过发送"
+          fi
+
+      - name: Summary
+        run: |
+          echo "## 固件更新检查完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ steps.check.outputs.updates_found }}" == "true" ]; then
+            echo "✅ 发现可用更新" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo -e "${{ steps.check.outputs.update_info }}" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "ℹ️ 未发现新版本" >> $GITHUB_STEP_SUMMARY
+          fi
