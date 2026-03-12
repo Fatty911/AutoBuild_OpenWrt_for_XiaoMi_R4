@@ -81,7 +81,34 @@ jobs:
       working-directory: ${{ github.workspace }}
       run: |
         df -hT $PWD
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
+        
+        # 获取 OpenWrt 官方最新稳定版本号
+        echo "获取 OpenWrt 官方最新稳定版本..."
+        STABLE_VERSION=$(curl -s https://downloads.openwrt.org/releases/ | grep -oP 'href="\K[\d.]+' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+        echo "最新稳定版本: $STABLE_VERSION"
+        
+        # 构建分支列表
+        BRANCHES=("main" "master" "$STABLE_VERSION" "openwrt-${STABLE_VERSION}")
+        echo "尝试分支列表: ${BRANCHES[*]}"
+        
+        # 尝试每个分支
+        for branch in "${BRANCHES[@]}"; do
+          echo "尝试分支: $branch"
+          if git clone ${{ env.REPO_URL }} -b "$branch" openwrt 2>/dev/null; then
+            echo "成功克隆分支: $branch"
+            echo "REPO_BRANCH=$branch" >> $GITHUB_ENV
+            break
+          else
+            echo "分支 $branch 不存在"
+            rm -rf openwrt 2>/dev/null || true
+          fi
+        done
+        
+        if [ ! -d "openwrt" ]; then
+          echo "错误: 所有分支尝试失败"
+          exit 1
+        fi
+        
         ln -sf /workdir $GITHUB_WORKSPACE
 
     - name: Load custom feeds
