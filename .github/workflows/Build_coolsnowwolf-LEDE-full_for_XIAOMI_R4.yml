@@ -7,6 +7,11 @@ on:
       - master
     paths:
       - .github/workflows/Build_coolsnowwolf-LEDE-full_for_XIAOMI_R4.yml
+      - config_for_coolsnowwolf
+      - diy-part1.sh
+      - diy-part2.sh
+      - package/luci-app-autoupdate/**
+      - select_kernel.py
   repository_dispatch:
     types: coolsnowwolf Source Code Update
   workflow_dispatch:

@@ -6,6 +6,8 @@ on:
       - master
     paths:
       - .github/workflows/test_upload_to_MEGA.yml
+      - upload_to_MEGA.py
+      - download_from_MEGA.py
   workflow_dispatch:
 
 

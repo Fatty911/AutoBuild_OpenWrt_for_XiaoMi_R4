@@ -16,6 +16,10 @@ on:
       - main
     paths:
       - .github/workflows/Build_OpenWRT.org_1_for_XIAOMI_R4.yml
+      - config_for_OpenWrt_org
+      - diy-part1.sh
+      - diy-part2.sh
+      - package/luci-app-autoupdate/**
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt

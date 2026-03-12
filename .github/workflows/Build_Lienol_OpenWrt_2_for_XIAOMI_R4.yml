@@ -24,6 +24,10 @@ on:
       - main
     paths:
       - .github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml
+      - config_for_Lienol
+      - diy-part1.sh
+      - diy-part2.sh
+      - package/luci-app-autoupdate/**
 
 env:
   REPO_URL: https://github.com/Lienol/openwrt

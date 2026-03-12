@@ -12,12 +12,16 @@ on:
         description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
         required: true
         default: false
-  # push:
-  #   branches: 
-  #     - master
-  #     - main
-  #   paths:
-  #     - .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
+  push:
+    branches: 
+      - master
+      - main
+    paths:
+      - .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
+      - config_for_OpenWrt_org
+      - diy-part1.sh
+      - diy-part2.sh
+      - package/luci-app-autoupdate/**
 
 env:
   REPO_URL: https://github.com/openwrt/openwrt
