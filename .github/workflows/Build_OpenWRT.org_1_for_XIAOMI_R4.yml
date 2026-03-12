@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@main
        
       - name: Cache APT packages
-        uses: actions/cache@v4
+        uses: actions/cache@main
         with:
           path: |
             /var/cache/apt/archives
@@ -83,7 +83,7 @@ jobs:
  
 
       - name: Cache ccache
-        uses: actions/cache@v4
+        uses: actions/cache@main
         with:
           path: ${{ github.workspace }}/.ccache
           key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE, env.DIY_P1_SH, env.DIY_P2_SH) }}
@@ -132,7 +132,7 @@ jobs:
 
  
       - name: Cache OpenWRT dl directory
-        uses: actions/cache@v4
+        uses: actions/cache@main
         id: cache-dl
         with:
           path: openwrt/dl
@@ -157,7 +157,7 @@ jobs:
 
 
       - name: Cache OpenWRT build directories (staging_dir, build_dir)
-        uses: actions/cache@v4
+        uses: actions/cache@main
         id: cache-build
         with:
           path: |
@@ -226,7 +226,7 @@ jobs:
           python upload_to_MEGA.py
          
       - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@v2
+        uses: Mattraks/delete-workflow-runs@main
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           repository: ${{ github.repository }}
