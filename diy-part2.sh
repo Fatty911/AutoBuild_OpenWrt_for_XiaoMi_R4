@@ -71,12 +71,14 @@ fi
 # 从环境变量读取配置并注入
 AUTOPDATE_GITHUB_REPO="${AUTOPDATE_GITHUB_REPO:-Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4}"
 AUTOPDATE_WORKFLOW="${AUTOPDATE_WORKFLOW:-OpenWRT.org}"
-AUTOPDATE_PROXY="${AUTOPDATE_PROXY:-}"
+AUTOPDATE_SUBSCRIPTION="${AUTOPDATE_SUBSCRIPTION:-}"
+AUTOPDATE_PROXY_PORT="${AUTOPDATE_PROXY_PORT:-1080}"
 
 echo "自动更新配置:"
 echo "  GitHub仓库: $AUTOPDATE_GITHUB_REPO"
 echo "  工作流名称: $AUTOPDATE_WORKFLOW"
-echo "  代理地址: ${AUTOPDATE_PROXY:-未配置}"
+echo "  订阅URL: ${AUTOPDATE_SUBSCRIPTION:-未配置}"
+echo "  代理端口: $AUTOPDATE_PROXY_PORT"
 
 # 创建默认配置
 mkdir -p files/etc/config
@@ -85,7 +87,8 @@ config autoupdate 'config'
     option enabled '1'
     option github_repo '$AUTOPDATE_GITHUB_REPO'
     option workflow_name '$AUTOPDATE_WORKFLOW'
-    option proxy_url '$AUTOPDATE_PROXY'
+    option subscription_url '$AUTOPDATE_SUBSCRIPTION'
+    option proxy_port '$AUTOPDATE_PROXY_PORT'
     option check_interval 'daily'
     option current_version ''
     option auto_install '0'

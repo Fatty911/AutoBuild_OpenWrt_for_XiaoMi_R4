@@ -19,9 +19,15 @@ o = s:option(Value, "workflow_name", _("Workflow Name"))
 o.placeholder = "Build_OpenWRT.org_2_for_XIAOMI_R4"
 o.rmempty = false
 
-o = s:option(Value, "proxy_url", _("Proxy URL (Optional)"))
-o.description = _("HTTP/HTTPS proxy for GitHub access")
-o.placeholder = "http://127.0.0.1:7890"
+o = s:option(Value, "subscription_url", _("Proxy Subscription URL"))
+o.description = _("SSR-Plus/helloworld subscription URL for accessing GitHub")
+o.placeholder = "https://example.com/subscribe/xxxxx"
+o.rmempty = true
+
+o = s:option(Value, "proxy_port", _("Local SOCKS5 Port"))
+o.description = _("Local proxy port for SSR-Plus")
+o.placeholder = "1080"
+o.default = "1080"
 o.rmempty = true
 
 o = s:option(ListValue, "check_interval", _("Check Interval"))
@@ -34,12 +40,25 @@ o = s:option(Value, "current_version", _("Current Version"))
 o.rmempty = true
 o.readonly = true
 
+o = s:option(Flag, "auto_install", _("Auto Install"))
+o.description = _("Automatically install firmware after download (DANGEROUS)")
+o.default = "0"
+o.rmempty = true
+
 o = s:option(Button, "check_update", _("Check Update Now"))
 o.inputtitle = _("Check")
 o.description = _("Check for firmware updates immediately")
 
 function o.write(self, section)
     luci.http.redirect(luci.dispatcher.build_url("admin", "system", "autoupdate", "check"))
+end
+
+o = s:option(Button, "test_proxy", _("Test Proxy"))
+o.inputtitle = _("Test")
+o.description = _("Test proxy connection to GitHub")
+
+function o.write(self, section)
+    luci.http.redirect(luci.dispatcher.build_url("admin", "system", "autoupdate", "test"))
 end
 
 return m
