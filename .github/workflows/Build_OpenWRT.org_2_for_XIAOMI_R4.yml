@@ -43,7 +43,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push'}}
     steps:
       - name: Maximize build space
@@ -118,12 +118,19 @@ jobs:
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
-          if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+          BIN_FOUND=false
+          for file in openwrt/bin/targets/*/*/*.bin; do
+            if [ -f "$file" ]; then
+              BIN_FOUND=true
+              break
+            fi
+          done
+          if [ "$BIN_FOUND" = "true" ]; then
             echo "BIN_EXISTS=true" >> $GITHUB_OUTPUT
           else
             echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
             if [ -d "openwrt/bin/targets" ]; then
-              tree openwrt/bin/targets/
+              ls -R openwrt/bin/targets/ || true
             else
               echo "Directory openwrt/bin/targets/ does not exist."
             fi
@@ -196,7 +203,7 @@ jobs:
           
       - name: Set environment variables
         id: setEnv
-        if: steps.compile_attempt.outputs.status == 'success' || steps.compile_with_fixes.outputs.status == 'success'
+        if: steps.compile_with_fixes.outputs.status == 'success'
         run: |
           cd openwrt
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
@@ -232,12 +239,9 @@ jobs:
         if: always()
         run: |
           cd openwrt      
-          if [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
-            echo "Compile packages failed. Showing last 200 lines of packages.log:" 
-            tail -200 packages.log || tail -200 trojanplus.log  
-          elif [ "${{ steps.build_image.outcome }}" = "failure" ]; then             
-            echo "Build image failed. Showing last 300 lines of image.log:"             
-            tail -200 image.log           
+          if [ "${{ steps.compile_with_fixes.outcome }}" = "failure" ]; then             
+            echo "Compile with fixes failed. Showing last 200 lines of compile.log:" 
+            tail -200 compile.log || echo "No compile.log found"
           else             
             echo "All steps completed successfully. No log to show."           
           fi 
@@ -270,9 +274,16 @@ jobs:
       - name: Check for .bin file after final compilation
         id: check_bin_final
         run: |
-          if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+          BIN_FOUND=false
+          for file in openwrt/bin/targets/*/*/*.bin; do
+            if [ -f "$file" ]; then
+              BIN_FOUND=true
+              echo "存在.bin固件: $file"
+              break
+            fi
+          done
+          if [ "$BIN_FOUND" = "true" ]; then
             echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
-            echo "存在.bin固件"
           else
             echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
             echo "没找到.bin固件"
@@ -325,11 +336,3 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 2
-
-      - name: Delete Older Releases
-        uses: dev-drprasad/delete-older-releases@master
-        with:
-          keep_latest: 3
-          delete_tag_pattern: .*${{ env.SOURCE }}.*
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
