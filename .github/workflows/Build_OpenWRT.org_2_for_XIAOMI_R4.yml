@@ -85,9 +85,16 @@ jobs:
       
       - name: 解压文件
         run: |
-          echo "解压前"
-          pwd && ls -la
+          echo "解压前磁盘空间："
+          df -hT
           tar -xzf ${{ env.SOURCE }}.tar.gz
+          rm -f ${{ env.SOURCE }}.tar.gz
+          echo "解压后清理工具链缓存..."
+          rm -rf openwrt/build_dir/toolchain-*
+          rm -rf openwrt/staging_dir/toolchain-*
+          rm -rf openwrt/.git
+          echo "清理后磁盘空间："
+          df -hT
       
       # - name: Build image
       #   id: build_image
