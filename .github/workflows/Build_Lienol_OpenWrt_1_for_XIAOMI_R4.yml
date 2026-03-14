@@ -284,7 +284,19 @@ jobs:
 
     - name: 归档
       run: |
-        tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
+        echo "归档前磁盘空间："
+        df -hT
+        tar -cf - openwrt/ \
+          --exclude=openwrt/.git \
+          --exclude=openwrt/dl \
+          --exclude=openwrt/build_dir/host \
+          --exclude=openwrt/staging_dir/host \
+          --exclude=openwrt/staging_dir/hostpkg \
+          --exclude='openwrt/*.log' \
+          | pigz > ${{ env.SOURCE }}.tar.gz
+        echo "归档后磁盘空间："
+        df -hT
+        ls -lh ${{ env.SOURCE }}.tar.gz
     
     
     - name: Upload to MEGA
