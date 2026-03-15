@@ -51,7 +51,9 @@ jobs:
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
       with:
-          root-reserve-mb: 5120
+          root-reserve-mb: 4096
+          temp-reserve-mb: 1024
+          swap-size-mb: 1024
           build-mount-path: /workdir
           remove-dotnet: 'true'
           remove-android: 'true'
@@ -91,9 +93,18 @@ jobs:
         cd /workdir
         tar -xzf ${{ env.SOURCE }}.tar.gz
         rm -f ${{ env.SOURCE }}.tar.gz
+        echo "解压后清理..."
         rm -rf openwrt/.git
+        rm -rf openwrt/build_dir/toolchain-*
+        rm -rf openwrt/build_dir/host
+        rm -rf openwrt/build_dir/hostpkg-*
+        rm -rf openwrt/staging_dir/toolchain-*
+        rm -rf openwrt/staging_dir/host
+        rm -rf openwrt/staging_dir/hostpkg
+        find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
+        find openwrt/build_dir -name "*.a" -delete 2>/dev/null || true
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-        echo "解压后磁盘空间："
+        echo "清理后磁盘空间："
         df -hT
         
     - name: Compile Remaining packages
