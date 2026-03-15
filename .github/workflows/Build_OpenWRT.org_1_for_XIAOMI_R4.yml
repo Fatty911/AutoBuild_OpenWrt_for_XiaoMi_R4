@@ -220,12 +220,38 @@ jobs:
           
      
      
+      - name: 归档前清理
+        run: |
+          cd openwrt
+          echo "清理前磁盘空间："
+          df -hT
+          # 删除编译日志
+          rm -f *.log
+          # 删除 dl 目录（源码包，第2步不需要）
+          rm -rf dl
+          # 删除 host 工具链（第2步会重新用 target 工具链）
+          rm -rf staging_dir/host
+          rm -rf staging_dir/hostpkg
+          rm -rf build_dir/host
+          rm -rf build_dir/hostpkg-*
+          # 删除 target 编译中间文件（.o .a），保留 .so 和二进制
+          find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
+          find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
+          # 删除 tmp 目录
+          rm -rf tmp
+          # 删除 .git
+          rm -rf .git
+          echo "清理后磁盘空间："
+          df -hT
+
       - name: 归档
         run: |
           echo "压缩前先看一下目录结构"
           ls -la openwrt
-          # tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
-          tar -czf ${{ env.SOURCE }}.tar.gz openwrt 
+          tar -czf ${{ env.SOURCE }}.tar.gz openwrt
+          echo "压缩后磁盘空间："
+          df -hT
+          ls -lh ${{ env.SOURCE }}.tar.gz
           
 
           
