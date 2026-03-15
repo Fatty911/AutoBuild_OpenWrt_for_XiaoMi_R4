@@ -130,6 +130,17 @@ jobs:
           rm -rf feeds/small8/trojan-plus
           rm -rf package/feeds/small8/trojan-plus # 确保两个位置都删除
 
+          echo "修复 sing-box 编译问题：去掉 with_tailscale tag（MIPS 不支持，且引入大量不兼容依赖）"
+          for MAKEFILE in \
+              feeds/packages/net/sing-box/Makefile \
+              package/feeds/packages/net/sing-box/Makefile; do
+            if [ -f "$MAKEFILE" ]; then
+              sed -i 's/with_tailscale,//g; s/,with_tailscale//g; s/ with_tailscale//g; s/with_tailscale //g' "$MAKEFILE"
+              echo "已处理: $MAKEFILE"
+              grep -n "tailscale\|GO_BUILD_TAGS\|with_" "$MAKEFILE" || true
+            fi
+          done
+
  
       - name: Cache OpenWRT dl directory
         uses: actions/cache@main
