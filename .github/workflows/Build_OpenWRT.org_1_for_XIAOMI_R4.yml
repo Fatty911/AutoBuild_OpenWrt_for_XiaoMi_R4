@@ -41,7 +41,10 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
-            root-reserve-mb: 10240
+            root-reserve-mb: 4096
+            temp-reserve-mb: 1024
+            swap-size-mb: 1024
+            build-mount-path: /workdir
             remove-dotnet: 'true'
             remove-android: 'true'
             remove-haskell: 'true'
@@ -91,9 +94,10 @@ jobs:
             ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
          
       - name: Clone source code
-        working-directory: ${{ github.workspace }}
+        working-directory: /workdir
         run: |
-          df -hT $PWD
+          df -hT
+          sudo chown -R $USER:$GROUPS /workdir
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -247,11 +251,14 @@ jobs:
       - name: 归档
         run: |
           echo "压缩前先看一下目录结构"
-          ls -la openwrt
+          ls -la /workdir/openwrt
+          cd /workdir
           tar -czf ${{ env.SOURCE }}.tar.gz openwrt
           echo "压缩后磁盘空间："
           df -hT
           ls -lh ${{ env.SOURCE }}.tar.gz
+          # 移动到 GITHUB_WORKSPACE 供后续步骤使用
+          mv ${{ env.SOURCE }}.tar.gz $GITHUB_WORKSPACE/
           
 
           
