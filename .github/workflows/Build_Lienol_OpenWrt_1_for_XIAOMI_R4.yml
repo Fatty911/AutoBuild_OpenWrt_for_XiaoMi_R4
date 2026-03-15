@@ -51,7 +51,10 @@ jobs:
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
       with:
-          root-reserve-mb: 5120
+          root-reserve-mb: 4096
+          temp-reserve-mb: 1024
+          swap-size-mb: 1024
+          build-mount-path: /workdir
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -77,9 +80,10 @@ jobs:
       
         
     - name: Clone source code
-      working-directory: ${{ github.workspace }}
+      working-directory: /workdir
       run: |
-        df -hT $PWD
+        sudo chown -R $USER:$GROUPS /workdir
+        df -hT
         
         # 获取 OpenWrt 官方最新稳定版本号
         echo "获取 OpenWrt 官方最新稳定版本..."
@@ -119,7 +123,7 @@ jobs:
           exit 1
         fi
         
-        ln -sf /workdir $GITHUB_WORKSPACE
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Load custom feeds
       run: |
@@ -282,19 +286,22 @@ jobs:
 
     - name: 归档
       run: |
+        echo "归档前清理..."
+        cd /workdir/openwrt
+        rm -f *.log
+        rm -rf dl tmp .git
+        rm -rf build_dir/host build_dir/hostpkg-*
+        rm -rf staging_dir/host staging_dir/hostpkg
+        find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
+        find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
         echo "归档前磁盘空间："
         df -hT
-        tar -cf - openwrt/ \
-          --exclude=openwrt/.git \
-          --exclude=openwrt/dl \
-          --exclude=openwrt/build_dir/host \
-          --exclude=openwrt/staging_dir/host \
-          --exclude=openwrt/staging_dir/hostpkg \
-          --exclude='openwrt/*.log' \
-          | pigz > ${{ env.SOURCE }}.tar.gz
+        cd /workdir
+        tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
         echo "归档后磁盘空间："
         df -hT
         ls -lh ${{ env.SOURCE }}.tar.gz
+        mv ${{ env.SOURCE }}.tar.gz $GITHUB_WORKSPACE/
     
     
     - name: Upload to MEGA
