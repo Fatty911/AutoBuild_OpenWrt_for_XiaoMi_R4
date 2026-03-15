@@ -223,20 +223,12 @@ jobs:
           tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           
       - name: Delete temporary files from MEGA
-        if: steps.up-release.outcome == 'success'  # 仅在上传 Release 成功后执行
+        if: steps.up-release.outcome == 'success'
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          python -m pip install mega.py  # 安装 mega.py 库
-          python -c "
-          from mega import Mega
-          mega = Mega()
-          m = mega.login('$MEGA_USERNAME', '$MEGA_PASSWORD')
-          folder = m.find('${{ env.SOURCE }}')  # 假设临时文件在 'coolsnowwolf' 文件夹中
-          if folder:
-              m.destroy(folder[0])  # 删除文件夹及其内容
-          "
+          python delete_from_MEGA.py
           
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@main

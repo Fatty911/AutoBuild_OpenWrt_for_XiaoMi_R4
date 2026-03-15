@@ -2,6 +2,8 @@
 """
 使用 mega.py 上传文件到 MEGA 网盘，无需安装 MEGAcmd。
 环境变量: MEGA_USERNAME, MEGA_PASSWORD, SOURCE
+上传前检测同名文件：若网盘中存在同名文件且比本地文件旧，先删除再上传；
+若网盘文件比本地更新，则跳过上传。
 """
 
 import os
@@ -29,6 +31,9 @@ def main():
         print(f"错误: 本地文件 {local_file} 不存在")
         sys.exit(1)
 
+    local_mtime = os.path.getmtime(local_file)
+    print(f"本地文件时间戳: {local_mtime}")
+
     print("登录 MEGA 账号...")
     mega = Mega()
 
@@ -38,19 +43,7 @@ def main():
     except RequestError as e:
         error_code = str(e)
         if "EBLOCKED" in error_code:
-            print("=" * 60)
             print("错误: MEGA 账号已被封锁 (EBLOCKED)")
-            print("=" * 60)
-            print("可能原因:")
-            print("1. 账号因违反服务条款被暂停")
-            print("2. API 请求过于频繁被临时限制")
-            print("3. IP 地址被 MEGA 封锁")
-            print()
-            print("建议操作:")
-            print("1. 登录 MEGA 网页版检查账号状态")
-            print("2. 等待一段时间后重试")
-            print("3. 联系 MEGA 客服解封")
-            print("=" * 60)
         else:
             print(f"登录失败: {e}")
         sys.exit(1)
@@ -71,16 +64,12 @@ def main():
                 print(f"错误: 创建文件夹 '{source}' 失败")
                 sys.exit(1)
         folder_id = folder[0] if isinstance(folder, tuple) else list(folder.keys())[0]
-        print(f"找到/创建文件夹: {source}")
+        print(f"找到/创建文件夹: {source} (id={folder_id})")
     except Exception as e:
         print(f"操作文件夹失败: {e}")
         sys.exit(1)
 
-    if folder_id is None:
-        print("错误: 无法获取文件夹ID")
-        sys.exit(1)
-
-    # 删除同名旧文件
+    # 检测同名文件，比较时间戳
     target_filename = f"{source}.tar.gz"
     try:
         files = m.get_files()
@@ -90,11 +79,21 @@ def main():
                 and node.get("t") == 0
                 and node.get("a", {}).get("n") == target_filename
             ):
-                print(f"删除旧文件: {target_filename}")
-                m.destroy(node_id)
+                remote_mtime = node.get("ts", 0)
+                print(
+                    f"网盘中存在同名文件，时间戳: {remote_mtime}，本地时间戳: {local_mtime:.0f}"
+                )
+                if remote_mtime < local_mtime:
+                    print(f"网盘文件较旧，删除后重新上传: {target_filename}")
+                    m.destroy(node_id)
+                else:
+                    print(
+                        f"网盘文件不比本地旧（remote={remote_mtime} >= local={local_mtime:.0f}），跳过上传"
+                    )
+                    sys.exit(0)
                 break
     except Exception as e:
-        print(f"删除旧文件失败（继续上传）: {e}")
+        print(f"检测/删除旧文件失败（继续上传）: {e}")
 
     # 上传
     print(f"开始上传: {local_file} -> MEGA:/{source}/")
