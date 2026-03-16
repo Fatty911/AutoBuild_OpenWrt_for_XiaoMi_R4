@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 当 GitHub Actions workflow 报错时，按顺序尝试各家 GLM5 中转分析并修复 workflow 文件。
-调用顺序：atomgit → modelscope → modal → siliconflow，前一家失败则尝试下一家。
+调用顺序：atomgit → modelscope → modal → siliconflow → xai，前一家失败则尝试下一家。
 
 环境变量:
   GLM_PROXY_URL          - 各家代理地址，逗号分隔（顺序：atomgit,modelscope,modal,siliconflow）
@@ -13,6 +13,8 @@
   MODAL_MODEL_LIST       - modal GLM5 模型名称列表，逗号分隔
   SILICONFLOW_API_KEY    - siliconflow API key
   SILICONFLOW_MODEL_LIST - siliconflow GLM5 模型名称列表，逗号分隔
+  XAI_PROXY_URL          - x.ai API 代理地址
+  XAI_API_KEY            - x.ai API key
   WORKFLOW_FILE          - 需要修复的 workflow 文件路径（相对于仓库根目录）
   ACTIONS_TRIGGER_PAT    - 用于 git push 的 PAT
   GITHUB_REPOSITORY      - 仓库名称（owner/repo）
@@ -209,6 +211,12 @@ def main():
             "api_key": os.getenv("SILICONFLOW_API_KEY", ""),
             "model_list": get_models("SILICONFLOW_MODEL_LIST"),
         },
+        {
+            "name": "xai",
+            "proxy_url": os.getenv("XAI_PROXY_URL", ""),
+            "api_key": os.getenv("XAI_API_KEY", ""),
+            "model_list": ["grok-4-1-fast-reasoning"],
+        },
     ]
 
     missing = [
@@ -262,7 +270,7 @@ def main():
     fixed_content = try_fix_with_providers(providers, prompt)
 
     if not fixed_content:
-        print("所有 GLM5 提供商均调用失败，无法自动修复")
+        print("所有 AI 提供商（GLM5 + Grok）均调用失败，无法自动修复")
         sys.exit(1)
 
     fixed_content = clean_yaml(fixed_content)

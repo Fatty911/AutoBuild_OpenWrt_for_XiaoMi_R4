@@ -6,9 +6,17 @@
 
 import sys
 import os
+import tempfile
 
 
 def main():
+    # 将临时目录设置到目标目录，避免占用根分区空间
+    dest_dir_arg = sys.argv[4] if len(sys.argv) == 5 else "."
+    temp_dir = os.path.join(dest_dir_arg, ".mega_temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    tempfile.tempdir = temp_dir
+    os.environ["TMPDIR"] = temp_dir
+    print(f"临时目录已设置为: {temp_dir}")
     if len(sys.argv) < 4 or len(sys.argv) > 5:
         print(
             "用法: python3 download_from_MEGA.py <用户名> <密码> <远程文件夹名> [本地目录]"

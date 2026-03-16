@@ -251,7 +251,7 @@ jobs:
         run: |
           python delete_from_MEGA.py
           
-      - name: Auto fix with GLM5 on failure
+      - name: Auto fix with GLM5/Grok on failure
         if: failure()
         env:
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
@@ -263,6 +263,8 @@ jobs:
           MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
           SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
           SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
+          XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           WORKFLOW_FILE: .github/workflows/Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware.yml
         run: |
