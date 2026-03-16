@@ -41,8 +41,8 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
-            root-reserve-mb: 4096
-            temp-reserve-mb: 1024
+            root-reserve-mb: 2048
+            temp-reserve-mb: 512
             swap-size-mb: 1024
             build-mount-path: /workdir
             remove-dotnet: 'true'
@@ -79,10 +79,14 @@ jobs:
           sudo apt install -y perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-distutils rsync bc wget ccache flex bison libelf-dev || sudo apt install -y flex bison libelf-dev build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-venv python3-pip rsync bc wget ccache perl || sudo apt policy build-essential git gettext subversion ccache python3-distutils
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "$TZ"
-          sudo mkdir -p /workdir/openwrt
-          sudo chown -R $USER:$GROUPS /workdir/openwrt
+          sudo chown -R $USER:$GROUPS /workdir
           sudo apt install -y jq parallel python3-pip pigz
-          pip install mega.py || pip3 install mega.py || exit 1
+          # 把 pip/Go 缓存重定向到 /workdir，避免写满根分区
+          mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
+          pip install --cache-dir /workdir/pip-cache mega.py || pip3 install --cache-dir /workdir/pip-cache mega.py || exit 1
+          echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
+          echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
+          echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
  
 
       - name: Cache ccache
