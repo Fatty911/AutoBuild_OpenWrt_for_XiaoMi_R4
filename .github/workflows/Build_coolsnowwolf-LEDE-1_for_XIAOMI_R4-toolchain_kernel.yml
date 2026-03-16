@@ -45,7 +45,10 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 10240
+          root-reserve-mb: 2048
+          temp-reserve-mb: 512
+          swap-size-mb: 1024
+          build-mount-path: /workdir
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -77,17 +80,22 @@ jobs:
           sudo -E apt-get -qq clean
           sudo apt -y install python3-pip
           sudo timedatectl set-timezone "$TZ"
-          sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
-          pip install mega.py || pip3 install mega.py || exit 1
+          # 把 pip/Go 缓存重定向到 /workdir，避免写满根分区
+          mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
+          pip install --cache-dir /workdir/pip-cache mega.py || pip3 install --cache-dir /workdir/pip-cache mega.py || exit 1
+          echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
+          echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
+          echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
       
       - name: Clone source code
-        working-directory: ${{ github.workspace }}
+        working-directory: /workdir
         run: |
-          df -hT $PWD
+          sudo chown -R $USER:$GROUPS /workdir
+          df -hT
           git clone $REPO_URL -b $REPO_BRANCH openwrt
-          ln -sf /workdir $GITHUB_WORKSPACE
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
       - name: Load custom feeds
         run: |
@@ -166,10 +174,23 @@ jobs:
           # cp ../fix_batman_adv.sh . && bash ./fix_batman_adv.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || bash ./fix_batman_adv.sh "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
           cp ../fix_batman_adv.py . && python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || python ./fix_batman_adv.py "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
               
+      - name: 归档前清理
+        run: |
+          cd /workdir/openwrt
+          rm -f *.log
+          rm -rf dl tmp .git
+          rm -rf build_dir/host build_dir/hostpkg-*
+          rm -rf staging_dir/host staging_dir/hostpkg
+          find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
+          find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
+          df -hT
+
       - name: 归档
         run: |
-          # tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
+          cd /workdir
           tar -zcf ${{ env.SOURCE }}.tar.gz openwrt
+          ls -lh ${{ env.SOURCE }}.tar.gz
+          mv ${{ env.SOURCE }}.tar.gz $GITHUB_WORKSPACE/
 
       - name: Upload to MEGA
         env:
