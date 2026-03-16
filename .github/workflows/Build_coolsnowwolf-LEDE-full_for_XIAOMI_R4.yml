@@ -232,13 +232,13 @@ jobs:
             echo "check_bin_exist=success" >> $GITHUB_OUTPUT
           fi
           
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.tmate_debug_enabled }} || ${{ failure() }} || ${{ steps.check_bin.outputs.check_bin_exist == 'false' }} 
-        with:
-          limit-access-to-actor: false 
-            #设为false即为通过链接可直接访问，设为true得保存密钥比较麻烦
-          timeout-minutes: 300
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.tmate_debug_enabled }} || ${{ failure() }} || ${{ steps.check_bin.outputs.check_bin_exist == 'false' }} 
+      #   with:
+      #     limit-access-to-actor: false 
+      #       #设为false即为通过链接可直接访问，设为true得保存密钥比较麻烦
+      #     timeout-minutes: 300
           
       - name: Upload bin directory
         id: upload

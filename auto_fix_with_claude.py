@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 """
-当 GitHub Actions workflow 报错时，自动调用 Claude API 分析错误并修复 workflow 文件。
+当 GitHub Actions workflow 报错时，按顺序尝试各家 GLM5 中转分析并修复 workflow 文件。
+调用顺序：atomgit → modelscope → modal → siliconflow，前一家失败则尝试下一家。
+
 环境变量:
-  CLAUDE_PROXY_URL       - Claude API 代理地址
-  CLAUDE_PROXY_API_KEY   - API 密钥
+  GLM_PROXY_URL          - 各家代理地址，逗号分隔（顺序：atomgit,modelscope,modal,siliconflow）
+  ATOMGIT_API_KEY        - atomgit API key
+  ATOMGIT_MODEL_LIST     - atomgit GLM5 模型名称列表，逗号分隔
+  MODELSCOPE_API_KEY     - modelscope API key
+  MODELSCOPE_MODEL_LIST  - modelscope GLM5 模型名称列表，逗号分隔
+  MODAL_API_KEY          - modal API key
+  MODAL_MODEL_LIST       - modal GLM5 模型名称列表，逗号分隔
+  SILICONFLOW_API_KEY    - siliconflow API key
+  SILICONFLOW_MODEL_LIST - siliconflow GLM5 模型名称列表，逗号分隔
   WORKFLOW_FILE          - 需要修复的 workflow 文件路径（相对于仓库根目录）
   ACTIONS_TRIGGER_PAT    - 用于 git push 的 PAT
   GITHUB_REPOSITORY      - 仓库名称（owner/repo）
@@ -11,7 +20,6 @@
 """
 
 import io
-import json
 import os
 import subprocess
 import sys
@@ -41,7 +49,6 @@ def get_run_logs(repo, run_id, pat):
 
         logs = []
         with zipfile.ZipFile(io.BytesIO(resp.content)) as z:
-            # 只取最后几个日志文件，避免 prompt 过长
             names = sorted(z.namelist())[-8:]
             for name in names:
                 if name.endswith(".txt"):
@@ -78,64 +85,66 @@ def get_local_logs():
     return "\n\n".join(logs)
 
 
-def call_claude(proxy_url, api_key, error_log, workflow_content, workflow_file):
-    """调用 Claude API 分析错误并返回修复后的 workflow 内容"""
-    try:
-        import requests
-    except ImportError:
-        print("requests not installed")
-        sys.exit(1)
+def call_glm(proxy_url, api_key, model, prompt):
+    """调用 GLM5 API（OpenAI 兼容格式）"""
+    import requests
 
     headers = {
         "Content-Type": "application/json",
-        "x-api-key": api_key,
-        "anthropic-version": "2023-06-01",
+        "Authorization": f"Bearer {api_key}",
     }
-
-    prompt = (
-        f"You are an expert in GitHub Actions and OpenWrt build systems.\n"
-        f"The following workflow file failed during execution.\n\n"
-        f"Workflow file: {workflow_file}\n\n"
-        f"Current workflow content:\n```yaml\n{workflow_content}\n```\n\n"
-        f"Error logs (truncated to most relevant parts):\n```\n{error_log[:10000]}\n```\n\n"
-        f"Analyze the root cause and return the COMPLETE fixed workflow YAML.\n"
-        f"Rules:\n"
-        f"- Return ONLY raw YAML, no markdown code fences, no explanations\n"
-        f"- Keep all existing functionality intact\n"
-        f"- Make minimal changes to fix the specific error\n"
-        f"- Do not remove any steps unless they are the direct cause of failure\n"
-    )
-
     data = {
-        "model": "claude-sonnet-4-6",
-        "max_tokens": 8192,
+        "model": model,
         "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 8192,
     }
-
-    print(f"Calling Claude API at {proxy_url} ...")
     resp = requests.post(
-        f"{proxy_url.rstrip('/')}/v1/messages",
+        f"{proxy_url.rstrip('/')}/v1/chat/completions",
         headers=headers,
         json=data,
         timeout=180,
     )
-
     if resp.status_code != 200:
-        print(f"Claude API error: HTTP {resp.status_code}\n{resp.text}")
-        sys.exit(1)
-
+        raise Exception(f"HTTP {resp.status_code}: {resp.text[:300]}")
     result = resp.json()
-    fixed = result["content"][0]["text"].strip()
+    return result["choices"][0]["message"]["content"].strip()
 
-    # 去掉可能的 markdown 代码块包裹
-    if fixed.startswith("```"):
-        lines = fixed.splitlines()
-        # 去掉第一行（```yaml 或 ```）和最后一行（```）
+
+def try_fix_with_providers(providers, prompt):
+    """按顺序尝试各家 GLM5，返回修复后的内容，全部失败返回 None"""
+    for provider in providers:
+        name = provider["name"]
+        proxy_url = provider["proxy_url"]
+        api_key = provider["api_key"]
+        model_list = provider["model_list"]
+
+        if not proxy_url or not api_key or not model_list:
+            print(f"[{name}] 跳过：缺少配置")
+            continue
+
+        for model in model_list:
+            print(f"[{name}] 尝试模型: {model} ...")
+            try:
+                result = call_glm(proxy_url, api_key, model, prompt)
+                print(f"[{name}] 调用成功")
+                return result
+            except Exception as e:
+                print(f"[{name}] 模型 {model} 失败: {e}")
+
+        print(f"[{name}] 所有模型均失败，尝试下一家")
+
+    return None
+
+
+def clean_yaml(content):
+    """去掉可能的 markdown 代码块包裹"""
+    content = content.strip()
+    if content.startswith("```"):
+        lines = content.splitlines()
         start = 1
         end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-        fixed = "\n".join(lines[start:end])
-
-    return fixed
+        content = "\n".join(lines[start:end])
+    return content
 
 
 def git_push(workflow_file, pat, repo):
@@ -148,34 +157,63 @@ def git_push(workflow_file, pat, repo):
 
     remote_url = f"https://x-access-token:{pat}@github.com/{repo}.git"
     subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
-
     subprocess.run(["git", "add", workflow_file], check=True)
 
-    # 检查是否有变更
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
     if diff.returncode == 0:
         print("No changes detected, nothing to commit.")
         return
 
-    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by Claude"
+    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by GLM5"
     subprocess.run(["git", "commit", "-m", msg], check=True)
     subprocess.run(["git", "push"], check=True)
     print("Fix committed and pushed successfully!")
 
 
 def main():
-    proxy_url = os.getenv("CLAUDE_PROXY_URL", "").rstrip("/")
-    api_key = os.getenv("CLAUDE_PROXY_API_KEY", "")
     workflow_file = os.getenv("WORKFLOW_FILE", "")
     pat = os.getenv("ACTIONS_TRIGGER_PAT", "")
     repo = os.getenv("GITHUB_REPOSITORY", "")
     run_id = os.getenv("GITHUB_RUN_ID", "")
 
+    # 解析 GLM_PROXY_URL（顺序：atomgit, modelscope, modal, siliconflow）
+    proxy_urls = [
+        u.strip() for u in os.getenv("GLM_PROXY_URL", "").split(",") if u.strip()
+    ]
+
+    def get_models(env_key):
+        return [m.strip() for m in os.getenv(env_key, "").split(",") if m.strip()]
+
+    providers = [
+        {
+            "name": "atomgit",
+            "proxy_url": proxy_urls[0] if len(proxy_urls) > 0 else "",
+            "api_key": os.getenv("ATOMGIT_API_KEY", ""),
+            "model_list": get_models("ATOMGIT_MODEL_LIST"),
+        },
+        {
+            "name": "modelscope",
+            "proxy_url": proxy_urls[1] if len(proxy_urls) > 1 else "",
+            "api_key": os.getenv("MODELSCOPE_API_KEY", ""),
+            "model_list": get_models("MODELSCOPE_MODEL_LIST"),
+        },
+        {
+            "name": "modal",
+            "proxy_url": proxy_urls[2] if len(proxy_urls) > 2 else "",
+            "api_key": os.getenv("MODAL_API_KEY", ""),
+            "model_list": get_models("MODAL_MODEL_LIST"),
+        },
+        {
+            "name": "siliconflow",
+            "proxy_url": proxy_urls[3] if len(proxy_urls) > 3 else "",
+            "api_key": os.getenv("SILICONFLOW_API_KEY", ""),
+            "model_list": get_models("SILICONFLOW_MODEL_LIST"),
+        },
+    ]
+
     missing = [
         k
         for k, v in {
-            "CLAUDE_PROXY_URL": proxy_url,
-            "CLAUDE_PROXY_API_KEY": api_key,
             "WORKFLOW_FILE": workflow_file,
             "ACTIONS_TRIGGER_PAT": pat,
             "GITHUB_REPOSITORY": repo,
@@ -199,16 +237,35 @@ def main():
     remote_logs = get_run_logs(repo, run_id, pat) if run_id else ""
     error_log = "\n\n".join(filter(None, [local_logs, remote_logs]))
     if not error_log:
-        error_log = "No log files found. Please check the workflow output."
+        error_log = "No log files found."
 
     # 读取 workflow 文件
     with open(workflow_file, "r") as f:
         workflow_content = f.read()
 
-    # 调用 Claude
-    fixed_content = call_claude(
-        proxy_url, api_key, error_log, workflow_content, workflow_file
+    # 构建 prompt
+    prompt = (
+        "You are an expert in GitHub Actions and OpenWrt build systems.\n"
+        "The following workflow file failed during execution.\n\n"
+        f"Workflow file: {workflow_file}\n\n"
+        f"Current workflow content:\n```yaml\n{workflow_content}\n```\n\n"
+        f"Error logs:\n```\n{error_log[:10000]}\n```\n\n"
+        "Analyze the root cause and return the COMPLETE fixed workflow YAML.\n"
+        "Rules:\n"
+        "- Return ONLY raw YAML, no markdown code fences, no explanations\n"
+        "- Keep all existing functionality intact\n"
+        "- Make minimal changes to fix the specific error\n"
+        "- Do not remove any steps unless they are the direct cause of failure\n"
     )
+
+    # 按顺序尝试各家 GLM5
+    fixed_content = try_fix_with_providers(providers, prompt)
+
+    if not fixed_content:
+        print("所有 GLM5 提供商均调用失败，无法自动修复")
+        sys.exit(1)
+
+    fixed_content = clean_yaml(fixed_content)
 
     # 写入修复后的内容
     with open(workflow_file, "w") as f:

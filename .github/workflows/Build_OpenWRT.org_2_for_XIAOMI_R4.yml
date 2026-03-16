@@ -123,19 +123,19 @@ jobs:
       #     make V=s -j2 || make V=s -j1
       
           
-      - name: Setup tmate session Manually
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
-        with:
-          limit-access-to-actor: false
-          #install-dependencies: true
-          # timeout-minutes: 300
+      # - name: Setup tmate session Manually
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
+      #   with:
+      #     limit-access-to-actor: false
+      #     #install-dependencies: true
+      #     # timeout-minutes: 300
 
-      - name: Setup tmate session if failed
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ failure() }}
-        # with:
-        #   limit-access-to-actor: false
+      # - name: Setup tmate session if failed
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ failure() }}
+      #   # with:
+      #   #   limit-access-to-actor: false
  
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
@@ -343,11 +343,18 @@ jobs:
         run: |
           python delete_from_MEGA.py
           
-      - name: Auto fix with Claude on failure
+      - name: Auto fix with GLM5 on failure
         if: failure()
         env:
-          CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
-          CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
+          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
+          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
+          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
+          MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
+          MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           WORKFLOW_FILE: .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
         run: |
