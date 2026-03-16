@@ -53,7 +53,10 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
-          root-reserve-mb: 10240
+          root-reserve-mb: 2048
+          temp-reserve-mb: 512
+          swap-size-mb: 1024
+          build-mount-path: /workdir
           remove-dotnet: 'true'
           remove-android: 'true'
           remove-haskell: 'true'
@@ -82,26 +85,44 @@ jobs:
               echo "非Ubuntu20.04或22.04系统，安装lib32gcc可能失败，如果失败请检查对应系统安装libgcc32的命令"
           fi
           sudo timedatectl set-timezone "$TZ"
-          sudo mkdir -p /workdir/openwrt
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
           sudo apt-get -y install python3-pip jq
-          pip install mega.py || pip3 install mega.py || python -m pip install mega.py || exit 1
-          pip install requests || pip3 install requests
+          # 把 pip/Go 缓存重定向到 /workdir，避免写满根分区
+          mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
+          pip install --cache-dir /workdir/pip-cache mega.py || pip3 install --cache-dir /workdir/pip-cache mega.py || exit 1
+          pip install --cache-dir /workdir/pip-cache requests || pip3 install --cache-dir /workdir/pip-cache requests
+          echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
+          echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
+          echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
 
       - name: Download from MEGA
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          # 确保 mega.py 已安装
-          pip install mega.py || exit 1
-          # 下载文件到当前目录
-          python download_from_MEGA.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}"
+          python download_from_MEGA.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}" /workdir
       
       - name: 解压文件
         run: |
+          echo "解压前磁盘空间："
+          df -hT
+          cd /workdir
           tar -xzf ${{ env.SOURCE }}.tar.gz
+          rm -f ${{ env.SOURCE }}.tar.gz
+          echo "解压后清理..."
+          rm -rf openwrt/.git
+          rm -rf openwrt/build_dir/toolchain-*
+          rm -rf openwrt/build_dir/host
+          rm -rf openwrt/build_dir/hostpkg-*
+          rm -rf openwrt/staging_dir/toolchain-*
+          rm -rf openwrt/staging_dir/host
+          rm -rf openwrt/staging_dir/hostpkg
+          find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
+          find openwrt/build_dir -name "*.a" -delete 2>/dev/null || true
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          echo "清理后磁盘空间："
+          df -hT
           
       - name: 检查编译环境
         run: |
