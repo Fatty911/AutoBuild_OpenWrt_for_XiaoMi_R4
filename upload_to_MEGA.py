@@ -26,7 +26,10 @@ def main():
         print("错误: mega.py 未安装，请先运行 pip install mega.py")
         sys.exit(1)
 
-    local_file = f"./{source}.tar.gz"
+    # 优先从 /workdir 查找文件，避免占用根分区空间
+    local_file = f"/workdir/{source}.tar.gz"
+    if not os.path.exists(local_file):
+        local_file = f"./{source}.tar.gz"
     if not os.path.exists(local_file):
         print(f"错误: 本地文件 {local_file} 不存在")
         sys.exit(1)

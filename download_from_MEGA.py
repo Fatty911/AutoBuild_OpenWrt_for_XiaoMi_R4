@@ -10,13 +10,6 @@ import tempfile
 
 
 def main():
-    # 将临时目录设置到目标目录，避免占用根分区空间
-    dest_dir_arg = sys.argv[4] if len(sys.argv) == 5 else "."
-    temp_dir = os.path.join(dest_dir_arg, ".mega_temp")
-    os.makedirs(temp_dir, exist_ok=True)
-    tempfile.tempdir = temp_dir
-    os.environ["TMPDIR"] = temp_dir
-    print(f"临时目录已设置为: {temp_dir}")
     if len(sys.argv) < 4 or len(sys.argv) > 5:
         print(
             "用法: python3 download_from_MEGA.py <用户名> <密码> <远程文件夹名> [本地目录]"
@@ -28,17 +21,35 @@ def main():
     folder_name = sys.argv[3]
     dest_dir = sys.argv[4] if len(sys.argv) == 5 else "."
 
+    # 将临时目录设置到目标目录，避免占用根分区空间
+    temp_dir = os.path.join(dest_dir, ".mega_temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    tempfile.tempdir = temp_dir
+    os.environ["TMPDIR"] = temp_dir
+    print(f"临时目录已设置为: {temp_dir}")
+
     try:
         from mega import Mega  # type: ignore
-        import requests
+        from mega.errors import RequestError  # type: ignore
     except ImportError as e:
         print(f"错误: 缺少依赖 {e}，请先运行 pip install mega.py requests")
         sys.exit(1)
 
     print("登录 MEGA 账号...")
     mega = Mega()
-    m = mega.login(username, password)
-    print("登录成功")
+    try:
+        m = mega.login(username, password)
+        print("登录成功")
+    except RequestError as e:
+        error_code = str(e)
+        if "EBLOCKED" in error_code:
+            print("错误: MEGA 账号已被封锁 (EBLOCKED)")
+        else:
+            print(f"登录失败: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"登录失败: {type(e).__name__}: {e}")
+        sys.exit(1)
 
     print(f"查找文件夹: {folder_name}")
     files = m.get_files()
@@ -72,8 +83,6 @@ def main():
         filename = node["a"]["n"]
         dest_path = os.path.join(dest_dir, filename)
         print(f"开始下载: {filename} -> {dest_path}")
-
-        # download() 需要传入 (node_id, node) 元组
         m.download((nid, node), dest_dir)
         print(f"下载完成: {filename}")
 

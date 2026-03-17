@@ -32,7 +32,11 @@ def main():
         m = mega.login(mega_username, mega_password)
         print("登录成功")
     except RequestError as e:
-        print(f"登录失败: {e}")
+        error_code = str(e)
+        if "EBLOCKED" in error_code:
+            print("错误: MEGA 账号已被封锁 (EBLOCKED)")
+        else:
+            print(f"登录失败: {e}")
         sys.exit(1)
     except Exception as e:
         print(f"登录失败: {type(e).__name__}: {e}")
