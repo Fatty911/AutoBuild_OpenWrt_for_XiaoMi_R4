@@ -243,7 +243,7 @@ jobs:
         with:
             token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
             files: |
-              ${{ env.firmware_path }}/*.bin
+              openwrt/bin/targets/*/*.bin
               openwrt/.config
             name: ${{ steps.generate_release_tag.outputs.release_tag }}
             tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}

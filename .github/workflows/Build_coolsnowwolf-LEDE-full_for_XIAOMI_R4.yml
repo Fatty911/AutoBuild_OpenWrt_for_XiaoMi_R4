@@ -224,8 +224,8 @@ jobs:
         if: steps.organize.outputs.status == 'success' && !cancelled()
         run: |
           echo "Check File Sizes..."
-          ls -lh ${{ env.firmware_path }}/*
-          if ! ls ${{ env.firmware_path }}/*.bin 1> /dev/null 2>&1; then
+          ls -lh openwrt/bin/targets/*/*
+          if ! ls openwrt/bin/targets/*/*.bin 1> /dev/null 2>&1; then
             echo "No .bin files found in firmware_path. Stopping workflow."
             echo "check_bin_exist=false" >> $GITHUB_OUTPUT
           else
@@ -294,7 +294,7 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
           files: |
-            ${{ env.firmware_path }}/*
+            openwrt/bin/targets/*/*
           name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
           
