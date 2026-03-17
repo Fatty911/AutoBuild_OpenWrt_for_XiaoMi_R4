@@ -289,6 +289,8 @@ jobs:
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
+          # 删除可能存在的系统文件
+          rm -f swapfile pv.img *.img 2>/dev/null || true
           echo "firmware_path=$(pwd)" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
           
@@ -336,7 +338,8 @@ jobs:
         with:
             token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
             files: |
-              ${{ env.firmware_path }}/*
+              openwrt/bin/targets/*/*.bin
+              openwrt/bin/targets/*/*.manifest
               openwrt/.config
             name: ${{ steps.generate_release_tag.outputs.release_tag }}
             tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}

@@ -251,19 +251,22 @@ def main():
     with open(workflow_file, "r") as f:
         workflow_content = f.read()
 
-    # 构建 prompt
+    # 截断内容以避免超出 token 限制
+    max_workflow_len = 15000
+    max_log_len = 8000
+    if len(workflow_content) > max_workflow_len:
+        workflow_content = workflow_content[:max_workflow_len] + "\n... (truncated)"
+    if len(error_log) > max_log_len:
+        error_log = error_log[:max_log_len] + "\n... (truncated)"
+
+    # 构建 prompt（简洁版）
     prompt = (
-        "You are an expert in GitHub Actions and OpenWrt build systems.\n"
-        "The following workflow file failed during execution.\n\n"
-        f"Workflow file: {workflow_file}\n\n"
-        f"Current workflow content:\n```yaml\n{workflow_content}\n```\n\n"
-        f"Error logs:\n```\n{error_log[:10000]}\n```\n\n"
-        "Analyze the root cause and return the COMPLETE fixed workflow YAML.\n"
-        "Rules:\n"
-        "- Return ONLY raw YAML, no markdown code fences, no explanations\n"
-        "- Keep all existing functionality intact\n"
-        "- Make minimal changes to fix the specific error\n"
-        "- Do not remove any steps unless they are the direct cause of failure\n"
+        "You are a GitHub Actions expert. Fix this workflow error.\n\n"
+        f"Workflow: {workflow_file}\n\n"
+        f"Workflow content:\n```yaml\n{workflow_content}\n```\n\n"
+        f"Error logs (last lines):\n```\n{error_log}\n```\n\n"
+        "Return the COMPLETE fixed workflow YAML only. No markdown, no explanation.\n"
+        "Make minimal changes to fix the error.\n"
     )
 
     # 按顺序尝试各家 GLM5
