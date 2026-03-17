@@ -317,11 +317,13 @@ jobs:
     
     
     - name: Upload to MEGA
+      working-directory: /workdir
       env:
-        MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
-        MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}  # 从 Secrets 中获取密码
+        MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+        MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
       run: |
-        python upload_to_MEGA.py
+        ls -lh ${{ env.SOURCE }}.tar.gz || echo "归档文件不存在"
+        python $GITHUB_WORKSPACE/upload_to_MEGA.py
     
         
     - name: Auto fix with GLM5/Grok on failure

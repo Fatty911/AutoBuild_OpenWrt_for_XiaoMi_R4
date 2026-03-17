@@ -26,12 +26,27 @@ def main():
         print("错误: mega.py 未安装，请先运行 pip install mega.py")
         sys.exit(1)
 
-    # 优先从 /workdir 查找文件，避免占用根分区空间
-    local_file = f"/workdir/{source}.tar.gz"
-    if not os.path.exists(local_file):
-        local_file = f"./{source}.tar.gz"
-    if not os.path.exists(local_file):
-        print(f"错误: 本地文件 {local_file} 不存在")
+    # 查找本地文件
+    possible_paths = [
+        f"/workdir/{source}.tar.gz",
+        f"{source}.tar.gz",
+        f"./{source}.tar.gz",
+    ]
+
+    local_file = None
+    for path in possible_paths:
+        print(f"检查文件路径: {path} -> 存在: {os.path.exists(path)}")
+        if os.path.exists(path):
+            local_file = path
+            break
+
+    if not local_file:
+        print(f"错误: 未找到本地文件 {source}.tar.gz")
+        print(f"已检查路径: {possible_paths}")
+        print(f"当前工作目录: {os.getcwd()}")
+        print(f"/workdir 目录内容:")
+        if os.path.exists("/workdir"):
+            print(os.listdir("/workdir"))
         sys.exit(1)
 
     local_mtime = os.path.getmtime(local_file)
