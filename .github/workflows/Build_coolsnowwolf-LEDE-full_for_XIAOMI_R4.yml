@@ -105,6 +105,14 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
 
+      - name: Apply WiFi configuration
+        env:
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+        run: |
+          chmod +x $GITHUB_WORKSPACE/replace_wifi_config.sh
+          $GITHUB_WORKSPACE/replace_wifi_config.sh openwrt/files/etc/config/wireless
+
       - name: Select Kernel Version
         id: select_kernel
         run: |

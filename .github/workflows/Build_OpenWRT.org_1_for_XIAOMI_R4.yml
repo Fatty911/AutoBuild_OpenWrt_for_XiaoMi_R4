@@ -60,9 +60,10 @@ jobs:
           path: |
             /var/cache/apt/archives
             /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-${{ hashFiles('/etc/apt/sources.list') }}-${{ hashFiles('**/Breaks') }} # Added Breaks file for more robustness
+          key: ${{ runner.os }}-apt-${{ hashFiles('/etc/apt/sources.list') }}-${{ hashFiles('**/Breaks') }}
           restore-keys: |
             ${{ runner.os }}-apt-
+          save-always: false
             
       - name: Initialization environment
         env:
@@ -96,6 +97,7 @@ jobs:
           key: ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ hashFiles(env.CONFIG_FILE, env.DIY_P1_SH, env.DIY_P2_SH) }}
           restore-keys: |
             ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
+          save-always: false
          
       - name: Clone source code
         working-directory: /workdir
@@ -157,7 +159,8 @@ jobs:
           path: openwrt/dl
           key: ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/feeds.conf.default', env.CONFIG_FILE, env.DIY_P1_SH) }}
           restore-keys: |
-            ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-          
+            ${{ runner.os }}-dl-${{ env.REPO_BRANCH }}-
+          save-always: false          
           
       - name: Load custom configuration
         run: |
@@ -174,6 +177,13 @@ jobs:
           echo "Final check after reapplication:"
           grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
 
+      - name: Apply WiFi configuration
+        env:
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+        run: |
+          chmod +x $GITHUB_WORKSPACE/replace_wifi_config.sh
+          $GITHUB_WORKSPACE/replace_wifi_config.sh openwrt/files/etc/config/wireless
 
       - name: Cache OpenWRT build directories (staging_dir, build_dir)
         uses: actions/cache@main
@@ -182,10 +192,10 @@ jobs:
           path: |
             openwrt/staging_dir
             openwrt/build_dir
-            openwrt/tmp # Caching tmp can sometimes help, but can also lead to issues. Monitor.
           key: ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-${{ hashFiles('openwrt/.config', env.DIY_P1_SH, env.DIY_P2_SH) }}
           restore-keys: |
             ${{ runner.os }}-build-${{ env.REPO_BRANCH }}-
+          save-always: false
           
       - name: Checking files After diy-part2.sh
         run: |
@@ -262,7 +272,7 @@ jobs:
           df -hT
           ls -lh ${{ env.SOURCE }}.tar.gz
           # 移动到 GITHUB_WORKSPACE 供后续步骤使用
-          mv ${{ env.SOURCE }}.tar.gz $GITHUB_WORKSPACE/
+          # 保持文件在 /workdir，避免占用根分区空间
           
 
           

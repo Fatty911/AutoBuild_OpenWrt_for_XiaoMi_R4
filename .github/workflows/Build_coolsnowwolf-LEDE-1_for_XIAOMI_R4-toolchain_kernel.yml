@@ -115,6 +115,14 @@ jobs:
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
 
+      - name: Apply WiFi configuration
+        env:
+          WIFI_SSID: ${{ secrets.WIFI_SSID }}
+          WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+        run: |
+          chmod +x $GITHUB_WORKSPACE/replace_wifi_config.sh
+          $GITHUB_WORKSPACE/replace_wifi_config.sh openwrt/files/etc/config/wireless
+
       - name: Download package
         id: package
         run: |
@@ -190,7 +198,7 @@ jobs:
           cd /workdir
           tar -zcf ${{ env.SOURCE }}.tar.gz openwrt
           ls -lh ${{ env.SOURCE }}.tar.gz
-          mv ${{ env.SOURCE }}.tar.gz $GITHUB_WORKSPACE/
+          # 保持文件在 /workdir，避免占用根分区空间
 
       - name: Upload to MEGA
         env:
