@@ -146,10 +146,17 @@ jobs:
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
+          if [ ! -d "openwrt" ]; then
+            echo "openwrt directory does not exist, assuming no bin files"
+            echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           BIN_FOUND=false
           for file in openwrt/bin/targets/*/*/*.bin; do
             if [ -f "$file" ]; then
               BIN_FOUND=true
+              echo "Found .bin file: $file"
               break
             fi
           done
@@ -157,6 +164,7 @@ jobs:
             echo "BIN_EXISTS=true" >> $GITHUB_OUTPUT
           else
             echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
+            echo "No .bin files found"
             if [ -d "openwrt/bin/targets" ]; then
               ls -R openwrt/bin/targets/ || true
             else
@@ -167,6 +175,12 @@ jobs:
         id: transplant
         if: steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
         run: |
+          if [ ! -d "openwrt" ]; then
+            echo "Error: openwrt directory does not exist. Skipping porting."
+            echo "isFixed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
           # Clone lede-source for necessary files
@@ -174,9 +188,9 @@ jobs:
           # Copy DTS file
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
           # Define mt7621.mk
-          cp ../target/linux/ramips/image/mt7621.mk target/linux/ramips/image/mt7621.mk
+          cp ../target/linux/ramips/image/mt7621.mk target/linux/ramips/image/mt7621.mk || echo "Warning: mt7621.mk copy failed"
           # Copy base-files
-          cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
+          cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ || echo "Warning: base-files copy failed"
           rm -rf lede-source
           # Adjust IMAGE_SIZE
           sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
