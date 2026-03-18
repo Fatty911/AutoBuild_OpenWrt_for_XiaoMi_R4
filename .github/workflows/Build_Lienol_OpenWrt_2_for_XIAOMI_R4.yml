@@ -338,7 +338,11 @@ jobs:
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
       run: |
         python delete_from_MEGA.py
-        
+
+    - name: Validate build output
+      run: |
+        python $GITHUB_WORKSPACE/validate_build_output.py
+
     - name: Auto fix with GLM5/Grok on failure
       if: failure()
       env:

@@ -248,9 +248,11 @@ jobs:
           echo "Check File Sizes..."
           ls -lh openwrt/bin/targets/*/*
           if ! ls openwrt/bin/targets/*/*.bin 1> /dev/null 2>&1; then
-            echo "No .bin files found in firmware_path. Stopping workflow."
+            echo "No .bin files found in firmware_path."
+            echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
             echo "check_bin_exist=false" >> $GITHUB_OUTPUT
           else
+            echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
             echo "check_bin_exist=success" >> $GITHUB_OUTPUT
           fi
           
@@ -300,9 +302,17 @@ jobs:
           path: ${{ env.firmware_path }}
 
 
+      - name: Cleanup invalid releases (no .bin)
+        if: env.FINAL_BIN_EXISTS == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+        run: |
+          echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
+          python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+
       - name: Generate release tag
         id: generate_release_tag
-        if: steps.check_bin.outputs.check_bin_exist == 'success'
+        if: env.FINAL_BIN_EXISTS == 'true'
         run: |
           echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           echo "release_tag_status=success" >> $GITHUB_OUTPUT
@@ -310,7 +320,7 @@ jobs:
       - name: Upload firmware to release
         id: up-release
         uses: softprops/action-gh-release@master
-        if: steps.generate_release_tag.outputs.release_tag_status == 'success'
+        if: env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         with:
@@ -328,6 +338,10 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 2
+
+      - name: Validate build output
+        run: |
+          python $GITHUB_WORKSPACE/validate_build_output.py
 
       - name: Auto fix with GLM5/Grok on failure
         if: failure()

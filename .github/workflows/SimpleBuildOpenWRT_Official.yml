@@ -256,7 +256,11 @@ jobs:
               openwrt/.config
             name: ${{ steps.generate_release_tag.outputs.release_tag }}
             tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
-                
+
+      - name: Validate build output
+        run: |
+          python $GITHUB_WORKSPACE/validate_build_output.py
+
       - name: Auto fix with GLM5/Grok on failure
         if: failure()
         env:

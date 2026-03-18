@@ -324,7 +324,12 @@ jobs:
       run: |
         ls -lh ${{ env.SOURCE }}.tar.gz || echo "归档文件不存在"
         python $GITHUB_WORKSPACE/upload_to_MEGA.py
-    
+        # 标记MEGA上传成功
+        echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
+
+    - name: Validate build output
+      run: |
+        python $GITHUB_WORKSPACE/validate_build_output.py
         
     - name: Auto fix with GLM5/Grok on failure
       if: failure()
