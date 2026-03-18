@@ -215,7 +215,7 @@ def main():
             "name": "xai",
             "proxy_url": os.getenv("XAI_PROXY_URL", ""),
             "api_key": os.getenv("XAI_API_KEY", ""),
-            "model_list": ["grok-4-1-fast-reasoning"],
+            "model_list": ["grok-4.20-multi-agent-beta-0309"],
         },
     ]
 
