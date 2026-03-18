@@ -319,15 +319,37 @@ jobs:
             echo "没找到.bin固件"
           fi
 
+      - name: Cleanup invalid releases (no .bin)
+        if: env.FINAL_BIN_EXISTS == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+        run: |
+          echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
+          python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+
 
       - name: Generate release tag
         id: generate_release_tag
         if: env.FINAL_BIN_EXISTS == 'true'
         run: |
-          echo "release_tag=OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+          # 动态检测上游 workflow 来决定 tag 前缀
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            UPSTREAM_WORKFLOW="${{ github.event.workflow_run.name }}"
+            echo "上游 workflow: $UPSTREAM_WORKFLOW"
+            if [[ "$UPSTREAM_WORKFLOW" == *"Simple1"* ]]; then
+              PREFIX="Simple1"
+            else
+              PREFIX="OpenWRT.org"
+            fi
+          else
+            PREFIX="OpenWRT.org"
+          fi
+          
+          echo "release_tag=${PREFIX}_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           touch release.txt
           echo "release_tag_status=success" >> $GITHUB_OUTPUT
           echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
+          echo "使用的 tag 前缀: $PREFIX"
 
       - name: Upload firmware to release
         id: up-release
