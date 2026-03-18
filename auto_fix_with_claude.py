@@ -93,13 +93,16 @@ def call_glm(proxy_url, api_key, model, prompt):
 
     # 确保 URL 有协议
     if not proxy_url.startswith(("http://", "https://")):
-        if "x.ai" in proxy_url or "grok" in proxy_url.lower():
-            proxy_url = f"https://{proxy_url}"
-        else:
-            proxy_url = f"https://{proxy_url}"
+        proxy_url = f"https://{proxy_url}"
 
-    url = f"{proxy_url.rstrip('/')}/v1/chat/completions"
-    print(f"[{proxy_url}] 请求 URL: {url}")
+    # 避免重复 /v1：如果 proxy_url 已以 /v1 结尾，直接追加 /chat/completions
+    base = proxy_url.rstrip("/")
+    if base.endswith("/v1"):
+        url = f"{base}/chat/completions"
+    else:
+        url = f"{base}/v1/chat/completions"
+
+    print(f"请求 URL: {url}")
 
     headers = {
         "Content-Type": "application/json",
@@ -225,7 +228,7 @@ def main():
             "name": "xai",
             "proxy_url": os.getenv("XAI_PROXY_URL", ""),
             "api_key": os.getenv("XAI_API_KEY", ""),
-            "model_list": ["grok-4.20-multi-agent-beta-0309"],
+            "model_list": ["grok-3-fast"],
         },
     ]
 
