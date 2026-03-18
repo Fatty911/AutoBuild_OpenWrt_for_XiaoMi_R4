@@ -61,7 +61,7 @@ def main():
         print(f"文件夹 '{source}' 不存在，无需清理")
         sys.exit(0)
 
-    # 删除文件夹内的压缩包
+    # 删除文件夹内的压缩包（永久删除，不进回收站）
     deleted = False
     try:
         for node_id, node in files.items():
@@ -70,15 +70,22 @@ def main():
                 and node.get("t") == 0
                 and node.get("a", {}).get("n") == target_filename
             ):
-                print(f"删除网盘文件: MEGA:/{source}/{target_filename}")
-                m.destroy(node_id)
+                print(f"永久删除网盘文件: MEGA:/{source}/{target_filename}")
+                m.destroy(node_id)  # 先删除（移到回收站）
                 deleted = True
                 break
     except Exception as e:
         print(f"删除文件失败: {e}")
         sys.exit(1)
 
+    # 立即清空回收站，彻底释放空间
     if deleted:
+        try:
+            print("正在清空 MEGA 回收站以彻底释放空间...")
+            m.empty_trash()
+            print("回收站已清空，空间已彻底释放")
+        except Exception as e:
+            print(f"清空回收站失败（但文件已删除）: {e}")
         print("清理完成，MEGA 空间已释放")
     else:
         print(f"未找到文件 '{target_filename}'，无需清理")
