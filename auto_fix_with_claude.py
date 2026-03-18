@@ -88,8 +88,18 @@ def get_local_logs():
 
 
 def call_glm(proxy_url, api_key, model, prompt):
-    """调用 GLM5 API（OpenAI 兼容格式）"""
+    """调用 GLM5/XAI API（OpenAI 兼容格式）"""
     import requests
+
+    # 确保 URL 有协议
+    if not proxy_url.startswith(("http://", "https://")):
+        if "x.ai" in proxy_url or "grok" in proxy_url.lower():
+            proxy_url = f"https://{proxy_url}"
+        else:
+            proxy_url = f"https://{proxy_url}"
+
+    url = f"{proxy_url.rstrip('/')}/v1/chat/completions"
+    print(f"[{proxy_url}] 请求 URL: {url}")
 
     headers = {
         "Content-Type": "application/json",
@@ -99,17 +109,17 @@ def call_glm(proxy_url, api_key, model, prompt):
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 8192,
+        "temperature": 0.3,
     }
-    resp = requests.post(
-        f"{proxy_url.rstrip('/')}/v1/chat/completions",
-        headers=headers,
-        json=data,
-        timeout=180,
-    )
-    if resp.status_code != 200:
-        raise Exception(f"HTTP {resp.status_code}: {resp.text[:300]}")
-    result = resp.json()
-    return result["choices"][0]["message"]["content"].strip()
+
+    try:
+        resp = requests.post(url, headers=headers, json=data, timeout=180)
+        if resp.status_code != 200:
+            raise Exception(f"HTTP {resp.status_code}: {resp.text[:200]}")
+        result = resp.json()
+        return result["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        raise Exception(f"请求失败: {e}")
 
 
 def try_fix_with_providers(providers, prompt):
