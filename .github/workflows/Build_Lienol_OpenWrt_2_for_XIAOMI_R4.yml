@@ -244,7 +244,7 @@ jobs:
       run: |
         BIN_FOUND=false
         for file in openwrt/bin/targets/*/*/*.bin; do
-          if [ -f "$file" ]; then
+          if [ -f "$file" ] && [[ ! "$file" =~ initramfs ]]; then
             BIN_FOUND=true
             echo "存在.bin固件: $file"
             break
@@ -254,7 +254,7 @@ jobs:
           echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
         else
           echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
-          echo "没找到.bin固件"
+          echo "没找到.bin固件（排除initramfs后）"
         fi
 
     - name: Cleanup invalid releases (no .bin)
@@ -264,7 +264,14 @@ jobs:
       run: |
         echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
         python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
-        
+
+    - name: Build Quality Gate
+      id: build_quality_gate
+      run: |
+        python $GITHUB_WORKSPACE/validate_build_output.py --gate
+      env:
+        SOURCE: ${{ env.SOURCE }}
+
     - name: Set environment variables
       id: setEnv
       if: env.FINAL_BIN_EXISTS == 'true' 
@@ -311,7 +318,7 @@ jobs:
 
     - name: Generate release tag
       id: generate_release_tag
-      if: env.FINAL_BIN_EXISTS == 'true' 
+      if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' 
       run: |
         echo "release_tag=Lienol_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
@@ -320,7 +327,7 @@ jobs:
     - name: Upload firmware to release
       id: up-release
       uses: softprops/action-gh-release@master
-      if: steps.generate_release_tag.outputs.release_tag_status == 'success'
+      if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
       env:
         GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
       with:
@@ -343,25 +350,16 @@ jobs:
       run: |
         python $GITHUB_WORKSPACE/validate_build_output.py
 
-    - name: Auto fix with GLM5/Grok on failure
+    - name: Auto fix with MiniMax AI on failure
       if: failure()
       env:
-        GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
-        ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
-        ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
-        MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
-        MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
-        MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
-        MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
-        SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
-        SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
-        XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
-        XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+        MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+        MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
         ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         WORKFLOW_FILE: .github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml
       run: |
         pip install requests --quiet || true
-        python auto_fix_with_claude.py
+        python auto_fix_with_AI_LLM.py
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@main

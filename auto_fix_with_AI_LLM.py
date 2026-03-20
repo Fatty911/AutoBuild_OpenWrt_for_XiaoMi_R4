@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
 """
-当 GitHub Actions workflow 报错时，按顺序尝试各家 GLM5 中转分析并修复 workflow 文件。
-调用顺序：atomgit → modelscope → modal → siliconflow → xai，前一家失败则尝试下一家。
+当 GitHub Actions workflow 报错时，调用 MiniMax 大模型分析并修复 workflow 文件。
 
 环境变量:
-  GLM_PROXY_URL          - 各家代理地址，逗号分隔（顺序：atomgit,modelscope,modal,siliconflow）
-  ATOMGIT_API_KEY        - atomgit API key
-  ATOMGIT_MODEL_LIST     - atomgit GLM5 模型名称列表，逗号分隔
-  MODELSCOPE_API_KEY     - modelscope API key
-  MODELSCOPE_MODEL_LIST  - modelscope GLM5 模型名称列表，逗号分隔
-  MODAL_API_KEY          - modal API key
-  MODAL_MODEL_LIST       - modal GLM5 模型名称列表，逗号分隔
-  SILICONFLOW_API_KEY    - siliconflow API key
-  SILICONFLOW_MODEL_LIST - siliconflow GLM5 模型名称列表，逗号分隔
-  XAI_PROXY_URL          - x.ai API 代理地址
-  XAI_API_KEY            - x.ai API key
+  MINIMAX_API_KEY        - MiniMax API key（必填）
+  MINIMAX_MODEL_LIST     - MiniMax 模型名称（可选，默认 MiniMax-M2.7）
   WORKFLOW_FILE          - 需要修复的 workflow 文件路径（相对于仓库根目录）
   ACTIONS_TRIGGER_PAT    - 用于 git push 的 PAT
   GITHUB_REPOSITORY      - 仓库名称（owner/repo）
@@ -88,7 +78,7 @@ def get_local_logs():
 
 
 def call_glm(proxy_url, api_key, model, prompt):
-    """调用 GLM5/XAI API（OpenAI 兼容格式）"""
+    """调用 MiniMax API（OpenAI 兼容格式）"""
     import requests
 
     # 确保 URL 有协议
@@ -125,32 +115,6 @@ def call_glm(proxy_url, api_key, model, prompt):
         raise Exception(f"请求失败: {e}")
 
 
-def try_fix_with_providers(providers, prompt):
-    """按顺序尝试各家 GLM5，返回修复后的内容，全部失败返回 None"""
-    for provider in providers:
-        name = provider["name"]
-        proxy_url = provider["proxy_url"]
-        api_key = provider["api_key"]
-        model_list = provider["model_list"]
-
-        if not proxy_url or not api_key or not model_list:
-            print(f"[{name}] 跳过：缺少配置")
-            continue
-
-        for model in model_list:
-            print(f"[{name}] 尝试模型: {model} ...")
-            try:
-                result = call_glm(proxy_url, api_key, model, prompt)
-                print(f"[{name}] 调用成功")
-                return result
-            except Exception as e:
-                print(f"[{name}] 模型 {model} 失败: {e}")
-
-        print(f"[{name}] 所有模型均失败，尝试下一家")
-
-    return None
-
-
 def clean_yaml(content):
     """去掉可能的 markdown 代码块包裹"""
     content = content.strip()
@@ -179,7 +143,7 @@ def git_push(workflow_file, pat, repo):
         print("No changes detected, nothing to commit.")
         return
 
-    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by GLM5"
+    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by MiniMax-M2.7"
     subprocess.run(["git", "commit", "-m", msg], check=True)
     subprocess.run(["git", "push"], check=True)
     print("Fix committed and pushed successfully!")
@@ -191,46 +155,13 @@ def main():
     repo = os.getenv("GITHUB_REPOSITORY", "")
     run_id = os.getenv("GITHUB_RUN_ID", "")
 
-    # 解析 GLM_PROXY_URL（顺序：atomgit, modelscope, modal, siliconflow）
-    proxy_urls = [
-        u.strip() for u in os.getenv("GLM_PROXY_URL", "").split(",") if u.strip()
-    ]
+    minimax_api_key = os.getenv("MINIMAX_API_KEY", "")
+    minimax_model_list_env = os.getenv("MINIMAX_MODEL_LIST", "").strip()
+    minimax_model = minimax_model_list_env if minimax_model_list_env else "MiniMax-M2.7"
 
-    def get_models(env_key):
-        return [m.strip() for m in os.getenv(env_key, "").split(",") if m.strip()]
-
-    providers = [
-        {
-            "name": "atomgit",
-            "proxy_url": proxy_urls[0] if len(proxy_urls) > 0 else "",
-            "api_key": os.getenv("ATOMGIT_API_KEY", ""),
-            "model_list": get_models("ATOMGIT_MODEL_LIST"),
-        },
-        {
-            "name": "modelscope",
-            "proxy_url": proxy_urls[1] if len(proxy_urls) > 1 else "",
-            "api_key": os.getenv("MODELSCOPE_API_KEY", ""),
-            "model_list": get_models("MODELSCOPE_MODEL_LIST"),
-        },
-        {
-            "name": "modal",
-            "proxy_url": proxy_urls[2] if len(proxy_urls) > 2 else "",
-            "api_key": os.getenv("MODAL_API_KEY", ""),
-            "model_list": get_models("MODAL_MODEL_LIST"),
-        },
-        {
-            "name": "siliconflow",
-            "proxy_url": proxy_urls[3] if len(proxy_urls) > 3 else "",
-            "api_key": os.getenv("SILICONFLOW_API_KEY", ""),
-            "model_list": get_models("SILICONFLOW_MODEL_LIST"),
-        },
-        {
-            "name": "xai",
-            "proxy_url": os.getenv("XAI_PROXY_URL", ""),
-            "api_key": os.getenv("XAI_API_KEY", ""),
-            "model_list": ["grok-4.20-beta-0309-reasoning"],
-        },
-    ]
+    if not minimax_api_key:
+        print("Missing required environment variable: MINIMAX_API_KEY")
+        sys.exit(1)
 
     missing = [
         k
@@ -282,11 +213,13 @@ def main():
         "Make minimal changes to fix the error.\n"
     )
 
-    # 按顺序尝试各家 GLM5
-    fixed_content = try_fix_with_providers(providers, prompt)
+    # 调用 MiniMax 大模型修复
+    fixed_content = call_glm(
+        "https://api.minimax.chat", minimax_api_key, minimax_model, prompt
+    )
 
     if not fixed_content:
-        print("所有 AI 提供商（GLM5 + Grok）均调用失败，无法自动修复")
+        print("MiniMax 模型调用失败，无法自动修复")
         sys.exit(1)
 
     fixed_content = clean_yaml(fixed_content)
