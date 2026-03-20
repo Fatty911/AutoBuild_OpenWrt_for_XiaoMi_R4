@@ -306,7 +306,7 @@ jobs:
       - name: Cleanup invalid releases (no .bin)
         if: env.FINAL_BIN_EXISTS == 'false'
         env:
-          GITHUB_TOKEN: ${{ secrets.Actions_Trigger }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
           python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
@@ -330,9 +330,9 @@ jobs:
         uses: softprops/action-gh-release@master
         if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
         env:
-          GITHUB_TOKEN: ${{ secrets.Actions_Trigger }}
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          token: ${{ secrets.Actions_Trigger }}
+          token: ${{ github.token }}
           files: |
             openwrt/bin/targets/*/*
           name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
@@ -342,7 +342,7 @@ jobs:
       - name: Delete workflow runs
         uses: Mattraks/delete-workflow-runs@main
         with:
-          token: ${{ secrets.Actions_Trigger }}
+          token: ${{ github.token }}
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 2
@@ -368,5 +368,5 @@ jobs:
           keep_latest: 3
           delete_tag_pattern: .*${{ env.SOURCE }}.*
         env:
-          GITHUB_TOKEN: ${{ secrets.Actions_Trigger }}
+          GITHUB_TOKEN: ${{ github.token }}
               

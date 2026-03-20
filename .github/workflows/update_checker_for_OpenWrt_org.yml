@@ -52,7 +52,7 @@ jobs:
       if: steps.cacheHash.outputs.cache-hit != 'true'
       uses: peter-evans/repository-dispatch@main
       with:
-        token: ${{ secrets.Actions_Trigger }}
+        token: ${{ github.token }}
         event-type: Openwrt.org Source Code Update
         client-payload: '{"repo_url": "${{ env.REPO_URL }}"}' # 传递源码仓库的URL
 
