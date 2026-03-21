@@ -38,7 +38,7 @@ jobs:
       - name: Check for updates
         id: check
         env:
-          GH_TOKEN: ${{ secrets.Actions_Trigger }}
+          GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT }}
         run: |
           echo "=== 检查固件更新 ==="
           echo "检查时间: $(date '+%Y-%m-%d %H:%M:%S')"
