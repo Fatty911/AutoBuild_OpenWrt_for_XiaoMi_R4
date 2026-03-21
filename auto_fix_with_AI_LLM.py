@@ -277,6 +277,24 @@ def main():
                 }
             )
 
+    # Grok 最后 fallback
+    xai_api_key = os.getenv("XAI_API_KEY", "").strip()
+    if xai_api_key:
+        xai_models_str = os.getenv("XAI_MODEL_LIST", "").strip()
+        xai_models = (
+            [m.strip() for m in xai_models_str.split(",")]
+            if xai_models_str
+            else ["grok-4.20-beta-0309-reasoning"]
+        )
+        providers.append(
+            {
+                "name": "GROK",
+                "proxy_url": "https://api.x.ai/v1",
+                "api_key": xai_api_key,
+                "models": xai_models,
+            }
+        )
+
     if not providers:
         print(
             "No AI provider available. Please set MINIMAX_API_KEY or one of the GLM provider API keys."
