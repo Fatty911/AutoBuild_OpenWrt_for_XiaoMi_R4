@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
 当 GitHub Actions workflow 报错时，调用 MiniMax 大模型分析并修复 workflow 文件。
+如果 MiniMax 失败，自动 fallback 到其他 GLM 提供商。
 
 环境变量:
   MINIMAX_API_KEY        - MiniMax API key（必填）
@@ -77,15 +78,13 @@ def get_local_logs():
     return "\n\n".join(logs)
 
 
-def call_glm(proxy_url, api_key, model, prompt):
-    """调用 MiniMax API（OpenAI 兼容格式）"""
+def call_api(proxy_url, api_key, model, prompt):
+    """调用 API（OpenAI 兼容格式）"""
     import requests
 
-    # 确保 URL 有协议
     if not proxy_url.startswith(("http://", "https://")):
         proxy_url = f"https://{proxy_url}"
 
-    # 避免重复 /v1：如果 proxy_url 已以 /v1 结尾，直接追加 /chat/completions
     base = proxy_url.rstrip("/")
     if base.endswith("/v1"):
         url = f"{base}/chat/completions"
@@ -115,6 +114,19 @@ def call_glm(proxy_url, api_key, model, prompt):
         raise Exception(f"请求失败: {e}")
 
 
+def try_provider(name, proxy_url, api_key, model, prompt):
+    """尝试调用单个提供商"""
+    for m in model if isinstance(model, list) else [model]:
+        print(f"[{name}] 尝试模型: {m} ...")
+        try:
+            result = call_api(proxy_url, api_key, m, prompt)
+            print(f"[{name}] 调用成功")
+            return result
+        except Exception as e:
+            print(f"[{name}] 模型 {m} 失败: {e}")
+    return None
+
+
 def clean_yaml(content):
     """去掉可能的 markdown 代码块包裹"""
     content = content.strip()
@@ -126,7 +138,7 @@ def clean_yaml(content):
     return content
 
 
-def git_push(workflow_file, pat, repo):
+def git_push(workflow_file, pat, repo, model_name):
     """配置 git 并提交推送修复"""
     subprocess.run(
         ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
@@ -143,7 +155,7 @@ def git_push(workflow_file, pat, repo):
         print("No changes detected, nothing to commit.")
         return
 
-    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by MiniMax-M2.7"
+    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
     subprocess.run(["git", "commit", "-m", msg], check=True)
     subprocess.run(["git", "push"], check=True)
     print("Fix committed and pushed successfully!")
@@ -154,14 +166,6 @@ def main():
     pat = os.getenv("ACTIONS_TRIGGER_PAT", "")
     repo = os.getenv("GITHUB_REPOSITORY", "")
     run_id = os.getenv("GITHUB_RUN_ID", "")
-
-    minimax_api_key = os.getenv("MINIMAX_API_KEY", "")
-    minimax_model_list_env = os.getenv("MINIMAX_MODEL_LIST", "").strip()
-    minimax_model = minimax_model_list_env if minimax_model_list_env else "MiniMax-M2.7"
-
-    if not minimax_api_key:
-        print("Missing required environment variable: MINIMAX_API_KEY")
-        sys.exit(1)
 
     missing = [
         k
@@ -183,7 +187,6 @@ def main():
 
     print(f"Auto-fixing: {workflow_file}")
 
-    # 收集错误日志
     print("Collecting error logs...")
     local_logs = get_local_logs()
     remote_logs = get_run_logs(repo, run_id, pat) if run_id else ""
@@ -191,11 +194,9 @@ def main():
     if not error_log:
         error_log = "No log files found."
 
-    # 读取 workflow 文件
     with open(workflow_file, "r") as f:
         workflow_content = f.read()
 
-    # 截断内容以避免超出 token 限制
     max_workflow_len = 15000
     max_log_len = 8000
     if len(workflow_content) > max_workflow_len:
@@ -203,7 +204,6 @@ def main():
     if len(error_log) > max_log_len:
         error_log = error_log[:max_log_len] + "\n... (truncated)"
 
-    # 构建 prompt（简洁版）
     prompt = (
         "You are a GitHub Actions expert. Fix this workflow error.\n\n"
         f"Workflow: {workflow_file}\n\n"
@@ -213,24 +213,104 @@ def main():
         "Make minimal changes to fix the error.\n"
     )
 
-    # 调用 MiniMax 大模型修复
-    fixed_content = call_glm(
-        "https://api.minimax.chat", minimax_api_key, minimax_model, prompt
+    # 定义提供商列表：MiniMax 优先，失败后 fallback 到 GLM
+    minimax_api_key = os.getenv("MINIMAX_API_KEY", "").strip()
+    minimax_model_list = os.getenv("MINIMAX_MODEL_LIST", "").strip()
+    minimax_model = (
+        minimax_model_list.split(",") if minimax_model_list else ["MiniMax-M2.7"]
     )
 
+    providers = []
+
+    # MiniMax（优先）
+    if minimax_api_key:
+        providers.append(
+            {
+                "name": "MiniMax",
+                "proxy_url": "https://api.minimax.chat",
+                "api_key": minimax_api_key,
+                "models": minimax_model,
+            }
+        )
+
+    # GLM 提供商 fallback
+    glm_providers = [
+        {
+            "name": "atomgit",
+            "proxy_url": "https://api.atomgit.com/v1",
+            "key_env": "ATOMGIT_API_KEY",
+            "models_env": "ATOMGIT_MODEL_LIST",
+        },
+        {
+            "name": "modelscope",
+            "proxy_url": "https://api.modelscope.cn/v1",
+            "key_env": "MODELSCOPE_API_KEY",
+            "models_env": "MODELSCOPE_MODEL_LIST",
+        },
+        {
+            "name": "siliconflow",
+            "proxy_url": "https://api.siliconflow.cn/v1",
+            "key_env": "SILICONFLOW_API_KEY",
+            "models_env": "SILICONFLOW_MODEL_LIST",
+        },
+        {
+            "name": "groq",
+            "proxy_url": "https://api.groq.com/openai/v1",
+            "key_env": "GROQ_API_KEY",
+            "models_env": "GROQ_MODEL_LIST",
+        },
+    ]
+
+    for gp in glm_providers:
+        api_key = os.getenv(gp["key_env"], "").strip()
+        if api_key:
+            models_str = os.getenv(gp["models_env"], "").strip()
+            models = [m.strip() for m in models_str.split(",")] if models_str else []
+            if not models:
+                models = ["auto"]  # 默认模型
+            providers.append(
+                {
+                    "name": gp["name"].upper(),
+                    "proxy_url": gp["proxy_url"],
+                    "api_key": api_key,
+                    "models": models,
+                }
+            )
+
+    if not providers:
+        print(
+            "No AI provider available. Please set MINIMAX_API_KEY or one of the GLM provider API keys."
+        )
+        sys.exit(1)
+
+    # 依次尝试每个提供商
+    fixed_content = None
+    used_provider = None
+    for provider in providers:
+        result = try_provider(
+            provider["name"],
+            provider["proxy_url"],
+            provider["api_key"],
+            provider["models"],
+            prompt,
+        )
+        if result:
+            fixed_content = result
+            used_provider = provider["name"]
+            break
+        print(f"[{provider['name']}] 所有模型均失败，尝试下一家...")
+
     if not fixed_content:
-        print("MiniMax 模型调用失败，无法自动修复")
+        print("所有 AI 提供商均调用失败，无法自动修复")
         sys.exit(1)
 
     fixed_content = clean_yaml(fixed_content)
 
-    # 写入修复后的内容
     with open(workflow_file, "w") as f:
         f.write(fixed_content)
     print(f"Fixed content written to {workflow_file}")
 
-    # 提交推送
-    git_push(workflow_file, pat, repo)
+    git_push(workflow_file, pat, repo, used_provider)
 
 
 if __name__ == "__main__":
