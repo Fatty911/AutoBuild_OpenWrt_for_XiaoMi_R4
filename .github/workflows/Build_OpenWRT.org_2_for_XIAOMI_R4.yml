@@ -2,7 +2,9 @@ name: Build OpenWRT.org 2 fix and transplant for XIAOMI_R4
 
 on:
   workflow_run:
-    workflows: ["Build OpenWRT.org 1 before transplant for XIAOMI_R4"]  # 工作流 1 的名称
+    workflows: 
+      - "Build OpenWRT.org 1 before transplant for XIAOMI_R4"
+      - "Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4"
     types:
       - completed  # 当工作流 1 完成时触发
   workflow_dispatch:
