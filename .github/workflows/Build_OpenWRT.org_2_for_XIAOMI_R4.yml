@@ -148,6 +148,7 @@ jobs:
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
+          cd /workdir
           if [ ! -d "openwrt" ]; then
             echo "openwrt directory does not exist, assuming no bin files"
             echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
@@ -320,6 +321,7 @@ jobs:
       - name: Check for .bin file after final compilation
         id: check_bin_final
         run: |
+          cd /workdir
           BIN_FOUND=false
           for file in openwrt/bin/targets/*/*/*.bin; do
             if [ -f "$file" ] && [[ ! "$file" =~ initramfs ]]; then
