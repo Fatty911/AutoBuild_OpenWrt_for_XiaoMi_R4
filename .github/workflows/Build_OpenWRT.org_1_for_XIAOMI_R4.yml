@@ -267,7 +267,7 @@ jobs:
           echo "压缩前先看一下目录结构"
           ls -la /workdir/openwrt
           cd /workdir
-          tar -czf ${{ env.SOURCE }}.tar.gz openwrt
+          tar -chf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
           echo "压缩后磁盘空间："
           df -hT
           ls -lh ${{ env.SOURCE }}.tar.gz

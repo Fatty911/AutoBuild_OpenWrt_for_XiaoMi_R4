@@ -289,7 +289,7 @@ jobs:
           echo "压缩前先看一下目录结构"
           ls -la openwrt
           cd /workdir
-          tar -cf - $GITHUB_WORKSPACE/openwrt | pigz > ${{ env.SOURCE }}.tar.gz
+          tar -chf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
           ls -lh ${{ env.SOURCE }}.tar.gz
           
           
