@@ -29,19 +29,23 @@ def main():
 
     source = os.getenv("SOURCE", "unknown")
     github_output = os.getenv("GITHUB_OUTPUT", "/tmp/build_output.env")
+    github_workspace = os.getenv("GITHUB_WORKSPACE", "/github/workspace")
     has_mega_upload = False
     has_bin_file = False
 
     print(f"=== 构建输出验证开始 (SOURCE={source}) ===")
+    print(f"工作目录: {os.getcwd()}")
+    print(f"GITHUB_WORKSPACE: {github_workspace}")
 
-    bin_files = glob.glob("openwrt/bin/targets/**/*.bin", recursive=True)
+    bin_pattern = os.path.join(github_workspace, "openwrt/bin/targets/**/*.bin")
+    bin_files = glob.glob(bin_pattern, recursive=True)
     if bin_files:
         has_bin_file = True
         print(f"✓ 找到 {len(bin_files)} 个 .bin 文件")
         for f in bin_files[:5]:
             print(f"  - {f}")
     else:
-        print("✗ 未找到 .bin 文件")
+        print(f"✗ 未找到 .bin 文件 (搜索: {bin_pattern})")
 
     if (
         os.path.exists("/workdir/.mega_upload_success")
