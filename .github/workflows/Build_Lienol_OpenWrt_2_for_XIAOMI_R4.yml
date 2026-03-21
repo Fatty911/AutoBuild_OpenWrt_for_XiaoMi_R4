@@ -272,6 +272,38 @@ jobs:
       env:
         SOURCE: ${{ env.SOURCE }}
 
+    - name: Upload debug logs on failure
+      if: env.BUILD_QUALITY_GATE == 'fail'
+      run: |
+        cd openwrt
+        echo "=== 调试信息 ===" > debug.log
+        echo "BIN_EXISTS=$BIN_EXISTS" >> debug.log
+        echo "FINAL_BIN_EXISTS=$FINAL_BIN_EXISTS" >> debug.log
+        echo "isFixed=${{ steps.transplant.outputs.isFixed }}" >> debug.log
+        echo "" >> debug.log
+        echo "=== openwrt/bin/targets 目录结构 ===" >> debug.log
+        ls -la bin/targets/*/* 2>/dev/null || echo "目录不存在" >> debug.log
+        echo "" >> debug.log
+        echo "=== .config 最后50行 ===" >> debug.log
+        tail -50 .config >> debug.log 2>/dev/null || echo ".config不存在" >> debug.log
+        echo "" >> debug.log
+        echo "=== feed目录 ===" >> debug.log
+        ls -la feeds/ 2>/dev/null >> debug.log || echo "feeds目录不存在" >> debug.log
+        cat feeds.conf.default >> debug.log 2>/dev/null || echo "feeds.conf.default不存在" >> debug.log
+        echo "" >> debug.log
+        echo "=== build日志 ===" >> debug.log
+        tail -100 build.log >> debug.log 2>/dev/null || echo "build.log不存在" >> debug.log
+        echo "调试信息已保存到 debug.log"
+        cat debug.log
+      shell: bash
+
+    - name: Upload debug artifact
+      if: env.BUILD_QUALITY_GATE == 'fail'
+      uses: actions/upload-artifact@main
+      with:
+        name: debug-logs-Lienol-2
+        path: openwrt/debug.log
+
     - name: Set environment variables
       id: setEnv
       if: env.FINAL_BIN_EXISTS == 'true' 
