@@ -103,7 +103,15 @@ jobs:
           echo "解压前磁盘空间："
           df -hT
           cd /workdir
+          echo "=== 检查 tar 文件 ==="
+          ls -lh ${{ env.SOURCE }}.tar.gz || { echo "ERROR: tar 文件不存在!"; exit 1; }
+          file ${{ env.SOURCE }}.tar.gz
+          tar -tzf ${{ env.SOURCE }}.tar.gz | head -20
+          echo "=== 开始解压 ==="
           tar -xzf ${{ env.SOURCE }}.tar.gz
+          echo "=== 检查解压结果 ==="
+          ls -la
+          ls -la openwrt/ 2>/dev/null || echo "ERROR: openwrt 目录不存在!"
           rm -f ${{ env.SOURCE }}.tar.gz
           echo "解压后清理..."
           rm -rf openwrt/build_dir/toolchain-*
