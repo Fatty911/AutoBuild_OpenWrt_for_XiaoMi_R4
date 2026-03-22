@@ -105,37 +105,24 @@ jobs:
           cd /workdir
           echo "=== 检查 tar 文件 ==="
           ls -lh ${{ env.SOURCE }}.tar.gz || { echo "ERROR: tar 文件不存在!"; exit 1; }
-          file ${{ env.SOURCE }}.tar.gz
           TARBALL_SIZE=$(stat -c%s "${{ env.SOURCE }}.tar.gz")
-          echo "tar.gz 大小: $TARBALL_SIZE bytes"
+          echo "tar.gz 大小: $TARBALL_SIZE bytes ($(numfmt --to=iec $TARBALL_SIZE))"
           if [ "$TARBALL_SIZE" -lt 1000000 ]; then
             echo "ERROR: tar.gz 文件小于 1MB ($TARBALL_SIZE bytes)，MEGA 下载的文件损坏或不完整"
-            echo "文件内容:"
-            tar -tzf ${{ env.SOURCE }}.tar.gz
-            echo "这是 Workflow 1 (Simple1/OpenWRT.org_1) 上传到 MEGA 的文件，请检查上游是否正常"
             exit 1
           fi
-          echo "=== 开始解压 ==="
-          tar -xzf ${{ env.SOURCE }}.tar.gz
+          echo "=== 开始解压（使用 pigz 并行解压）==="
+          pigz -dc ${{ env.SOURCE }}.tar.gz | tar -xf -
+          echo "=== 删除 tar 文件释放空间 ==="
+          rm -f ${{ env.SOURCE }}.tar.gz
           echo "=== 检查解压结果 ==="
           ls -la
           ls -la openwrt/ 2>/dev/null && echo "openwrt 目录存在" || {
             echo "ERROR: openwrt 目录不存在!"
-            echo "检查 home 目录:"
-            ls -la home/
-            ls -la home/runner/ 2>/dev/null || echo "runner 目录不存在"
-            ls -la home/runner/work/ 2>/dev/null || echo "work 目录不存在"
             exit 1
           }
-          rm -f ${{ env.SOURCE }}.tar.gz
-          echo "解压后清理..."
-          rm -rf openwrt/build_dir/toolchain-*
-          rm -rf openwrt/staging_dir/toolchain-*
-          rm -rf openwrt/staging_dir/host
-          rm -rf openwrt/staging_dir/hostpkg
-          rm -rf openwrt/build_dir/host
-          rm -rf openwrt/build_dir/hostpkg-*
-          rm -rf openwrt/.git
+          echo "=== 清理不需要的文件 ==="
+          rm -rf openwrt/build_dir/toolchain-* openwrt/staging_dir/toolchain-* openwrt/staging_dir/host openwrt/staging_dir/hostpkg openwrt/build_dir/host openwrt/build_dir/hostpkg-* openwrt/.git 2>/dev/null || true
           find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
           find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt

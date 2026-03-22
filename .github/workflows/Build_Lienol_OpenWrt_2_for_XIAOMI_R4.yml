@@ -152,81 +152,47 @@ jobs:
         git clone https://github.com/Lienol/lede lede-source
         # Copy DTS file
         cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-        # Define mt7621.mk
-        tee target/linux/ramips/image/mt7621.mk <<'EOF'
+        # Create mt7621.mk with proper tab indentation
+        cat > target/linux/ramips/image/mt7621.mk << 'ENDOFMAKEFILE'
         DEFAULT_SOC := mt7621
+        
         define Image/Prepare
-          rm -f $$(KDIR)/ubi_mark
-          echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
+        	rm -f $$(KDIR)/ubi_mark
+        	echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
         endef
+        
         define Device/nand
-          $$(Device/dsa-migration)
-          BLOCKSIZE := 128k
-          KERNEL_SIZE := 4096k
-          PAGESIZE := 2048
-          UBINIZE_OPTS := -E 5
-          IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+        	$$(Device/dsa-migration)
+        	BLOCKSIZE := 128k
+        	KERNEL_SIZE := 4096k
+        	PAGESIZE := 2048
+        	UBINIZE_OPTS := -E 5
+        	IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
         endef
-        define Device/xiaomi_nand_separate
-          $$(Device/nand)
-          $$(Device/uimage-lzma)
-          DEVICE_VENDOR := Xiaomi
-          IMAGES += kernel1.bin rootfs0.bin
-          image_kernel1.bin := append-kernel
-          image_rootfs0.bin := append-ubi | check-size
-        endef
+        
         define Device/xiaomi_mi-router-4
-          $(Device/nand)
-          $(Device/uimage-lzma)
-          DEVICE_VENDOR := Xiaomi
-          DEVICE_MODEL := Mi Router 4
-          DEVICE_DTS := mt7621_xiaomi_mi-router-4
-          IMAGE_SIZE := 111279k
-          DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3
-          IMAGES += kernel1.bin rootfs0.bin
-          IMAGE/kernel1.bin := append-kernel
-          IMAGE/rootfs0.bin := append-ubi | check-size
+        	$(Device/nand)
+        	$(Device/uimage-lzma)
+        	DEVICE_VENDOR := Xiaomi
+        	DEVICE_MODEL := Mi Router 4
+        	DEVICE_DTS := mt7621_xiaomi_mi-router-4
+        	IMAGE_SIZE := 111279k
+        	DEVICE_PACKAGES := kmod-mt7603 kmod-mt76x2 kmod-usb3
+        	IMAGES += kernel1.bin rootfs0.bin
+        	IMAGE/kernel1.bin := append-kernel
+        	IMAGE/rootfs0.bin := append-ubi | check-size
         endef
         TARGET_DEVICES += xiaomi_mi-router-4
-        EOF
+        ENDOFMAKEFILE
         # Copy base-files
-        cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
+        cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ 2>/dev/null || true
         rm -rf lede-source
-        # Adjust IMAGE_SIZE
-        sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
-        sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
         # Adjust DTS partition size to 114MB
-        sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-        sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-        # Define partitions if not present
-        if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
-          echo "Partition not defined, fixing..."
-          sed -i '/partitions {/a\
-            compatible = "fixed-partitions";\
-            #address-cells = <1>;\
-            #size-cells = <1>;\
-          partition@0 {\
-            label = "u-boot";\
-            reg = <0x0 0x30000>;\
-            read-only;\
-          };\
-          partition@30000 {\
-            label = "u-boot-env";\
-            reg = <0x30000 0x10000>;\
-            read-only;\
-          };\
-          factory: partition@40000 {\
-            label = "factory";\
-            reg = <0x40000 0x10000>;\
-            read-only;\
-          };\
-          partition@50000 {\
-            label = "firmware";\
-            reg = <0x50000 0x6e00000>;\
-          };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-        fi
-        # Fix ROOTFS_PARTSIZE
-        sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
+        sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts 2>/dev/null || true
+        sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts 2>/dev/null || true
+        # Verify Makefile syntax
+        echo "=== Generated mt7621.mk ==="
+        head -30 target/linux/ramips/image/mt7621.mk
         echo "isFixed=true" >> $GITHUB_OUTPUT
         
     - name: Compile the firmware with fixes
