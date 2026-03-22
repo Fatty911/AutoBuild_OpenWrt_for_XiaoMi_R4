@@ -289,7 +289,8 @@ jobs:
           echo "压缩前先看一下目录结构"
           ls -la openwrt
           cd /workdir
-          tar -chf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
+          # 不使用 -h 参数，直接归档实际目录，避免递归软链接炸弹
+          tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
           ls -lh ${{ env.SOURCE }}.tar.gz
           
           
