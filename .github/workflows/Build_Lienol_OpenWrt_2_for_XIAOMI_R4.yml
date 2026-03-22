@@ -231,11 +231,9 @@ jobs:
         
     - name: Compile the firmware with fixes
       id: compile
-      if: env.BIN_EXISTS == 'false' && steps.transplant.output.isFixed == 'true'
+      if: env.BIN_EXISTS == 'false' && steps.transplant.outputs.isFixed == 'true'
       run: |
         cd openwrt
-        # 编译固件
-        # make -j$(nproc) V=s || make -j1 V=s || exit 1
         make -j1 V=s || exit 1
         echo "bin_status=success" >> $GITHUB_ENV
         
