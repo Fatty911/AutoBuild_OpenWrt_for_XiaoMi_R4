@@ -241,6 +241,16 @@ jobs:
         env:
           SOURCE: ${{ env.SOURCE }}
 
+      - name: Debug release conditions
+        run: |
+          echo "=== Debug Release Conditions ==="
+          echo "FINAL_BIN_EXISTS: ${FINAL_BIN_EXISTS:-not set}"
+          echo "BUILD_QUALITY_GATE: ${BUILD_QUALITY_GATE:-not set}"
+          echo "Checking .bin files in openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}:"
+          ls -la openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}/*.bin 2>/dev/null || echo "No .bin files"
+          echo "All environment variables:"
+          env | grep -E "FINAL_BIN|BUILD_QUALITY|DEVICE|kernel" || echo "None found"
+
       - name: Generate release tag
         id: generate_release_tag
         if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' 
