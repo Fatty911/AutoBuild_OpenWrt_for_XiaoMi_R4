@@ -219,22 +219,18 @@ jobs:
         run: df -hT
         
 
-      - name: Compile 1
-        id: compile_1
+      - name: Compile tools and toolchain
+        id: compile_tools
         run: |
           cd openwrt
           make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
           make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
-          make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
-          make package/compile V=s -j2 || make package/compile V=s -j1 ||true
-          make V=s -j2 || make V=s -j1 || true
 
-
-      - name: Compile 2
-        id: compile_2
+      - name: Compile kernel
+        id: compile_kernel
         run: |
           cd openwrt
-          make V=s -j2 || make V=s -j1
+          make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
           
      
      
