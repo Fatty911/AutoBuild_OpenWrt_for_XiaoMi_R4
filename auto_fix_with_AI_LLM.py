@@ -141,6 +141,16 @@ def clean_yaml(content):
 def git_push(workflow_file, pat, repo, model_name):
     """配置 git 并提交推送修复"""
     subprocess.run(
+        [
+            "git",
+            "config",
+            "--local",
+            "--unset-all",
+            "http.https://github.com/.extraheader",
+        ],
+        check=False,
+    )
+    subprocess.run(
         ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
         check=True,
     )

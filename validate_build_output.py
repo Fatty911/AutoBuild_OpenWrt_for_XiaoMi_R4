@@ -67,7 +67,11 @@ def main():
             with open(github_output, "a") as f:
                 f.write(f"BUILD_QUALITY_GATE=pass\n")
                 f.write(f"BUILD_QUALITY_GATE_STATUS=success\n")
-            print(f"已输出到 {github_output}: BUILD_QUALITY_GATE=pass")
+            github_env = os.getenv("GITHUB_ENV")
+            if github_env:
+                with open(github_env, "a") as f:
+                    f.write(f"BUILD_QUALITY_GATE=pass\n")
+            print(f"已输出到 {github_output} 和 GITHUB_ENV: BUILD_QUALITY_GATE=pass")
         sys.exit(0)
     else:
         print("✗ 验证失败：既没有上传 MEGA 压缩包，也没有生成 .bin 固件")
@@ -78,7 +82,11 @@ def main():
             with open(github_output, "a") as f:
                 f.write(f"BUILD_QUALITY_GATE=fail\n")
                 f.write(f"BUILD_QUALITY_GATE_STATUS=failed\n")
-            print(f"已输出到 {github_output}: BUILD_QUALITY_GATE=fail")
+            github_env = os.getenv("GITHUB_ENV")
+            if github_env:
+                with open(github_env, "a") as f:
+                    f.write(f"BUILD_QUALITY_GATE=fail\n")
+            print(f"已输出到 {github_output} 和 GITHUB_ENV: BUILD_QUALITY_GATE=fail")
         sys.exit(1)
 
 

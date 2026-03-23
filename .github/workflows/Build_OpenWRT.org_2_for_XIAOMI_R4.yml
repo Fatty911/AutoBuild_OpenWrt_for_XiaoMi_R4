@@ -250,8 +250,7 @@ jobs:
             cp compile_with_retry.py openwrt/
             cd openwrt
             python compile_with_retry.py "make -j1 V=s" "compile.log" 7
-            echo "编译完成，开始生成镜像..."
-            make image/install V=s -j2 || make image/install V=s -j1
+            echo "编译完成，开始检查镜像..."
             ls -la bin/targets/*/*/
             echo "status=success" >> $GITHUB_OUTPUT
 
