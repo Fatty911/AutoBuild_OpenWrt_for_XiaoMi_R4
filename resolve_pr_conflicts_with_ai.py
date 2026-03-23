@@ -180,6 +180,14 @@ def main():
     if merge_resp.status_code == 200:
         print(f"PR #{pr_number} merged.")
         return
+    # 常见可重试/受保护分支状态：不作为脚本错误退出，避免误报失败。
+    if merge_resp.status_code in (405, 409, 422):
+        print(
+            f"Auto merge not completed now (HTTP {merge_resp.status_code}). "
+            "可能是分支保护、检查未完成或 PR 状态暂不可合并，先跳过。"
+        )
+        print(merge_resp.text[:300])
+        return
     print(f"Auto merge failed: {merge_resp.status_code} {merge_resp.text[:300]}")
     sys.exit(1)
 
