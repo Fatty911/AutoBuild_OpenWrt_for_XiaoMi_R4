@@ -2173,3 +2173,7 @@ def main():
     print(f"最后一次运行日志: {current_run_log}")
     print(f"最后检测到的错误: {last_error_signature}")
     return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
