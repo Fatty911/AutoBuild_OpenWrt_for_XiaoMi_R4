@@ -399,4 +399,3 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 2
-          echo "No .bin files found, cleaning up draft releases..."
