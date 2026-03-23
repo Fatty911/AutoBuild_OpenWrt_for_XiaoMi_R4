@@ -53,6 +53,8 @@ jobs:
             
       - name: Checkout
         uses: actions/checkout@main
+        with:
+          token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
        
       - name: Cache APT packages
         uses: actions/cache@main

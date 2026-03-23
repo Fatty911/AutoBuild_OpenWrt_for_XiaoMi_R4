@@ -55,6 +55,8 @@ jobs:
           remove-docker-images: 'true'
       - name: Checkout Self Repo
         uses: actions/checkout@main
+        with:
+          token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
         
           
       - name: Clone OpenWRT.org_Official
