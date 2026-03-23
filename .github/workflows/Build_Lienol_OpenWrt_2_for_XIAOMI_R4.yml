@@ -208,7 +208,6 @@ jobs:
       run: |
         set -euo pipefail
         cd openwrt
-        [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，无法继续编译"; exit 1; }
         make defconfig
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         make -j1 V=s > compile.log 2>&1 || {

@@ -15,12 +15,7 @@ import requests
 
 def run(cmd, check=True):
     print("+", " ".join(cmd))
-    p = subprocess.run(cmd, check=check, text=True, capture_output=True)
-    if p.stdout:
-        print(p.stdout.strip())
-    if p.stderr:
-        print(p.stderr.strip())
-    return p
+    return subprocess.run(cmd, check=check, text=True, capture_output=True)
 
 
 def call_openai_compatible(base_url, api_key, model, prompt):
@@ -142,9 +137,7 @@ def main():
 
     run(["git", "fetch", "origin", base_ref, head_ref])
     run(["git", "checkout", "-B", f"pr-{pr_number}", f"origin/{head_ref}"])
-    merged = run(
-        ["git", "merge", f"origin/{base_ref}", "--no-commit", "--no-ff"], check=False
-    )
+    merged = run(["git", "merge", f"origin/{base_ref}", "--no-commit", "--no-ff"], check=False)
     if merged.returncode == 0:
         print("No merge conflicts, nothing to resolve.")
     else:
@@ -152,18 +145,17 @@ def main():
             ["git", "diff", "--name-only", "--diff-filter=U"], check=True
         ).stdout.splitlines()
         if not conflicted:
-            print("Merge returned non-zero, but no conflicted files found. 将尝试直接调用 GitHub merge API。")
-            run(["git", "merge", "--abort"], check=False)
-        else:
-            print("Conflicted files:", conflicted)
-            for file in conflicted:
-                p = Path(file)
-                if not p.exists():
-                    continue
-                ok = resolve_file_with_ai(p)
-                if not ok:
-                    print(f"AI failed to resolve {file}")
-                    sys.exit(1)
+            print("Merge failed but no conflicted files found.")
+            sys.exit(1)
+        print("Conflicted files:", conflicted)
+        for file in conflicted:
+            p = Path(file)
+            if not p.exists():
+                continue
+            ok = resolve_file_with_ai(p)
+            if not ok:
+                print(f"AI failed to resolve {file}")
+                sys.exit(1)
 
     run(["git", "add", "."])
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
