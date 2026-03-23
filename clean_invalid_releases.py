@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""
-清理没有 .bin 固件的无效 Release。
-"""
+"""清理无效 Release（仅删除空 assets 的目标 Release）。"""
 
 import os
 import sys
+
 import requests
 
 
@@ -21,6 +20,9 @@ def main():
         "Accept": "application/vnd.github.v3+json",
     }
 
+    source_filter = (os.getenv("CLEAN_RELEASE_SOURCE") or "").lower()
+    device_filter = (os.getenv("CLEAN_RELEASE_DEVICE") or "").lower()
+
     try:
         # 获取所有 releases
         r = requests.get(
@@ -33,23 +35,41 @@ def main():
         for release in releases:
             tag = release.get("tag_name", "")
             name = release.get("name", "")
+            tag_l = tag.lower()
+            name_l = name.lower()
+            assets = release.get("assets") or []
 
-            # 检查是否是没有 .bin 的旧版本（根据名称判断）
-            if ("Kernel" in tag or "Kernel" in name) and not any(
-                x in tag.lower() for x in [".bin", "bin"]
-            ):
-                print(f"删除无效 Release: {tag} ({name})")
-                # 删除 release
-                requests.delete(
-                    f"https://api.github.com/repos/{repo}/releases/{release['id']}",
-                    headers=headers,
+            # 仅清理目标 workflow 的 release，且必须是“空 assets”。
+            if source_filter and source_filter not in tag_l and source_filter not in name_l:
+                continue
+            if device_filter and device_filter not in tag_l and device_filter not in name_l:
+                continue
+            if "kernel" not in tag_l and "kernel" not in name_l:
+                continue
+            if len(assets) > 0:
+                continue
+
+            print(f"删除无效空资产 Release: {tag} ({name})")
+            rel_resp = requests.delete(
+                f"https://api.github.com/repos/{repo}/releases/{release['id']}",
+                headers=headers,
+            )
+            if rel_resp.status_code not in (204, 404):
+                print(
+                    f"删除 Release 失败: {release['id']} status={rel_resp.status_code}"
                 )
-                # 删除 tag
-                requests.delete(
+                continue
+
+            if tag:
+                tag_resp = requests.delete(
                     f"https://api.github.com/repos/{repo}/git/refs/tags/{tag}",
                     headers=headers,
                 )
-                deleted_count += 1
+                if tag_resp.status_code not in (204, 404):
+                    print(
+                        f"删除 tag 失败: {tag} status={tag_resp.status_code}"
+                    )
+            deleted_count += 1
 
         print(f"共清理了 {deleted_count} 个无效 Release")
 

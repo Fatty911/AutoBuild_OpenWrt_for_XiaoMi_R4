@@ -213,7 +213,9 @@ jobs:
           fi
           for pkg in $PACKAGES; do
             echo "编译软件包: $pkg 于 $(date)"
-            { make package/$pkg/compile -j2 V=s > packages.log 2>&1 && break;} || { make package/$pkg/compile -j1 V=s > packages.log 2>&1 && break;} || {
+            if make package/$pkg/compile -j2 V=s > packages.log 2>&1 || make package/$pkg/compile -j1 V=s > packages.log 2>&1; then
+              echo "软件包 $pkg 编译成功"
+            else
               retry_count=$((retry_count + 1))
               echo "尝试第 $retry_count 次修复..."
               if grep -q "PKG_VERSION.*error" packages.log; then
@@ -242,11 +244,11 @@ jobs:
                               result = result " " dep
                           }
                       }
-                      print result
+                          print result
                   }'\'' "$makefile" > "$makefile.tmp" && mv "$makefile.tmp" "$makefile"
                 ' sh {} \;
               fi
-            }
+            fi
           done
           echo "Feed $FEED 编译完成 于 $(date)"
         done < feeds.conf.default
@@ -349,4 +351,3 @@ jobs:
         repository: ${{ github.repository }}
         retain_days: 0
         keep_minimum_runs: 2
-

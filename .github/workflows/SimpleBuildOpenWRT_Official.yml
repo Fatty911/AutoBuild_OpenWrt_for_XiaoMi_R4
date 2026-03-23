@@ -61,7 +61,7 @@ jobs:
           
       - name: Clone OpenWRT.org_Official
         run: |
-          git clone http://github.com/openwrt/openwrt openwrt
+          git clone https://github.com/openwrt/openwrt openwrt
 
       - name: Install dependencies
         run: |
@@ -165,7 +165,11 @@ jobs:
           # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
           # cp ../compile_with_retry.py . 
           #make -j2 V=s || python compile_with_retry.py "make -j2 V=s" "image.log"  || python compile_with_retry.py "make -j1 V=s" "image.log" 
-          make -j2 V=s || ( make package/feeds/packages/kmod/clean V=s || make package/kmod/clean V=s ) && rm -rf build_dir/target-mipsel_24kc_musl/kmod-32 && make -j1 V=s
+          if ! make -j2 V=s; then
+            make package/feeds/packages/kmod/clean V=s || make package/kmod/clean V=s
+            rm -rf build_dir/target-mipsel_24kc_musl/kmod-32
+            make -j1 V=s
+          fi
 
           
           
