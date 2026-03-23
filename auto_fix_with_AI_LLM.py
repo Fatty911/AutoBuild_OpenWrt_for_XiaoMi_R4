@@ -150,6 +150,71 @@ def clean_yaml(content):
     return content
 
 
+def validate_required_steps(workflow_file, yaml_content):
+    """Prevent destructive AI rewrites that drop critical workflow steps."""
+    required_steps = {
+        ".github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml": [
+            "Generate release tag",
+            "Upload firmware to release",
+            "Auto fix with MiniMax AI on failure",
+            "Delete workflow runs",
+        ],
+        ".github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml": [
+            "Generate release tag",
+            "Upload firmware to release",
+            "Auto fix with MiniMax AI on failure",
+            "Delete workflow runs",
+        ],
+    }
+
+    expected = required_steps.get(workflow_file, [])
+    missing = [step for step in expected if step not in yaml_content]
+    if missing:
+        print(f"AI 输出缺少关键步骤，拒绝覆盖文件: {missing}")
+        return False
+    return True
+
+
+def build_error_focus(error_log, max_lines=80):
+    """Extract high-signal failing lines so the model sees where the issue is."""
+    if not error_log:
+        return "No error lines captured."
+
+    lines = error_log.splitlines()
+    focus = []
+    keywords = (
+        "error",
+        "failed",
+        "traceback",
+        "exception",
+        "invalid",
+        "mismatch",
+        "exit code",
+        "not found",
+    )
+
+    for i, line in enumerate(lines):
+        lower = line.lower()
+        if any(k in lower for k in keywords):
+            start = max(0, i - 1)
+            end = min(len(lines), i + 2)
+            for j in range(start, end):
+                focus.append(lines[j])
+            focus.append("---")
+
+    # 去重并截断
+    dedup = []
+    seen = set()
+    for line in focus:
+        if line not in seen:
+            seen.add(line)
+            dedup.append(line)
+        if len(dedup) >= max_lines:
+            break
+
+    return "\n".join(dedup) if dedup else "\n".join(lines[-max_lines:])
+
+
 def git_push(workflow_file, pat, repo, model_name):
     """配置 git 并提交推送修复"""
     subprocess.run(
@@ -179,8 +244,15 @@ def git_push(workflow_file, pat, repo, model_name):
 
     msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
     subprocess.run(["git", "commit", "-m", msg], check=True)
-    subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
-    print("Fix committed and pushed successfully!")
+    try:
+        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
+        print("Fix committed and pushed successfully!")
+    except subprocess.CalledProcessError:
+        print("首次 push 失败，尝试 fetch + rebase 后再推送...")
+        subprocess.run(["git", "fetch", remote_url, "main"], check=True)
+        subprocess.run(["git", "rebase", "FETCH_HEAD"], check=True)
+        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
+        print("Rebase 后 push 成功。")
 
 
 def main():
@@ -225,6 +297,7 @@ def main():
         workflow_content = workflow_content[:max_workflow_len] + "\n... (truncated)"
     if len(error_log) > max_log_len:
         error_log = error_log[:max_log_len] + "\n... (truncated)"
+    error_focus = build_error_focus(error_log)
 
     prompt = (
         "You are an expert in writing GitHub Actions workflow YAML files.\n"
@@ -233,8 +306,13 @@ def main():
         "1. DO NOT include any reasoning, thought process, or <think> tags in your final output.\n"
         "2. Output ONLY the raw YAML content. Do not wrap it in markdown block quotes (```).\n"
         "3. Ensure the YAML syntax is 100% valid and correctly indented.\n"
-        "4. Make the minimal necessary changes to fix the error.\n\n"
+        "4. Make the minimal necessary changes to fix the reported errors.\n"
+        "5. Do NOT modify, delete, or reorder unrelated steps/jobs that are not implicated by the error logs.\n"
+        "6. Keep release-related and auto-fix-related steps unless logs explicitly show they are the root cause.\n"
+        "7. If logs point to one step, patch only that step and preserve all other content as-is.\n\n"
         f"Workflow file name: {workflow_file}\n\n"
+        "Error focus (high-signal lines extracted from logs):\n"
+        f"{error_focus}\n\n"
         f"Workflow content:\n{workflow_content}\n\n"
         f"Error logs (last lines):\n{error_log}\n\n"
         "Remember: output EXACTLY AND ONLY the raw, valid YAML. No thoughts, no markdown."
@@ -350,12 +428,18 @@ def main():
         sys.exit(1)
 
     fixed_content = clean_yaml(fixed_content)
+    if not validate_required_steps(workflow_file, fixed_content):
+        sys.exit(1)
 
     with open(workflow_file, "w") as f:
         f.write(fixed_content)
     print(f"Fixed content written to {workflow_file}")
 
-    git_push(workflow_file, pat, repo, used_provider)
+    try:
+        git_push(workflow_file, pat, repo, used_provider)
+    except subprocess.CalledProcessError as e:
+        print(f"Git push failed after retry: {e}")
+        print("Auto-fix 已完成文件写入，但自动提交推送失败，请人工处理。")
 
 
 if __name__ == "__main__":
