@@ -10,12 +10,23 @@
   ACTIONS_TRIGGER_PAT    - 用于 git push 的 PAT
   GITHUB_REPOSITORY      - 仓库名称（owner/repo）
   GITHUB_RUN_ID          - 当前 run ID
+  AUTO_FIX_CREATE_PR     - 是否自动创建 PR（默认 true）
+  AUTO_FIX_BASE_BRANCH   - PR 目标分支（默认 main）
+  OPENAI_API_KEY         - OpenAI API key（可选，配置后可优先使用）
+  OPENAI_MODEL_LIST      - OpenAI 模型列表（默认 gpt-5.4,gpt-5.3,gpt-5.2）
+  OPENROUTER_API_KEY     - OpenRouter API key（用于 Claude/Gemini/GPT/GLM 兜底）
+  CLAUDE_MODEL_LIST      - Claude 模型列表（默认 claude-sonnet-4.6）
+  GEMINI_MODEL_LIST      - Gemini 模型列表（默认 gemini-3.1-pro,gemini-3.1-pro-preview）
+  GROK_MODEL_LIST        - Grok 模型列表（默认 grok-4.2）
+  GLM_MODEL_LIST         - GLM 模型列表（默认 glm-5）
+  AUTO_FIX_AUTO_MERGE    - 创建 PR 后是否自动 merge（默认 false）
 """
 
 import io
 import os
 import subprocess
 import sys
+import time
 import zipfile
 
 
@@ -260,6 +271,9 @@ def main():
     pat = os.getenv("ACTIONS_TRIGGER_PAT", "")
     repo = os.getenv("GITHUB_REPOSITORY", "")
     run_id = os.getenv("GITHUB_RUN_ID", "")
+    auto_create_pr = os.getenv("AUTO_FIX_CREATE_PR", "true").lower() == "true"
+    auto_merge_pr = os.getenv("AUTO_FIX_AUTO_MERGE", "false").lower() == "true"
+    base_branch = os.getenv("AUTO_FIX_BASE_BRANCH", "main").strip() or "main"
 
     missing = [
         k
@@ -318,91 +332,122 @@ def main():
         "Remember: output EXACTLY AND ONLY the raw, valid YAML. No thoughts, no markdown."
     )
 
-    # 定义提供商列表：MiniMax 优先，失败后 fallback 到 GLM
+    # 固定优先级：Claude -> Gemini -> GPT -> Grok -> GLM -> MiniMax
+    openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    xai_api_key = os.getenv("XAI_API_KEY", "").strip()
     minimax_api_key = os.getenv("MINIMAX_API_KEY", "").strip()
-    minimax_model_list = os.getenv("MINIMAX_MODEL_LIST", "").strip()
-    minimax_model = (
-        minimax_model_list.split(",") if minimax_model_list else ["MiniMax-M2.7"]
+
+    def split_models(env_name, default_csv):
+        raw = os.getenv(env_name, "").strip()
+        source = raw if raw else default_csv
+        return [m.strip() for m in source.split(",") if m.strip()]
+
+    claude_models = split_models("CLAUDE_MODEL_LIST", "claude-sonnet-4.6")
+    gemini_models = split_models(
+        "GEMINI_MODEL_LIST", "gemini-3.1-pro,gemini-3.1-pro-preview"
     )
+    gpt_models = split_models("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3,gpt-5.2")
+    grok_models = split_models("GROK_MODEL_LIST", "grok-4.2")
+    glm_models = split_models("GLM_MODEL_LIST", "glm-5")
+    minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7")
 
     providers = []
 
-    # MiniMax（优先）
+    # 1) Claude Sonnet (优先用 OpenRouter)
+    if openrouter_api_key:
+        providers.append(
+            {
+                "name": "CLAUDE",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": claude_models,
+            }
+        )
+
+    # 2) Gemini
+    if openrouter_api_key:
+        providers.append(
+            {
+                "name": "GEMINI",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": gemini_models,
+            }
+        )
+
+    # 3) GPT（优先 OpenAI，无 key 时用 OpenRouter 兜底）
+    if openai_api_key:
+        providers.append(
+            {
+                "name": "OPENAI",
+                "proxy_url": "https://api.openai.com/v1",
+                "api_key": openai_api_key,
+                "models": gpt_models,
+            }
+        )
+    elif openrouter_api_key:
+        providers.append(
+            {
+                "name": "GPT-OR",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": gpt_models,
+            }
+        )
+
+    # 4) Grok
+    xai_api_key = os.getenv("XAI_API_KEY", "").strip()
+    if xai_api_key:
+        providers.append(
+            {
+                "name": "GROK",
+                "proxy_url": "https://api.x.ai/v1",
+                "api_key": xai_api_key,
+                "models": grok_models,
+            }
+        )
+
+    # 5) GLM（优先 OpenRouter；其次 atomgit/modelscope/siliconflow）
+    if openrouter_api_key:
+        providers.append(
+            {
+                "name": "GLM-OR",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": glm_models,
+            }
+        )
+    for name, proxy_url, key_env in [
+        ("ATOMGIT", "https://api.atomgit.com/v1", "ATOMGIT_API_KEY"),
+        ("MODELSCOPE", "https://api.modelscope.cn/v1", "MODELSCOPE_API_KEY"),
+        ("SILICONFLOW", "https://api.siliconflow.cn/v1", "SILICONFLOW_API_KEY"),
+    ]:
+        api_key = os.getenv(key_env, "").strip()
+        if api_key:
+            providers.append(
+                {
+                    "name": name,
+                    "proxy_url": proxy_url,
+                    "api_key": api_key,
+                    "models": glm_models,
+                }
+            )
+
+    # 6) MiniMax
     if minimax_api_key:
         providers.append(
             {
                 "name": "MiniMax",
                 "proxy_url": "https://api.minimax.chat",
                 "api_key": minimax_api_key,
-                "models": minimax_model,
-            }
-        )
-
-    # GLM 提供商 fallback
-    glm_providers = [
-        {
-            "name": "atomgit",
-            "proxy_url": "https://api.atomgit.com/v1",
-            "key_env": "ATOMGIT_API_KEY",
-            "models_env": "ATOMGIT_MODEL_LIST",
-        },
-        {
-            "name": "modelscope",
-            "proxy_url": "https://api.modelscope.cn/v1",
-            "key_env": "MODELSCOPE_API_KEY",
-            "models_env": "MODELSCOPE_MODEL_LIST",
-        },
-        {
-            "name": "siliconflow",
-            "proxy_url": "https://api.siliconflow.cn/v1",
-            "key_env": "SILICONFLOW_API_KEY",
-            "models_env": "SILICONFLOW_MODEL_LIST",
-        },
-        {
-            "name": "groq",
-            "proxy_url": "https://api.groq.com/openai/v1",
-            "key_env": "GROQ_API_KEY",
-            "models_env": "GROQ_MODEL_LIST",
-        },
-    ]
-
-    for gp in glm_providers:
-        api_key = os.getenv(gp["key_env"], "").strip()
-        if api_key:
-            models_str = os.getenv(gp["models_env"], "").strip()
-            models = [m.strip() for m in models_str.split(",")] if models_str else []
-            if not models:
-                models = ["auto"]  # 默认模型
-            providers.append(
-                {
-                    "name": gp["name"].upper(),
-                    "proxy_url": gp["proxy_url"],
-                    "api_key": api_key,
-                    "models": models,
-                }
-            )
-
-    # Grok 最后 fallback
-    xai_api_key = os.getenv("XAI_API_KEY", "").strip()
-    if xai_api_key:
-        xai_models_str = os.getenv("XAI_MODEL_LIST", "").strip()
-        xai_models = (
-            [m.strip() for m in xai_models_str.split(",")]
-            if xai_models_str
-            else ["grok-4.20-beta-0309-reasoning"]
-        )
-        providers.append(
-            {
-                "name": "GROK",
-                "proxy_url": "https://api.x.ai/v1",
-                "api_key": xai_api_key,
-                "models": xai_models,
+                "models": minimax_models,
             }
         )
 
     if not providers:
         print(
-            "No AI provider available. Please set MINIMAX_API_KEY or one of the GLM provider API keys."
+            "No AI provider available. Please set at least one key (OPENROUTER_API_KEY/OPENAI_API_KEY/XAI_API_KEY/MINIMAX_API_KEY/GLM keys)."
         )
         sys.exit(1)
 
