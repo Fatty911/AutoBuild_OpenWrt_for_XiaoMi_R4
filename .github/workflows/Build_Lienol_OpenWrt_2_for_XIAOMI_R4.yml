@@ -11,8 +11,6 @@
 name: Build Lienol 2 packages and fixes for XIAOMI_R4
 
 on:
-  repository_dispatch:
-    types: Lienol Source Code Update
   workflow_run:
     workflows: ["Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4"]  # 工作流 1 的名称
     types:
@@ -111,31 +109,44 @@ jobs:
       id: compile_remaining
       # if: steps.main_packages.conclusion == 'success'
       run: |
+        set -euo pipefail
         cd openwrt
-        # set -x
+        [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，无法编译剩余包"; exit 1; }
         LOG_FILE="packages.log"
-        # 确保 compile_with_retry.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        make -j1 package/compile V=s || python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
+        if make -pn 2>/dev/null | grep -q '^package/compile:'; then
+          make -j1 package/compile V=s || python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 4
+        else
+          echo "package/compile 目标不存在，跳过该步骤，直接进入固件全量编译。"
+        fi
 
 
     - name: Try compiling the firmware
       id: compile_attempt
       run: |
+        set -euo pipefail
         cd openwrt
+        [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
         echo "开始执行修复后重试编译..."
-        # set -o pipefail
         LOG_FILE="compile.log"
         # 确保 compile_with_retry.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        make -j1 V=s || python compile_with_retry.py "make -j1 V=s" "compile.log"
+        make -j1 V=s || python compile_with_retry.py "make -j1 V=s" "compile.log" 6
         
         
         
     - name: Check for .bin file after initial compilation
       id: check_bin_initial
       run: |
-        if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+        BIN_FOUND=false
+        for file in openwrt/bin/targets/*/*/*.bin; do
+          if [ -f "$file" ] && [[ ! "$file" =~ initramfs ]]; then
+            BIN_FOUND=true
+            echo "存在.bin固件: $file"
+            break
+          fi
+        done
+        if [ "$BIN_FOUND" = "true" ]; then
           echo "BIN_EXISTS=true" >> $GITHUB_ENV
           echo "bin_status=success" >> $GITHUB_ENV
         else
@@ -199,8 +210,21 @@ jobs:
       id: compile
       if: env.BIN_EXISTS == 'false' && steps.transplant.outputs.isFixed == 'true'
       run: |
+        set -euo pipefail
         cd openwrt
-        make -j1 V=s || exit 1
+        [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，无法继续编译"; exit 1; }
+        make defconfig
+        cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
+        make -j1 V=s > compile.log 2>&1 || {
+          echo "首次编译失败，开始自动修复与重试..."
+          if grep -q "Hash mismatch for file opkg" compile.log; then
+            echo "检测到 opkg 源码包 hash mismatch，清理下载缓存后重试..."
+            rm -f dl/opkg-*.tar.zst
+            make package/system/opkg/clean V=s || true
+            make package/system/opkg/download V=s || true
+          fi
+          python compile_with_retry.py "make -j1 V=s" "compile.log" 6 || exit 1
+        }
         echo "bin_status=success" >> $GITHUB_ENV
         
     - name: Check for .bin file after final compilation
@@ -348,6 +372,7 @@ jobs:
 
     - name: Auto fix with MiniMax AI on failure
       if: failure()
+      continue-on-error: true
       env:
         MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
         MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
@@ -355,7 +380,7 @@ jobs:
         WORKFLOW_FILE: .github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml
       run: |
         pip install requests --quiet || true
-        python auto_fix_with_AI_LLM.py
+        python auto_fix_with_AI_LLM.py || echo "Auto-fix failed, but build failure has been recorded above."
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@main

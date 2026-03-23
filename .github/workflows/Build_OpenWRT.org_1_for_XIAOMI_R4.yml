@@ -62,7 +62,7 @@ jobs:
           path: |
             /var/cache/apt/archives
             /var/lib/apt/lists
-          key: ${{ runner.os }}-apt-${{ hashFiles('/etc/apt/sources.list') }}-${{ hashFiles('**/Breaks') }}
+          key: ${{ runner.os }}-apt-${{ hashFiles('.github/workflows/Build_OpenWRT.org_1_for_XIAOMI_R4.yml') }}
           restore-keys: |
             ${{ runner.os }}-apt-
           save-always: false
@@ -307,4 +307,3 @@ jobs:
           repository: ${{ github.repository }}
           retain_days: 0
           keep_minimum_runs: 2
-
