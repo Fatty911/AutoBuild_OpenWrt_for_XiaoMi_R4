@@ -120,13 +120,14 @@ jobs:
     - name: Try compiling the firmware
       id: compile_attempt
       run: |
+        set -euo pipefail
         cd openwrt
+        [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
         echo "开始执行修复后重试编译..."
-        # set -o pipefail
         LOG_FILE="compile.log"
         # 确保 compile_with_retry.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        make -j1 V=s || python compile_with_retry.py "make -j1 V=s" "compile.log"
+        make -j1 V=s || python compile_with_retry.py "make -j1 V=s" "compile.log" 6
         
         
         
@@ -205,6 +206,7 @@ jobs:
       id: compile
       if: env.BIN_EXISTS == 'false' && steps.transplant.outputs.isFixed == 'true'
       run: |
+        set -euo pipefail
         cd openwrt
         make defconfig
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
