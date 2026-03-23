@@ -6,7 +6,7 @@ on:
       - "Build OpenWRT.org 1 before transplant for XIAOMI_R4"
       - "Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4"
     types:
-      - completed  # 当工作流 1 完成时触发
+      - completed
   workflow_dispatch:
     inputs:
       debug_enabled:
@@ -37,7 +37,6 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   SOURCE: OpenWrt.org_official
-  # 自动更新插件配置
   AUTOPDATE_GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
   AUTOPDATE_WORKFLOW: OpenWRT.org
   AUTOPDATE_SUBSCRIPTION: ${{ secrets.SUBSCRIPTION_URL }}
@@ -66,7 +65,6 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
-          
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -76,14 +74,12 @@ jobs:
           sudo -E apt-get -qq update
           sudo apt install -y perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-pip rsync bc wget ccache flex bison libelf-dev jq parallel pigz
           sudo -E apt-get -qq clean
-          # 清理根分区空间
           sudo rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
           sudo rm -rf /tmp/* /var/tmp/*
           rm -rf ~/.cache/* 2>/dev/null || true
           df -hT
           sudo timedatectl set-timezone "$TZ"
           sudo chown -R $USER:$GROUPS /workdir
-          # 把 pip/Go 缓存重定向到 /workdir，避免写满根分区
           mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
           pip install --cache-dir /workdir/pip-cache "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" && pip install --cache-dir /workdir/pip-cache "mega.py==1.0.8" --no-deps || exit 1
           echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
@@ -91,13 +87,11 @@ jobs:
           echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
           df -hT
 
-
       - name: Download from MEGA
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          # 下载到 /workdir（构建挂载点），避免占用根文件系统空间
           python download_from_MEGA.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}" /workdir
       
       - name: 解压文件
@@ -130,33 +124,7 @@ jobs:
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
           echo "清理后磁盘空间："
           df -hT
-      
-      # - name: Build image
-      #   id: build_image
-      #   run: |
-      #     cd openwrt
-      #     LOG_FILE="image.log"
-      #     #cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7
-      #     #cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 8　
-      #     cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
-      #     sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
-      #     make V=s -j2 || make V=s -j1
-      
-          
-      # - name: Setup tmate session Manually
-      #   uses: mxschmitt/action-tmate@v3
-      #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
-      #   with:
-      #     limit-access-to-actor: false
-      #     #install-dependencies: true
-      #     # timeout-minutes: 300
 
-      # - name: Setup tmate session if failed
-      #   uses: mxschmitt/action-tmate@v3
-      #   if: ${{ failure() }}
-      #   # with:
-      #   #   limit-access-to-actor: false
- 
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
@@ -186,6 +154,7 @@ jobs:
               echo "Directory openwrt/bin/targets/ does not exist."
             fi
           fi
+
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
         if: steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
@@ -198,22 +167,15 @@ jobs:
           
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
-          # Clone lede-source for necessary files
           git clone https://github.com/coolsnowwolf/lede lede-source
-          # Copy DTS file
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-          # Define mt7621.mk
           cp ../target/linux/ramips/image/mt7621.mk target/linux/ramips/image/mt7621.mk || echo "Warning: mt7621.mk copy failed"
-          # Copy base-files
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ || echo "Warning: base-files copy failed"
           rm -rf lede-source
-          # Adjust IMAGE_SIZE
           sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
           sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
-          # Adjust DTS partition size to 114MB
           sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          # Define partitions if not present
           if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
             echo "分区未定义, 修复中..."
             sed -i '/partitions {/a\
@@ -240,7 +202,6 @@ jobs:
               reg = <0x50000 0x6e00000>;\
             };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           fi
-          # Fix ROOTFS_PARTSIZE
           sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
           echo "isFixed=true" >> $GITHUB_OUTPUT
           
@@ -256,7 +217,6 @@ jobs:
             ls -la bin/targets/*/*/
             echo "status=success" >> $GITHUB_OUTPUT
 
-          
       - name: Set environment variables
         id: setEnv
         if: steps.compile_with_fixes.outputs.status == 'success'
@@ -282,7 +242,6 @@ jobs:
           ls -la *.bin 2>/dev/null || echo "No .bin files found"
           for file in *.bin; do
             if [ -f "$file" ]; then
-              # 提取文件类型后缀，如 squashfs-kernel1.bin 或 squashfs-rootfs0.bin
               suffix=$(echo "$file" | sed 's/.*-\(squashfs.*\)/\1/')
               new_file="${{ env.TARGET_PROFILE }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}_${suffix}"
               mv "$file" "$new_file"
@@ -336,7 +295,6 @@ jobs:
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
-          # 删除可能存在的系统文件
           rm -f swapfile pv.img *.img 2>/dev/null || true
           echo "firmware_path=$(pwd)" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
@@ -402,13 +360,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         with:
-          token: ${{ github.token }}
-          files: |
-            openwrt/bin/targets/*/*/*.bin
-            openwrt/bin/targets/*/*/*.manifest
-            openwrt/.config
-          name: ${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
+            token: ${{ github.token }}
+            files: |
+              openwrt/bin/targets/*/*/*.bin
+              openwrt/bin/targets/*/*/*.manifest
+              openwrt/.config
+            name: ${{ steps.generate_release_tag.outputs.release_tag }}
+            tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
             
       - name: Delete temporary files from MEGA
         if: env.FINAL_BIN_EXISTS == 'true'
