@@ -300,33 +300,6 @@ jobs:
             echo "All steps completed successfully. No log to show."           
           fi 
 
-      - name: Upload bin directory
-        uses: actions/upload-artifact@master
-        if: steps.rename.conclusion == 'success'
-        with:
-          name: OpenWrt.org_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
-          path: |
-            openwrt/bin
-            openwrt/.config
-
-      - name: Organize files
-        id: organize
-        if: steps.rename.conclusion == 'success'
-        run: |
-          cd openwrt/bin/targets/*/*
-          rm -rf packages
-          # 删除可能存在的系统文件
-          rm -f swapfile pv.img *.img 2>/dev/null || true
-          echo "firmware_path=$(pwd)" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
-          
-      - name: Upload firmware directory
-        uses: actions/upload-artifact@master
-        if: steps.organize.outputs.status == 'success' && !cancelled()
-        with:
-          name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
-          path: ${{ env.firmware_path }}
-          
       - name: Check for .bin file after final compilation
         id: check_bin_final
         run: |
@@ -345,6 +318,33 @@ jobs:
             echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
             echo "没找到.bin固件（排除initramfs后）"
           fi
+
+      - name: Upload bin directory
+        uses: actions/upload-artifact@master
+        if: steps.rename.conclusion == 'success' && env.FINAL_BIN_EXISTS == 'true'
+        with:
+          name: OpenWrt.org_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+          path: |
+            openwrt/bin
+            openwrt/.config
+
+      - name: Organize files
+        id: organize
+        if: steps.rename.conclusion == 'success' && env.FINAL_BIN_EXISTS == 'true'
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          # 删除可能存在的系统文件
+          rm -f swapfile pv.img *.img 2>/dev/null || true
+          echo "firmware_path=$(pwd)" >> $GITHUB_ENV
+          echo "status=success" >> $GITHUB_OUTPUT
+          
+      - name: Upload firmware directory
+        uses: actions/upload-artifact@master
+        if: steps.organize.outputs.status == 'success' && env.FINAL_BIN_EXISTS == 'true' && !cancelled()
+        with:
+          name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+          path: ${{ env.firmware_path }}
 
       - name: Cleanup invalid releases (no .bin)
         if: env.FINAL_BIN_EXISTS == 'false'

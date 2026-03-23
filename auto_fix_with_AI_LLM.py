@@ -156,7 +156,7 @@ def git_push(workflow_file, pat, repo, model_name):
     )
     subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
 
-    remote_url = f"https://x-access-token:{pat}@github.com/{repo}.git"
+    remote_url = f"https://{pat}@github.com/{repo}.git"
     subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
     subprocess.run(["git", "add", workflow_file], check=True)
 
@@ -167,7 +167,7 @@ def git_push(workflow_file, pat, repo, model_name):
 
     msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
     subprocess.run(["git", "commit", "-m", msg], check=True)
-    subprocess.run(["git", "push"], check=True)
+    subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
     print("Fix committed and pushed successfully!")
 
 
