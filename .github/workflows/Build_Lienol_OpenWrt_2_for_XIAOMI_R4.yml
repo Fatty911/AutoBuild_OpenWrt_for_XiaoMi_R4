@@ -11,8 +11,6 @@
 name: Build Lienol 2 packages and fixes for XIAOMI_R4
 
 on:
-  repository_dispatch:
-    types: Lienol Source Code Update
   workflow_run:
     workflows: ["Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4"]  # 工作流 1 的名称
     types:
@@ -135,7 +133,15 @@ jobs:
     - name: Check for .bin file after initial compilation
       id: check_bin_initial
       run: |
-        if [ -f "openwrt/bin/targets/*/*/*.bin" ]; then
+        BIN_FOUND=false
+        for file in openwrt/bin/targets/*/*/*.bin; do
+          if [ -f "$file" ] && [[ ! "$file" =~ initramfs ]]; then
+            BIN_FOUND=true
+            echo "存在.bin固件: $file"
+            break
+          fi
+        done
+        if [ "$BIN_FOUND" = "true" ]; then
           echo "BIN_EXISTS=true" >> $GITHUB_ENV
           echo "bin_status=success" >> $GITHUB_ENV
         else

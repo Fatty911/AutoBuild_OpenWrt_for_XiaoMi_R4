@@ -54,11 +54,12 @@ jobs:
           echo "尝试分支: $branch"
           if git clone --depth 1 $REPO_URL -b "$branch" . 2>/dev/null; then
             echo "成功克隆分支: $branch"
+            SELECTED_BRANCH="$branch"
             echo "REPO_BRANCH=$branch" >> $GITHUB_ENV
             break
           else
             echo "分支 $branch 不存在或克隆失败"
-            rm -rf .git * .* 2>/dev/null || true
+            find . -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
           fi
         done
         
@@ -71,7 +72,8 @@ jobs:
         fi
         
         echo "commitHash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-        echo "使用的分支: ${{ env.REPO_BRANCH }}"
+        echo "repo_branch=$SELECTED_BRANCH" >> $GITHUB_OUTPUT
+        echo "使用的分支: $SELECTED_BRANCH"
         echo "commitHash为: $(git rev-parse HEAD)"
 
     - name: Compare Commit Hash
@@ -92,7 +94,7 @@ jobs:
       with:
         token: ${{ github.token }}
         event-type: Lienol Source Code Update
-        client-payload: '{"repo_url": "${{ env.REPO_URL }}", "branch": "${{ env.REPO_BRANCH }}"}'
+        client-payload: '{"repo_url": "${{ env.REPO_URL }}", "branch": "${{ steps.getHash.outputs.repo_branch }}"}'
 
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@main
