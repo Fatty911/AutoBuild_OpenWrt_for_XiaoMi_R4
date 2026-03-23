@@ -1,0 +1,45 @@
+name: Auto Merge PR With AI Conflict Resolver
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout base repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests --quiet
+
+      - name: Auto resolve conflicts and merge PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          CLAUDE_MODEL_LIST: claude-sonnet-4.6
+          GEMINI_MODEL_LIST: gemini-3.1-pro,gemini-3.1-pro-preview
+          OPENAI_MODEL_LIST: gpt-5.4,gpt-5.3,gpt-5.2
+          GROK_MODEL_LIST: grok-4.2
+          GLM_MODEL_LIST: glm-5
+          MINIMAX_MODEL_LIST: MiniMax-M2.7
+        run: |
+          python resolve_pr_conflicts_with_ai.py
