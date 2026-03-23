@@ -352,6 +352,9 @@ jobs:
         if: env.FINAL_BIN_EXISTS == 'false'
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          CLEAN_RELEASE_SOURCE: ${{ env.SOURCE }}
+          CLEAN_RELEASE_DEVICE: ${{ env.DEVICE_NAME }}
         run: |
           echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
           python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
@@ -401,8 +404,8 @@ jobs:
         with:
             token: ${{ github.token }}
             files: |
-              openwrt/bin/targets/*/*.bin
-              openwrt/bin/targets/*/*.manifest
+              openwrt/bin/targets/*/*/*.bin
+              openwrt/bin/targets/*/*/*.manifest
               openwrt/.config
             name: ${{ steps.generate_release_tag.outputs.release_tag }}
             tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
