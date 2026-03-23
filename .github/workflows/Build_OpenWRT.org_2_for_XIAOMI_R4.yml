@@ -1,42 +1,3 @@
-<think>
-The user is showing me a GitHub Actions workflow that has an error. The error message is "Failed to fetch logs: HTTP 404". This is a common issue with `workflow_run` triggers in GitHub Actions.
-
-Looking at the workflow, I can see it's triggered by `workflow_run` from another workflow. The issue is likely related to how the workflow handles the `workflow_run` event context.
-
-The problem is in this line:
-```yaml
-if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push'}}
-```
-
-When a workflow is triggered via `workflow_run`, the workflow run's logs might not be immediately available, which can cause a 404 error when trying to fetch logs.
-
-However, looking more carefully at the error "Failed to fetch logs: HTTP 404", this error typically occurs when:
-1. The workflow run ID is not available
-2. The workflow run has been deleted
-3. There's an issue with permissions to access the workflow run
-
-The main issue I can see is that when using `workflow_run` trigger, you should use `${{ github.event.workflow_run.id }}` to reference the triggering workflow, and you might need to use `${{ secrets.GITHUB_TOKEN }}` instead of or in addition to `github.token`.
-
-Actually, looking at this more carefully, the 404 error when fetching logs is often a transient issue that occurs during the workflow run itself, not necessarily a code error. But if the workflow is failing to run at all, there might be an issue with how the workflow is configured.
-
-One common issue with `workflow_run` triggers is that the workflow file being triggered must have a different name from the workflow that triggers it. In this case:
-- Triggering workflow: `Build_OpenWRT.org_1_before_transplant_for_XIAOMI_R4` or `Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4`
-
-
-- This workflow: `Build_OpenWRT.org_2_for_XIAOMI_R4`
-
-The file naming looks correct, so that's probably not the issue.
-
-I think the most likely issue is a syntax or configuration error in the workflow file itself. Looking at the truncated output, I can see a few potential problems. In the checkout step, there's a syntax issue with the token reference that should use the proper secrets access pattern. The download step appears to be cut off, which could indicate a malformed command or missing configuration.
-
-Looking at the overall workflow structure, the immediate syntax error I can identify is the token reference. The `workflow_run` trigger should be configured correctly, and the checkout step needs to properly reference the PAT from secrets.
-
-The `workflow_run` trigger looks valid, but there's a potential issue with how the workflow accesses context from the triggering workflow. When using `workflow_run`, the current workflow runs in the context of the triggering workflow, which means some references might not be available as expected. The 404 error during log fetching could stem from the workflow not properly handling this context isolation.
-
-The real problem is that the workflow file is truncated at the end. The `Upload firmware directory` step has a condition with `!cancelled()`, but the YAML is incomplete—the line cuts off mid-token at `${{ github.`. This truncated syntax would cause a parsing error that prevents the workflow from even starting. The 404 error on logs is likely a symptom of the workflow failing to parse and run due to this malformed condition. The `workflow_run` trigger needs proper configuration to ensure it only runs on successful completions from the specified workflows. Additionally, the `workflow_dispatch` trigger should use a consistent approach for optional boolean inputs—either providing a default value or handling the absence of one properly. The 404 error likely stems from the workflow failing to parse or execute correctly, which points to issues in how the triggers and inputs are defined.
-</think>
-
-```yaml
 name: Build OpenWRT.org 2 fix and transplant for XIAOMI_R4 
 
 on:
@@ -45,13 +6,13 @@ on:
       - "Build OpenWRT.org 1 before transplant for XIAOMI_R4"
       - "Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4"
     types:
-      - completed
+      - completed  # 当工作流 1 完成时触发
   workflow_dispatch:
     inputs:
       debug_enabled:
         type: boolean
         description: 'Run the build with tmate debugging enabled (https://github.com/marketplace/actions/debugging-with-tmate)'
-        required: false
+        required: true
         default: false
   push:
     branches: 
@@ -76,10 +37,11 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   SOURCE: OpenWrt.org_official
-  AUTOPUPDATE_GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
-  AUTOPUPDATE_WORKFLOW: OpenWRT.org
-  AUTOPUPDATE_SUBSCRIPTION: ${{ secrets.SUBSCRIPTION_URL }}
-  AUTOPUPDATE_PROXY_PORT: 1080
+  # 自动更新插件配置
+  AUTOPDATE_GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
+  AUTOPDATE_WORKFLOW: OpenWRT.org
+  AUTOPDATE_SUBSCRIPTION: ${{ secrets.SUBSCRIPTION_URL }}
+  AUTOPDATE_PROXY_PORT: 1080
 
 jobs:
   build:
@@ -104,6 +66,7 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
+          
       - name: Initialization environment
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -113,12 +76,14 @@ jobs:
           sudo -E apt-get -qq update
           sudo apt install -y perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-pip rsync bc wget ccache flex bison libelf-dev jq parallel pigz
           sudo -E apt-get -qq clean
+          # 清理根分区空间
           sudo rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
           sudo rm -rf /tmp/* /var/tmp/*
           rm -rf ~/.cache/* 2>/dev/null || true
           df -hT
           sudo timedatectl set-timezone "$TZ"
           sudo chown -R $USER:$GROUPS /workdir
+          # 把 pip/Go 缓存重定向到 /workdir，避免写满根分区
           mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
           pip install --cache-dir /workdir/pip-cache "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" && pip install --cache-dir /workdir/pip-cache "mega.py==1.0.8" --no-deps || exit 1
           echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
@@ -126,11 +91,13 @@ jobs:
           echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
           df -hT
 
+
       - name: Download from MEGA
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
+          # 下载到 /workdir（构建挂载点），避免占用根文件系统空间
           python download_from_MEGA.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}" /workdir
       
       - name: 解压文件
@@ -163,7 +130,33 @@ jobs:
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
           echo "清理后磁盘空间："
           df -hT
+      
+      # - name: Build image
+      #   id: build_image
+      #   run: |
+      #     cd openwrt
+      #     LOG_FILE="image.log"
+      #     #cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7
+      #     #cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 V=s" "image.log" 8　
+      #     cp ../fix_makefile_metadata.py . && python3 ./fix_makefile_metadata.py --all
+      #     sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile
+      #     make V=s -j2 || make V=s -j1
+      
+          
+      # - name: Setup tmate session Manually
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }} 
+      #   with:
+      #     limit-access-to-actor: false
+      #     #install-dependencies: true
+      #     # timeout-minutes: 300
 
+      # - name: Setup tmate session if failed
+      #   uses: mxschmitt/action-tmate@v3
+      #   if: ${{ failure() }}
+      #   # with:
+      #   #   limit-access-to-actor: false
+ 
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
@@ -193,7 +186,6 @@ jobs:
               echo "Directory openwrt/bin/targets/ does not exist."
             fi
           fi
-
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
         if: steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
@@ -206,15 +198,22 @@ jobs:
           
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
+          # Clone lede-source for necessary files
           git clone https://github.com/coolsnowwolf/lede lede-source
+          # Copy DTS file
           cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
+          # Define mt7621.mk
           cp ../target/linux/ramips/image/mt7621.mk target/linux/ramips/image/mt7621.mk || echo "Warning: mt7621.mk copy failed"
+          # Copy base-files
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ || echo "Warning: base-files copy failed"
           rm -rf lede-source
+          # Adjust IMAGE_SIZE
           sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
           sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
+          # Adjust DTS partition size to 114MB
           sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
+          # Define partitions if not present
           if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
             echo "分区未定义, 修复中..."
             sed -i '/partitions {/a\
@@ -241,6 +240,7 @@ jobs:
               reg = <0x50000 0x6e00000>;\
             };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
           fi
+          # Fix ROOTFS_PARTSIZE
           sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
           echo "isFixed=true" >> $GITHUB_OUTPUT
           
@@ -256,6 +256,7 @@ jobs:
             ls -la bin/targets/*/*/
             echo "status=success" >> $GITHUB_OUTPUT
 
+          
       - name: Set environment variables
         id: setEnv
         if: steps.compile_with_fixes.outputs.status == 'success'
@@ -281,6 +282,7 @@ jobs:
           ls -la *.bin 2>/dev/null || echo "No .bin files found"
           for file in *.bin; do
             if [ -f "$file" ]; then
+              # 提取文件类型后缀，如 squashfs-kernel1.bin 或 squashfs-rootfs0.bin
               suffix=$(echo "$file" | sed 's/.*-\(squashfs.*\)/\1/')
               new_file="${{ env.TARGET_PROFILE }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}_${suffix}"
               mv "$file" "$new_file"
@@ -334,13 +336,14 @@ jobs:
         run: |
           cd openwrt/bin/targets/*/*
           rm -rf packages
+          # 删除可能存在的系统文件
           rm -f swapfile pv.img *.img 2>/dev/null || true
           echo "firmware_path=$(pwd)" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
           
       - name: Upload firmware directory
         uses: actions/upload-artifact@master
-        if: steps.organize.outputs.status == 'success' && env.FINAL_BIN_EXISTS == 'true' && ! cancelled()
+        if: steps.organize.outputs.status == 'success' && env.FINAL_BIN_EXISTS == 'true' && !cancelled()
         with:
           name: OpenWrt.org_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: ${{ env.firmware_path }}
@@ -348,7 +351,83 @@ jobs:
       - name: Cleanup invalid releases (no .bin)
         if: env.FINAL_BIN_EXISTS == 'false'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          echo "No valid .bin files were produced. Cleaning up any partial artifacts..."
-```
+          echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
+          python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+
+      - name: Build Quality Gate
+        id: build_quality_gate
+        run: |
+          python $GITHUB_WORKSPACE/validate_build_output.py --gate
+        env:
+          SOURCE: ${{ env.SOURCE }}
+
+      - name: Generate release tag
+        id: generate_release_tag
+        if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true'
+        run: |
+          # 动态检测上游 workflow 来决定 tag 前缀
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            UPSTREAM_WORKFLOW="${{ github.event.workflow_run.name }}"
+            echo "上游 workflow: $UPSTREAM_WORKFLOW"
+            if [[ "$UPSTREAM_WORKFLOW" == *"Simple1"* ]]; then
+              PREFIX="Simple1"
+            else
+              PREFIX="OpenWRT.org"
+            fi
+          else
+            PREFIX="OpenWRT.org"
+          fi
+          
+          echo "release_tag=${PREFIX}_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+          touch release.txt
+          echo "release_tag_status=success" >> $GITHUB_OUTPUT
+          echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
+          echo "使用的 tag 前缀: $PREFIX"
+
+      - name: Upload firmware to release
+        id: up-release
+        uses: softprops/action-gh-release@master
+        if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+            token: ${{ github.token }}
+            files: |
+              openwrt/bin/targets/*/*.bin
+              openwrt/bin/targets/*/*.manifest
+              openwrt/.config
+            name: ${{ steps.generate_release_tag.outputs.release_tag }}
+            tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
+            
+      - name: Delete temporary files from MEGA
+        if: env.FINAL_BIN_EXISTS == 'true'
+        env:
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        run: |
+          python delete_from_MEGA.py
+
+      - name: Validate build output
+        run: |
+          python $GITHUB_WORKSPACE/validate_build_output.py
+
+      - name: Auto fix with MiniMax AI on failure
+        if: failure()
+        env:
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
+          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+          WORKFLOW_FILE: .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
+        run: |
+          pip install requests --quiet || true
+          python auto_fix_with_AI_LLM.py
+
+      - name: Delete workflow runs
+        uses: Mattraks/delete-workflow-runs@main
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 2
