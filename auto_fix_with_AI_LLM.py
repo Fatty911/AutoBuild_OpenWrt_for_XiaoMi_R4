@@ -128,13 +128,25 @@ def try_provider(name, proxy_url, api_key, model, prompt):
 
 
 def clean_yaml(content):
-    """去掉可能的 markdown 代码块包裹"""
+    """提取 markdown 代码块中的 yaml 内容，去除大模型的思考过程（<think>...</think>）"""
     content = content.strip()
-    if content.startswith("```"):
+
+    # 去除 <think> 标签及其内容
+    import re
+
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
+
+    # 如果有多个代码块，只提取第一个带有 yaml/yml 标记的代码块，或者提取最大的代码块
+    yaml_match = re.search(r"```(?:yaml|yml)?\s*(.*?)\s*```", content, flags=re.DOTALL)
+    if yaml_match:
+        content = yaml_match.group(1).strip()
+    elif content.startswith("```"):
+        # 回退逻辑：处理可能的残缺代码块包裹
         lines = content.splitlines()
         start = 1
         end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
         content = "\n".join(lines[start:end])
+
     return content
 
 
@@ -215,12 +227,17 @@ def main():
         error_log = error_log[:max_log_len] + "\n... (truncated)"
 
     prompt = (
-        "You are a GitHub Actions expert. Fix this workflow error.\n\n"
-        f"Workflow: {workflow_file}\n\n"
-        f"Workflow content:\n```yaml\n{workflow_content}\n```\n\n"
-        f"Error logs (last lines):\n```\n{error_log}\n```\n\n"
-        "Return the COMPLETE fixed workflow YAML only. No markdown, no explanation.\n"
-        "Make minimal changes to fix the error.\n"
+        "You are an expert in writing GitHub Actions workflow YAML files.\n"
+        "Your task is to fix the errors in the provided workflow file.\n\n"
+        "CRITICAL REQUIREMENTS:\n"
+        "1. DO NOT include any reasoning, thought process, or <think> tags in your final output.\n"
+        "2. Output ONLY the raw YAML content. Do not wrap it in markdown block quotes (```).\n"
+        "3. Ensure the YAML syntax is 100% valid and correctly indented.\n"
+        "4. Make the minimal necessary changes to fix the error.\n\n"
+        f"Workflow file name: {workflow_file}\n\n"
+        f"Workflow content:\n{workflow_content}\n\n"
+        f"Error logs (last lines):\n{error_log}\n\n"
+        "Remember: output EXACTLY AND ONLY the raw, valid YAML. No thoughts, no markdown."
     )
 
     # 定义提供商列表：MiniMax 优先，失败后 fallback 到 GLM
