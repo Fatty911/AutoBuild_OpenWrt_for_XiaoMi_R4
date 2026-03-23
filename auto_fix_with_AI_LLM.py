@@ -19,6 +19,7 @@
   GEMINI_MODEL_LIST      - Gemini 模型列表（默认 gemini-3.1-pro,gemini-3.1-pro-preview）
   GROK_MODEL_LIST        - Grok 模型列表（默认 grok-4.2）
   GLM_MODEL_LIST         - GLM 模型列表（默认 glm-5）
+  AUTO_FIX_AUTO_MERGE    - 创建 PR 后是否自动 merge（默认 false）
 """
 
 import io
@@ -260,7 +261,26 @@ def git_commit_and_push(workflow_file, pat, repo, model_name, target_ref):
     except subprocess.CalledProcessError:
         print("首次 push 失败，尝试 fetch + rebase 后再推送...")
         subprocess.run(["git", "fetch", remote_url, target_ref], check=True)
-        subprocess.run(["git", "rebase", "FETCH_HEAD"], check=True)
+        try:
+            subprocess.run(["git", "rebase", "FETCH_HEAD"], check=True)
+        except subprocess.CalledProcessError:
+            # 自动处理冲突：放弃 rebase，改用 merge 策略优先保留当前修复
+            print("rebase 出现冲突，尝试自动 merge 解决冲突...")
+            subprocess.run(["git", "rebase", "--abort"], check=False)
+            subprocess.run(
+                ["git", "merge", "-X", "ours", "--no-edit", "FETCH_HEAD"], check=True
+            )
+            subprocess.run(["git", "add", workflow_file], check=False)
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "--no-edit",
+                    "-m",
+                    f"Auto resolve conflicts for {os.path.basename(workflow_file)}",
+                ],
+                check=False,
+            )
         subprocess.run(["git", "push", remote_url, f"HEAD:{target_ref}"], check=True)
         print(f"Rebase 后 push 成功（{target_ref}）。")
     return msg
@@ -292,13 +312,43 @@ def create_pull_request(repo, pat, head_branch, title, body, base_branch="main")
         timeout=30,
     )
     if resp.status_code == 201:
-        pr_url = resp.json().get("html_url", "")
+        pr_data = resp.json()
+        pr_url = pr_data.get("html_url", "")
+        pr_number = pr_data.get("number")
         print(f"PR created: {pr_url}")
-        return True
+        return {"created": True, "number": pr_number, "url": pr_url}
     if resp.status_code == 422:
         print(f"PR 已存在或无法创建（422）: {resp.text[:300]}")
-        return False
+        return {"created": False, "number": None, "url": ""}
     print(f"创建 PR 失败: HTTP {resp.status_code} {resp.text[:300]}")
+    return {"created": False, "number": None, "url": ""}
+
+
+def merge_pull_request(repo, pat, pr_number, method="squash"):
+    """自动 merge 已创建的 PR。"""
+    if not pr_number:
+        return False
+    try:
+        import requests
+    except ImportError:
+        print("requests not installed, skip PR merge")
+        return False
+
+    headers = {
+        "Authorization": f"token {pat}",
+        "Accept": "application/vnd.github+json",
+    }
+    payload = {"merge_method": method}
+    resp = requests.put(
+        f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge",
+        headers=headers,
+        json=payload,
+        timeout=30,
+    )
+    if resp.status_code == 200:
+        print(f"PR #{pr_number} merged successfully.")
+        return True
+    print(f"自动 merge PR 失败: HTTP {resp.status_code} {resp.text[:300]}")
     return False
 
 
@@ -308,6 +358,7 @@ def main():
     repo = os.getenv("GITHUB_REPOSITORY", "")
     run_id = os.getenv("GITHUB_RUN_ID", "")
     auto_create_pr = os.getenv("AUTO_FIX_CREATE_PR", "true").lower() == "true"
+    auto_merge_pr = os.getenv("AUTO_FIX_AUTO_MERGE", "false").lower() == "true"
     base_branch = os.getenv("AUTO_FIX_BASE_BRANCH", "main").strip() or "main"
 
     missing = [
@@ -532,11 +583,13 @@ def main():
                 f"- Provider: `{used_provider}`\n"
                 f"- Commit message: `{commit_msg}`\n"
             )
-            created = create_pull_request(
+            pr_result = create_pull_request(
                 repo, pat, branch_name, pr_title, pr_body, base_branch=base_branch
             )
-            if not created:
+            if not pr_result["created"]:
                 print("自动创建 PR 失败，请手动发起 PR。")
+            elif auto_merge_pr:
+                merge_pull_request(repo, pat, pr_result["number"], method="squash")
         else:
             git_commit_and_push(workflow_file, pat, repo, used_provider, base_branch)
     except subprocess.CalledProcessError as e:
