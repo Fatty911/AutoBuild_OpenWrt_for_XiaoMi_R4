@@ -226,8 +226,8 @@ def build_error_focus(error_log, max_lines=80):
     return "\n".join(dedup) if dedup else "\n".join(lines[-max_lines:])
 
 
-def git_commit_and_push(workflow_file, pat, repo, model_name, target_ref):
-    """配置 git 并提交推送修复到指定 ref（如 main 或分支名）。"""
+def git_push(workflow_file, pat, repo, model_name):
+    """配置 git 并提交推送修复"""
     subprocess.run(
         [
             "git",
@@ -256,100 +256,14 @@ def git_commit_and_push(workflow_file, pat, repo, model_name, target_ref):
     msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
     subprocess.run(["git", "commit", "-m", msg], check=True)
     try:
-        subprocess.run(["git", "push", remote_url, f"HEAD:{target_ref}"], check=True)
-        print(f"Fix committed and pushed successfully to {target_ref}!")
+        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
+        print("Fix committed and pushed successfully!")
     except subprocess.CalledProcessError:
         print("首次 push 失败，尝试 fetch + rebase 后再推送...")
-        subprocess.run(["git", "fetch", remote_url, target_ref], check=True)
-        try:
-            subprocess.run(["git", "rebase", "FETCH_HEAD"], check=True)
-        except subprocess.CalledProcessError:
-            # 自动处理冲突：放弃 rebase，改用 merge 策略优先保留当前修复
-            print("rebase 出现冲突，尝试自动 merge 解决冲突...")
-            subprocess.run(["git", "rebase", "--abort"], check=False)
-            subprocess.run(
-                ["git", "merge", "-X", "ours", "--no-edit", "FETCH_HEAD"], check=True
-            )
-            subprocess.run(["git", "add", workflow_file], check=False)
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "--no-edit",
-                    "-m",
-                    f"Auto resolve conflicts for {os.path.basename(workflow_file)}",
-                ],
-                check=False,
-            )
-        subprocess.run(["git", "push", remote_url, f"HEAD:{target_ref}"], check=True)
-        print(f"Rebase 后 push 成功（{target_ref}）。")
-    return msg
-
-
-def create_pull_request(repo, pat, head_branch, title, body, base_branch="main"):
-    """通过 GitHub API 创建 PR。"""
-    try:
-        import requests
-    except ImportError:
-        print("requests not installed, skip PR creation")
-        return False
-
-    headers = {
-        "Authorization": f"token {pat}",
-        "Accept": "application/vnd.github+json",
-    }
-    payload = {
-        "title": title,
-        "head": head_branch,
-        "base": base_branch,
-        "body": body,
-        "maintainer_can_modify": True,
-    }
-    resp = requests.post(
-        f"https://api.github.com/repos/{repo}/pulls",
-        headers=headers,
-        json=payload,
-        timeout=30,
-    )
-    if resp.status_code == 201:
-        pr_data = resp.json()
-        pr_url = pr_data.get("html_url", "")
-        pr_number = pr_data.get("number")
-        print(f"PR created: {pr_url}")
-        return {"created": True, "number": pr_number, "url": pr_url}
-    if resp.status_code == 422:
-        print(f"PR 已存在或无法创建（422）: {resp.text[:300]}")
-        return {"created": False, "number": None, "url": ""}
-    print(f"创建 PR 失败: HTTP {resp.status_code} {resp.text[:300]}")
-    return {"created": False, "number": None, "url": ""}
-
-
-def merge_pull_request(repo, pat, pr_number, method="squash"):
-    """自动 merge 已创建的 PR。"""
-    if not pr_number:
-        return False
-    try:
-        import requests
-    except ImportError:
-        print("requests not installed, skip PR merge")
-        return False
-
-    headers = {
-        "Authorization": f"token {pat}",
-        "Accept": "application/vnd.github+json",
-    }
-    payload = {"merge_method": method}
-    resp = requests.put(
-        f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge",
-        headers=headers,
-        json=payload,
-        timeout=30,
-    )
-    if resp.status_code == 200:
-        print(f"PR #{pr_number} merged successfully.")
-        return True
-    print(f"自动 merge PR 失败: HTTP {resp.status_code} {resp.text[:300]}")
-    return False
+        subprocess.run(["git", "fetch", remote_url, "main"], check=True)
+        subprocess.run(["git", "rebase", "FETCH_HEAD"], check=True)
+        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
+        print("Rebase 后 push 成功。")
 
 
 def main():
@@ -567,31 +481,7 @@ def main():
     print(f"Fixed content written to {workflow_file}")
 
     try:
-        if auto_create_pr:
-            safe_name = os.path.basename(workflow_file).replace(".yml", "").replace(
-                ".", "_"
-            )
-            uniq = run_id or str(int(time.time()))
-            branch_name = f"auto-fix/{safe_name}-{uniq}"
-            commit_msg = git_commit_and_push(
-                workflow_file, pat, repo, used_provider, branch_name
-            )
-            pr_title = f"Auto fix: {os.path.basename(workflow_file)} ({used_provider})"
-            pr_body = (
-                "This PR was generated by workflow auto-fix.\n\n"
-                f"- Workflow: `{workflow_file}`\n"
-                f"- Provider: `{used_provider}`\n"
-                f"- Commit message: `{commit_msg}`\n"
-            )
-            pr_result = create_pull_request(
-                repo, pat, branch_name, pr_title, pr_body, base_branch=base_branch
-            )
-            if not pr_result["created"]:
-                print("自动创建 PR 失败，请手动发起 PR。")
-            elif auto_merge_pr:
-                merge_pull_request(repo, pat, pr_result["number"], method="squash")
-        else:
-            git_commit_and_push(workflow_file, pat, repo, used_provider, base_branch)
+        git_push(workflow_file, pat, repo, used_provider)
     except subprocess.CalledProcessError as e:
         print(f"Git push failed after retry: {e}")
         print("Auto-fix 已完成文件写入，但自动提交推送失败，请人工处理。")
