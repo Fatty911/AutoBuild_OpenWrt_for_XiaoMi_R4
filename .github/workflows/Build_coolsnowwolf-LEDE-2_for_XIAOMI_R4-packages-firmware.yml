@@ -278,6 +278,7 @@ jobs:
       - name: Auto fix with MiniMax AI on failure
         if: failure()
         env:
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
           MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}

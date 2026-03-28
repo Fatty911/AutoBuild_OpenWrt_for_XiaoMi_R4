@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-当 GitHub Actions workflow 报错时，调用 MiniMax 大模型分析并修复 workflow 文件。
-如果 MiniMax 失败，自动 fallback 到其他 GLM 提供商。
+当 GitHub Actions workflow 报错时，按顺序调用各家大模型分析并修复 workflow 文件。
+调用顺序：OPENCODE ZEN(mimo-v2-pro) → Claude → Gemini → GPT → Grok → GLM → MiniMax
 
 环境变量:
-  MINIMAX_API_KEY        - MiniMax API key（必填）
+  ZEN_API_KEY            - OPENCODE ZEN API key（mimo v2 pro 模型）
+  MINIMAX_API_KEY        - MiniMax API key
   MINIMAX_MODEL_LIST     - MiniMax 模型名称（可选，默认 MiniMax-M2.7）
   WORKFLOW_FILE          - 需要修复的 workflow 文件路径（相对于仓库根目录）
   ACTIONS_TRIGGER_PAT    - 用于 git push 的 PAT
@@ -332,7 +333,8 @@ def main():
         "Remember: output EXACTLY AND ONLY the raw, valid YAML. No thoughts, no markdown."
     )
 
-    # 固定优先级：Claude -> Gemini -> GPT -> Grok -> GLM -> MiniMax
+    # 固定优先级：OPENCODE ZEN -> Claude -> Gemini -> GPT -> Grok -> GLM -> MiniMax
+    zen_api_key = os.getenv("ZEN_API_KEY", "").strip()
     openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     xai_api_key = os.getenv("XAI_API_KEY", "").strip()
@@ -354,7 +356,18 @@ def main():
 
     providers = []
 
-    # 1) Claude Sonnet (优先用 OpenRouter)
+    # 1) OPENCODE ZEN (mimo-v2-pro)
+    if zen_api_key:
+        providers.append(
+            {
+                "name": "OPENCODE-ZEN",
+                "proxy_url": "https://api.opencode.ai",
+                "api_key": zen_api_key,
+                "models": ["opencode/mimo-v2-pro-free"],
+            }
+        )
+
+    # 2) Claude Sonnet (优先用 OpenRouter)
     if openrouter_api_key:
         providers.append(
             {
@@ -365,7 +378,7 @@ def main():
             }
         )
 
-    # 2) Gemini
+    # 3) Gemini
     if openrouter_api_key:
         providers.append(
             {
@@ -376,7 +389,7 @@ def main():
             }
         )
 
-    # 3) GPT（优先 OpenAI，无 key 时用 OpenRouter 兜底）
+    # 4) GPT（优先 OpenAI，无 key 时用 OpenRouter 兜底）
     if openai_api_key:
         providers.append(
             {
@@ -396,7 +409,7 @@ def main():
             }
         )
 
-    # 4) Grok
+    # 5) Grok
     xai_api_key = os.getenv("XAI_API_KEY", "").strip()
     if xai_api_key:
         providers.append(
@@ -408,7 +421,7 @@ def main():
             }
         )
 
-    # 5) GLM（优先 OpenRouter；其次 atomgit/modelscope/siliconflow）
+    # 6) GLM（优先 OpenRouter；其次 atomgit/modelscope/siliconflow）
     if openrouter_api_key:
         providers.append(
             {
@@ -434,7 +447,7 @@ def main():
                 }
             )
 
-    # 6) MiniMax
+    # 7) MiniMax
     if minimax_api_key:
         providers.append(
             {
