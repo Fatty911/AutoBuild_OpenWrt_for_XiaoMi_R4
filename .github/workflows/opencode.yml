@@ -24,9 +24,23 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Create OpenCode config
+        run: |
+          mkdir -p ~/.config/opencode
+          cat > ~/.config/opencode/opencode.json << 'EOF'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": {
+              "opencode": {
+                "options": {
+                  "apiKey": "${{ secrets.ZEN_API_KEY }}"
+                }
+              }
+            }
+          }
+          EOF
+
       - name: Run OpenCode
         uses: anomalyco/opencode/github@latest
-        env:
-          OPENCODE_ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
         with:
           model: opencode/mimo-v2-pro-free
