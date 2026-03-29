@@ -15,7 +15,12 @@ import requests
 
 def run(cmd, check=True):
     print("+", " ".join(cmd))
-    return subprocess.run(cmd, check=check, text=True, capture_output=True)
+    p = subprocess.run(cmd, check=check, text=True, capture_output=True)
+    if p.stdout:
+        print(p.stdout.strip())
+    if p.stderr:
+        print(p.stderr.strip())
+    return p
 
 
 def call_openai_compatible(base_url, api_key, model, prompt):
@@ -48,11 +53,17 @@ def get_model_chain():
         return [x.strip() for x in src.split(",") if x.strip()]
 
     chain = []
+    zen_key = os.getenv("ZEN_API_KEY", "").strip()
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     xai_key = os.getenv("XAI_API_KEY", "").strip()
     minimax_key = os.getenv("MINIMAX_API_KEY", "").strip()
 
+    # 1) OPENCODE ZEN (mimo-v2-pro) - 最先尝试
+    if zen_key:
+        chain.append(("https://opencode.ai/zen", zen_key, ["mimo-v2-pro-free"]))
+
+    # 2) Claude (OpenRouter)
     if openrouter_key:
         chain.append(
             ("https://openrouter.ai/api/v1", openrouter_key, split_models("CLAUDE_MODEL_LIST", "claude-sonnet-4.6"))
@@ -137,7 +148,9 @@ def main():
 
     run(["git", "fetch", "origin", base_ref, head_ref])
     run(["git", "checkout", "-B", f"pr-{pr_number}", f"origin/{head_ref}"])
-    merged = run(["git", "merge", f"origin/{base_ref}", "--no-commit", "--no-ff"], check=False)
+    merged = run(
+        ["git", "merge", f"origin/{base_ref}", "--no-commit", "--no-ff"], check=False
+    )
     if merged.returncode == 0:
         print("No merge conflicts, nothing to resolve.")
     else:
@@ -145,17 +158,18 @@ def main():
             ["git", "diff", "--name-only", "--diff-filter=U"], check=True
         ).stdout.splitlines()
         if not conflicted:
-            print("Merge failed but no conflicted files found.")
-            sys.exit(1)
-        print("Conflicted files:", conflicted)
-        for file in conflicted:
-            p = Path(file)
-            if not p.exists():
-                continue
-            ok = resolve_file_with_ai(p)
-            if not ok:
-                print(f"AI failed to resolve {file}")
-                sys.exit(1)
+            print("Merge returned non-zero, but no conflicted files found. 将尝试直接调用 GitHub merge API。")
+            run(["git", "merge", "--abort"], check=False)
+        else:
+            print("Conflicted files:", conflicted)
+            for file in conflicted:
+                p = Path(file)
+                if not p.exists():
+                    continue
+                ok = resolve_file_with_ai(p)
+                if not ok:
+                    print(f"AI failed to resolve {file}")
+                    sys.exit(1)
 
     run(["git", "add", "."])
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
@@ -171,6 +185,14 @@ def main():
     )
     if merge_resp.status_code == 200:
         print(f"PR #{pr_number} merged.")
+        return
+    # 常见可重试/受保护分支状态：不作为脚本错误退出，避免误报失败。
+    if merge_resp.status_code in (405, 409, 422):
+        print(
+            f"Auto merge not completed now (HTTP {merge_resp.status_code}). "
+            "可能是分支保护、检查未完成或 PR 状态暂不可合并，先跳过。"
+        )
+        print(merge_resp.text[:300])
         return
     print(f"Auto merge failed: {merge_resp.status_code} {merge_resp.text[:300]}")
     sys.exit(1)
