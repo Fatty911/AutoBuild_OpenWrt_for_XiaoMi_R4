@@ -376,9 +376,9 @@ def main():
         providers.append(
             {
                 "name": "OPENCODE-ZEN",
-                "proxy_url": "https://api.opencode.ai",
+                "proxy_url": "https://opencode.ai/zen",
                 "api_key": zen_api_key,
-                "models": ["opencode/mimo-v2-pro-free"],
+                "models": ["mimo-v2-pro-free"],
             }
         )
 
