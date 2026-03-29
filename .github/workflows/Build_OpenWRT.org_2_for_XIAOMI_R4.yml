@@ -212,7 +212,7 @@ jobs:
             pwd && ls
             cp compile_with_retry.py openwrt/
             cd openwrt
-            python compile_with_retry.py "make -j1 V=s" "compile.log" 7
+            python compile_with_retry.py --max-retry 7 "make -j1 V=s" "compile.log"
             echo "编译完成，开始检查镜像..."
             ls -la bin/targets/*/*/
             echo "status=success" >> $GITHUB_OUTPUT

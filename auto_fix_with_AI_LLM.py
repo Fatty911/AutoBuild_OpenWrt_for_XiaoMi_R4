@@ -119,8 +119,23 @@ def call_api(proxy_url, api_key, model, prompt):
     try:
         resp = requests.post(url, headers=headers, json=data, timeout=180)
         if resp.status_code != 200:
-            raise Exception(f"HTTP {resp.status_code}: {resp.text[:200]}")
-        result = resp.json()
+            raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
+        
+        # 检查响应是否为空
+        if not resp.text or not resp.text.strip():
+            raise Exception(f"API返回空响应")
+        
+        try:
+            result = resp.json()
+        except Exception as json_err:
+            raise Exception(f"JSON解析失败: {json_err}, 响应内容: {resp.text[:500]}")
+        
+        # 检查响应结构
+        if "choices" not in result:
+            raise Exception(f"响应缺少choices字段: {str(result)[:500]}")
+        if not result["choices"] or "message" not in result["choices"][0]:
+            raise Exception(f"响应choices结构无效: {str(result)[:500]}")
+            
         return result["choices"][0]["message"]["content"].strip()
     except Exception as e:
         raise Exception(f"请求失败: {e}")
