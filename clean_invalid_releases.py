@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""清理无效 Release（仅删除空 assets 的目标 Release）。"""
+"""清理无效 Release（删除空 assets 或只有 .config 没有 .bin 固件的 Release）。"""
 
 import os
 import sys
@@ -39,17 +39,30 @@ def main():
             name_l = name.lower()
             assets = release.get("assets") or []
 
-            # 仅清理目标 workflow 的 release，且必须是“空 assets”。
+            # 仅清理目标 workflow 的 release
             if source_filter and source_filter not in tag_l and source_filter not in name_l:
                 continue
             if device_filter and device_filter not in tag_l and device_filter not in name_l:
                 continue
             if "kernel" not in tag_l and "kernel" not in name_l:
                 continue
-            if len(assets) > 0:
+
+            # 检查是否为空 assets 或只有 .config 没有 .bin
+            should_delete = False
+            if len(assets) == 0:
+                should_delete = True
+                reason = "空 assets"
+            else:
+                # 检查是否有 .bin 文件
+                has_bin = any(a.get("name", "").endswith(".bin") for a in assets)
+                if not has_bin:
+                    should_delete = True
+                    reason = "没有 .bin 固件文件"
+
+            if not should_delete:
                 continue
 
-            print(f"删除无效空资产 Release: {tag} ({name})")
+            print(f"删除无效 Release ({reason}): {tag} ({name})")
             rel_resp = requests.delete(
                 f"https://api.github.com/repos/{repo}/releases/{release['id']}",
                 headers=headers,

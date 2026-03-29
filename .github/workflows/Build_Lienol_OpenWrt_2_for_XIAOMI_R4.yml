@@ -348,8 +348,7 @@ jobs:
       with:
           token: ${{ github.token }}
           files: |
-            openwrt/bin/targets/*/*
-            openwrt/.config
+            openwrt/bin/targets/**/*.bin
           name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
      
