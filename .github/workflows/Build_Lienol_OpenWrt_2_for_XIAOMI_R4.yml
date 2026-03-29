@@ -90,11 +90,15 @@ jobs:
         df -hT
         cd /workdir
         
+        # 清理旧的 openwrt 目录，避免检查误判
+        echo "清理旧的 openwrt 目录..."
+        rm -rf openwrt
+        
         # 查找下载的 tar.gz 文件（可能文件名不是预期的）
         TAR_FILE=$(ls -t *.tar.gz 2>/dev/null | head -1)
         
         if [ -z "$TAR_FILE" ]; then
-          echo "::error::未找到任何 .tar.gz 文件"
+          echo "::error::未找到任何 .tar.gz 文件，MEGA下载可能失败"
           echo "当前目录内容:"
           ls -la
           exit 1
