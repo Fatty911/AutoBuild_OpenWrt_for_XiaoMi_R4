@@ -291,8 +291,20 @@ jobs:
           cd /workdir
           # 不使用 -h 参数，直接归档实际目录，避免递归软链接炸弹
           tar -cf - openwrt | pigz > ${{ env.SOURCE }}.tar.gz
-          ls -lh ${{ env.SOURCE }}.tar.gz
           
+          # 检查归档是否成功
+          if [ ! -f "${{ env.SOURCE }}.tar.gz" ]; then
+            echo "::error::归档失败，未创建 ${{ env.SOURCE }}.tar.gz"
+            exit 1
+          fi
+          
+          FILE_SIZE=$(stat -c%s "${{ env.SOURCE }}.tar.gz" 2>/dev/null || stat -f%z "${{ env.SOURCE }}.tar.gz" 2>/dev/null)
+          if [ "$FILE_SIZE" -lt 1000000 ]; then
+            echo "::error::归档文件太小 (${FILE_SIZE} bytes)，可能损坏"
+            exit 1
+          fi
+          
+          ls -lh ${{ env.SOURCE }}.tar.gz
           
       - name: Upload to MEGA
         working-directory: /workdir
@@ -300,9 +312,21 @@ jobs:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          ls -lh ${{ env.SOURCE }}.tar.gz || echo "归档文件不存在"
+          # 检查文件是否存在
+          if [ ! -f "${{ env.SOURCE }}.tar.gz" ]; then
+            echo "::error::归档文件 ${{ env.SOURCE }}.tar.gz 不存在"
+            exit 1
+          fi
+          
+          echo "准备上传文件:"
+          ls -lh ${{ env.SOURCE }}.tar.gz
+          
+          # 上传到 MEGA
           python $GITHUB_WORKSPACE/upload_to_MEGA.py
+          
+          # 标记MEGA上传成功
           echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
+          echo "MEGA 上传成功"
 
       - name: Validate build output
         run: |
