@@ -202,6 +202,13 @@ jobs:
         cd openwrt
         # 保护根目录 Makefile
         cp Makefile Makefile.bak
+
+        # 修复 base-files 版本（Lienol1 专用）
+        echo "=== Lienol1: 修复 base-files 版本 ==="
+        if [ -f "package/base-files/Makefile" ]; then
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || echo 'PKG_RELEASE:=1' >> package/base-files/Makefile
+          echo "base-files PKG_RELEASE 已设为 1"
+        fi
         # 逐行读取 feeds.conf.default 并编译
         while IFS= read -r line; do
           [[ -z "$line" || "$line" =~ ^# ]] && continue

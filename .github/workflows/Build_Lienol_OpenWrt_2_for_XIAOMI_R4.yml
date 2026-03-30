@@ -251,6 +251,13 @@ jobs:
         # Copy base-files
         cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ 2>/dev/null || true
         rm -rf lede-source
+
+        # 修复 base-files APK 版本问题（Lienol2 专用）
+        echo "=== Lienol2: 修复 base-files 版本 ==="
+        if [ -f "package/base-files/Makefile" ]; then
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || echo 'PKG_RELEASE:=1' >> package/base-files/Makefile
+          echo "base-files PKG_RELEASE 已设为 1"
+        fi
         # Adjust DTS partition size to 114MB
         sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts 2>/dev/null || true
         sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts 2>/dev/null || true
