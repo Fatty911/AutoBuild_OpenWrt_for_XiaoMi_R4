@@ -213,24 +213,22 @@ def build_error_focus(error_log, max_lines=80):
 
     lines = error_log.splitlines()
     focus = []
+    # 优先提取 OpenWrt 常见错误关键词
     keywords = (
-        "error",
-        "failed",
-        "traceback",
-        "exception",
-        "invalid",
-        "mismatch",
-        "exit code",
-        "not found",
+        "error", "failed", "invalid", "apk", "version", "PKG_RELEASE", "base-files",
+        "mkpkg", "makefile", "missing", "step", "job", "compile", "package/",
+        "exit code", "not found", "refuse", "拒绝"
     )
 
     for i, line in enumerate(lines):
         lower = line.lower()
         if any(k in lower for k in keywords):
-            start = max(0, i - 1)
-            end = min(len(lines), i + 2)
+            start = max(0, i - 2)
+            end = min(len(lines), i + 4)
             for j in range(start, end):
                 focus.append(lines[j])
+            if len(focus) > 40:  # 防止过多内容
+                break
             focus.append("---")
 
     # 去重并截断
@@ -334,22 +332,22 @@ def main():
     error_focus = build_error_focus(error_log)
 
     prompt = (
-        "You are an expert in writing GitHub Actions workflow YAML files.\n"
-        "Your task is to fix the errors in the provided workflow file.\n\n"
-        "CRITICAL REQUIREMENTS:\n"
-        "1. DO NOT include any reasoning, thought process, or <think> tags in your final output.\n"
-        "2. Output ONLY the raw YAML content. Do not wrap it in markdown block quotes (```).\n"
-        "3. Ensure the YAML syntax is 100% valid and correctly indented.\n"
-        "4. Make ONLY minimal changes to fix the reported error. Do not rewrite the whole file.\n"
-        "5. ONLY modify the specific step/job that is causing the error shown in the logs.\n"
-        "6. NEVER delete, rename, or reorder any steps named: 'Upload firmware to release', 'Auto fix with AI on failure', 'Delete workflow runs', 'Generate release tag'.\n"
-        "7. Preserve ALL other content exactly as-is. Output the full original workflow with only the buggy part fixed.\n\n"
-        f"Workflow file name: {workflow_file}\n\n"
-        "Error focus (high-signal lines extracted from logs):\n"
+        "You are an expert in GitHub Actions workflow YAML.\n"
+        "Fix ONLY the part causing the error. Be extremely conservative.\n\n"
+        "STRICT RULES:\n"
+        "1. Output ONLY the complete raw YAML. No explanations, no markdown, no ```yaml.\n"
+        "2. Make the SMALLEST possible change to fix the error.\n"
+        "3. Do NOT rewrite, delete, rename or reorder ANY steps except the one causing the error.\n"
+        "4. NEVER touch these steps: 'Upload firmware to release', 'Auto fix with AI on failure', 'Delete workflow runs', 'Generate release tag', 'Perform manual porting'.\n"
+        "5. If the error is in a 'Compile the firmware with fixes' or 'Compile' job, only fix that specific job/step.\n"
+        "6. Preserve the full original structure and all other jobs exactly.\n\n"
+        "Common errors in this repo: apk version invalid, base-files PKG_RELEASE, Makefile syntax, missing steps.\n\n"
+        f"Workflow file: {workflow_file}\n\n"
+        "High priority error lines:\n"
         f"{error_focus}\n\n"
-        f"Workflow content:\n{workflow_content}\n\n"
-        f"Error logs (last lines):\n{error_log}\n\n"
-        "Remember: output EXACTLY AND ONLY the raw, valid YAML. No thoughts, no markdown."
+        f"Full workflow content:\n{workflow_content}\n\n"
+        f"Error logs:\n{error_log}\n\n"
+        "Output only the full corrected YAML."
     )
 
     # 固定优先级：OPENCODE ZEN -> Claude -> Gemini -> GPT -> Grok -> GLM -> MiniMax
