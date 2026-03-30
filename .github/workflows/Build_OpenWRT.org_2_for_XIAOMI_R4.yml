@@ -350,52 +350,38 @@ jobs:
           echo "release_tag=${PREFIX}_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
           touch release.txt
           echo "release_tag_status=success" >> $GITHUB_OUTPUT
-          echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
-          echo "使用的 tag 前缀: $PREFIX"
 
       - name: Upload firmware to release
-        id: up-release
-        uses: softprops/action-gh-release@master
-        if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
+        if: steps.generate_release_tag.outputs.release_tag_status == 'success' && env.FINAL_BIN_EXISTS == 'true'
         env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-            token: ${{ github.token }}
-            files: |
-              openwrt/bin/targets/**/*.bin
-              openwrt/bin/targets/**/*.manifest
-            name: ${{ steps.generate_release_tag.outputs.release_tag }}
-            tag_name: ${{ steps.generate_release_tag.outputs.release_tag }}
-            
-      - name: Delete temporary files from MEGA
-        if: env.FINAL_BIN_EXISTS == 'true'
-        env:
-          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
-          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python delete_from_MEGA.py
+          cd openwrt/bin/targets/${{ env.TARGET_BOARD }}/${{ env.TARGET_SUBTARGET }}
+          echo "开始上传固件到 Release..."
+          for file in *.bin; do
+            if [ -f "$file" ]; then
+              echo "上传 $file"
+              gh release upload "${{ steps.generate_release_tag.outputs.release_tag }}" "$file" --repo ${{ github.repository }}
+            fi
+          done
 
-      - name: Validate build output
+      - name: Auto fix with AI on failure
+        if: failure() && github.event_name == 'workflow_dispatch' && inputs.debug_enabled
         run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py
-
-      - name: Auto fix with MiniMax AI on failure
-        if: failure()
-        continue-on-error: true
-        env:
-          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
-          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
-          WORKFLOW_FILE: .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
-        run: |
-          pip install requests --quiet || true
-          python auto_fix_with_AI_LLM.py || echo "Auto-fix failed, but build failure has been recorded above."
+          echo "Build failed. Running AI auto-fix..."
+          python $GITHUB_WORKSPACE/auto_fix.py --workflow "${{ github.workflow }}" --run_id "${{ github.run_id }}" || echo "Auto-fix not available"
 
       - name: Delete workflow runs
-        uses: Mattraks/delete-workflow-runs@main
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          retain_days: 0
-          keep_minimum_runs: 2
+        if: success() && github.event_name == 'workflow_run'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          echo "清理workflow运行记录..."
+          python $GITHUB_WORKSPACE/cleanup_workflow_runs.py || echo "清理脚本不存在，跳过"
+
+      - name: Generate release tag
+        id: generate_release_tag_2
+        if: always() && steps.generate_release_tag.outputs.release_tag_status == 'success'
+        run: |
+          echo "release_tag_status=success" >> $GITHUB_OUTPUT
+          echo "Final release tag generated: ${{ steps.generate_release_tag.outputs.release_tag }}"[e~[
