@@ -171,7 +171,8 @@ jobs:
         LOG_FILE="packages.log"
         # 确保 compile_with_retry.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        make -j1 package/compile V=s || python compile_with_retry.py --max-retry 7 "make -j1 package/compile V=s" "packages.log"
+        echo "=== 开始编译 packages 部分 ==="
+        make package/compile V=s || python compile_with_retry.py --max-retry 7 "make package/compile V=s" "packages.log"
 
 
     - name: Try compiling the firmware
