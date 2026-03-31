@@ -265,30 +265,7 @@ jobs:
           files: openwrt/bin/targets/**/*.bin
           name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
           tag_name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
-        with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-
-      - name: Initialization environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/az /usr/local/share/boost
-          sudo -E apt-get -y purge azure-cli* docker* ghc* zulu* hhvm* llvm* firefox* google* dotnet* aspnetcore* powershell* openjdk* adoptopenjdk* mysql* php* mongodb* moby* snap* || true
-          sudo -E apt-get -qq update
-          sudo apt install -y perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-pip rsync bc wget ccache flex bison libelf-dev jq parallel pigz
-          sudo -E apt-get -qq clean
-          sudo rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/*
-          sudo rm -rf /tmp/* /var/tmp/*
-          rm -rf ~/.cache/* 2>/dev/null || true
-          df -hT
-          sudo timedatectl set-timezone "$TZ"
-          sudo chown -R $USER:$GROUPS /workdir
-          mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
-          pip install --cache-dir /workdir/pip-cache "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" && pip install --cache-dir /workdir/pip-cache "mega.py==1.0.8" --no-deps || exit 1
-          echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
-          echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
-          echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
-          df -hT
 
       - name: Download from MEGA
         env:
