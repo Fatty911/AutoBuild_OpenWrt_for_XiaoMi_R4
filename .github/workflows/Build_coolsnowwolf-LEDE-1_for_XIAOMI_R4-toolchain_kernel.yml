@@ -41,6 +41,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    outputs:
+      mega_upload: ${{ steps.build_job_outputs.outputs.mega_upload }}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -210,12 +212,28 @@ jobs:
           python $GITHUB_WORKSPACE/upload_to_MEGA.py
           echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
 
+      - name: Record build job outputs
+        id: build_job_outputs
+        if: success()
+        run: echo "mega_upload=true" >> $GITHUB_OUTPUT
+
+  finalize:
+    needs: build
+    if: always() && !cancelled()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
       - name: Validate build output
-        run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py
+        if: needs.build.result == 'success'
+        env:
+          MEGA_UPLOAD_SUCCESS: ${{ needs.build.outputs.mega_upload }}
+          SOURCE: coolsnowwolf
+        run: python $GITHUB_WORKSPACE/validate_build_output.py
 
       - name: Auto fix with MiniMax AI on failure
-        if: failure()
+        if: needs.build.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
@@ -227,6 +245,7 @@ jobs:
           python auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
+        if: always()
         uses: Mattraks/delete-workflow-runs@main
         with:
           token: ${{ github.token }}

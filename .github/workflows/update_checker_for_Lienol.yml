@@ -96,6 +96,11 @@ jobs:
         event-type: Lienol Source Code Update
         client-payload: '{"repo_url": "${{ env.REPO_URL }}", "branch": "${{ steps.getHash.outputs.repo_branch }}"}'
 
+  cleanup:
+    needs: check
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@main
       with:

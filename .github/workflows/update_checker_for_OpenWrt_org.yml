@@ -57,6 +57,11 @@ jobs:
         event-type: Openwrt.org Source Code Update
         client-payload: '{"repo_url": "${{ env.REPO_URL }}"}' # 传递源码仓库的URL
 
+  cleanup:
+    needs: check
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
     - name: Delete workflow runs
       uses: Mattraks/delete-workflow-runs@main
       with:

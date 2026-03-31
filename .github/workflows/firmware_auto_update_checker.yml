@@ -21,6 +21,9 @@ env:
 jobs:
   check-updates:
     runs-on: ubuntu-latest
+    outputs:
+      updates_found: ${{ steps.check.outputs.updates_found }}
+      update_info: ${{ steps.check.outputs.update_info }}
     steps:
       - name: Checkout
         uses: actions/checkout@main
@@ -85,19 +88,24 @@ jobs:
           echo -e "$UPDATE_INFO" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+  notify:
+    needs: check-updates
+    if: needs.check-updates.outputs.updates_found == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
+    steps:
       - name: Create update notification
-        if: steps.check.outputs.updates_found == 'true'
         run: |
           echo "=== 发现固件更新 ==="
-          echo -e "${{ steps.check.outputs.update_info }}"
+          echo -e "${{ needs.check-updates.outputs.update_info }}"
           
-          # 保存更新信息到文件供后续使用
           cat > update_notification.md << EOF
           # 固件更新通知
           
           **检查时间:** $(date '+%Y-%m-%d %H:%M:%S')
           
-          ${{ steps.check.outputs.update_info }}
+          ${{ needs.check-updates.outputs.update_info }}
           
           ---
           
@@ -109,7 +117,6 @@ jobs:
           echo "notification_file=update_notification.md" >> $GITHUB_ENV
 
       - name: Upload notification artifact
-        if: steps.check.outputs.updates_found == 'true'
         uses: actions/upload-artifact@main
         with:
           name: firmware-update-notification
@@ -117,11 +124,9 @@ jobs:
           retention-days: 7
 
       - name: Send notification (optional)
-        if: steps.check.outputs.updates_found == 'true'
         env:
           WEBHOOK_URL: ${{ secrets.NOTIFICATION_WEBHOOK }}
         run: |
-          # 如果配置了Webhook，发送通知
           if [ -n "$WEBHOOK_URL" ]; then
             echo "发送通知到Webhook..."
             curl -X POST "$WEBHOOK_URL" \
@@ -131,14 +136,19 @@ jobs:
             echo "未配置通知Webhook，跳过发送"
           fi
 
+  summary:
+    needs: check-updates
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
       - name: Summary
         run: |
           echo "## 固件更新检查完成" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ steps.check.outputs.updates_found }}" == "true" ]; then
+          if [ "${{ needs.check-updates.outputs.updates_found }}" == "true" ]; then
             echo "✅ 发现可用更新" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo -e "${{ steps.check.outputs.update_info }}" >> $GITHUB_STEP_SUMMARY
+            echo -e "${{ needs.check-updates.outputs.update_info }}" >> $GITHUB_STEP_SUMMARY
           else
             echo "ℹ️ 未发现新版本" >> $GITHUB_STEP_SUMMARY
           fi

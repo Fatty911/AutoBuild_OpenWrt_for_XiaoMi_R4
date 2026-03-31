@@ -20,11 +20,9 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-22.04
     steps:
-      
-
       - name: Checkout
         uses: actions/checkout@main
       - name: Initialization environment
@@ -34,16 +32,43 @@ jobs:
           sudo -E apt-get -qq update
           sudo apt -y install python3-pip
           pip install mega.py || pip3 install mega.py || exit 1
-          
+
       - name: 生成测试文件
         run: |
           mkdir openwrt
           tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
-          pwd && ls
-          
+          pwd && ls -la "${{ env.SOURCE }}.tar.gz"
+
+      - name: Upload tarball artifact
+        uses: actions/upload-artifact@main
+        with:
+          name: mega-test-tarball
+          path: ${{ env.SOURCE }}.tar.gz
+
+  upload:
+    needs: prepare
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo -E apt-get -qq update
+          sudo apt -y install python3-pip
+          pip install mega.py || pip3 install mega.py || exit 1
+
+      - name: Download tarball artifact
+        uses: actions/download-artifact@main
+        with:
+          name: mega-test-tarball
+          path: .
+
       - name: Upload to MEGA
         env:
-          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}  # 从 Secrets 中获取用户名
-          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}  # 从 Secrets 中获取密码
+          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
+          ls -la "${{ env.SOURCE }}.tar.gz"
           python upload_to_MEGA.py

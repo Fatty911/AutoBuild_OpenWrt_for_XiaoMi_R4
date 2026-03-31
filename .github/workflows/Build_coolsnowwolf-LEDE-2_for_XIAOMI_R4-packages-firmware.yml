@@ -275,8 +275,16 @@ jobs:
         run: |
           python $GITHUB_WORKSPACE/validate_build_output.py
 
+  finalize:
+    needs: build
+    if: always() && !cancelled()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
       - name: Auto fix with MiniMax AI on failure
-        if: failure()
+        if: needs.build.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
@@ -288,6 +296,7 @@ jobs:
           python auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
+        if: always()
         uses: Mattraks/delete-workflow-runs@main
         with:
           token: ${{ github.token }}
@@ -296,6 +305,7 @@ jobs:
           keep_minimum_runs: 2
 
       - name: Delete Older Releases
+        if: needs.build.result == 'success'
         uses: dev-drprasad/delete-older-releases@master
         with:
           keep_latest: 3

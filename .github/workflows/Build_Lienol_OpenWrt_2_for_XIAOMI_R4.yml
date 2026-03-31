@@ -150,6 +150,11 @@ jobs:
         
         echo "解压后磁盘空间："
         df -hT
+
+    - name: Sync OpenWrt config
+      run: |
+        cd openwrt
+        make defconfig
         
     - name: Compile Remaining packages
       id: compile_remaining
@@ -171,8 +176,12 @@ jobs:
         LOG_FILE="packages.log"
         # 确保 compile_with_retry.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        echo "=== 开始编译 packages 部分 ==="
-        make package/compile V=s || python compile_with_retry.py --max-retry 7 "make package/compile V=s" "packages.log"
+        echo "=== 检查并尝试编译 packages 部分 ==="
+        if make -n package/compile V=s >/dev/null 2>&1; then
+          make package/compile V=s || python compile_with_retry.py --max-retry 7 "make package/compile V=s" "packages.log"
+        else
+          echo "当前源码不支持目标 package/compile，跳过该步骤，交给后续整包固件编译。"
+        fi
 
 
     - name: Try compiling the firmware
@@ -180,6 +189,7 @@ jobs:
       run: |
         set -euo pipefail
         cd openwrt
+        make defconfig
         [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
         echo "开始执行修复后重试编译..."
         LOG_FILE="compile.log"
@@ -429,8 +439,16 @@ jobs:
       run: |
         python $GITHUB_WORKSPACE/validate_build_output.py
 
+  finalize:
+    needs: build
+    if: always() && !cancelled()
+    runs-on: ubuntu-22.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@main
+
     - name: Auto fix with MiniMax AI on failure
-      if: failure()
+      if: needs.build.result == 'failure'
       continue-on-error: true
       env:
         ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
@@ -443,6 +461,7 @@ jobs:
         python auto_fix_with_AI_LLM.py || echo "Auto-fix failed, but build failure has been recorded above."
 
     - name: Delete workflow runs
+      if: always()
       uses: Mattraks/delete-workflow-runs@main
       with:
         token: ${{ github.token }}

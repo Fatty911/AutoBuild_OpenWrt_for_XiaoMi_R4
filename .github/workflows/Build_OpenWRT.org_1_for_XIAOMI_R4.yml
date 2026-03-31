@@ -37,6 +37,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    outputs:
+      mega_upload: ${{ steps.build_job_outputs.outputs.mega_upload }}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -306,12 +308,30 @@ jobs:
           echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
           echo "MEGA 上传成功"
 
+      - name: Record build job outputs
+        id: build_job_outputs
+        if: success()
+        run: echo "mega_upload=true" >> $GITHUB_OUTPUT
+
+  finalize:
+    needs: build
+    if: always() && !cancelled()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+        with:
+          token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+
       - name: Validate build output
-        run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py
+        if: needs.build.result == 'success'
+        env:
+          MEGA_UPLOAD_SUCCESS: ${{ needs.build.outputs.mega_upload }}
+          SOURCE: OpenWrt.org_official
+        run: python $GITHUB_WORKSPACE/validate_build_output.py
 
       - name: Auto fix with MiniMax AI on failure
-        if: failure()
+        if: needs.build.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
@@ -323,6 +343,7 @@ jobs:
           python auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
+        if: always()
         uses: Mattraks/delete-workflow-runs@main
         with:
           token: ${{ github.token }}
