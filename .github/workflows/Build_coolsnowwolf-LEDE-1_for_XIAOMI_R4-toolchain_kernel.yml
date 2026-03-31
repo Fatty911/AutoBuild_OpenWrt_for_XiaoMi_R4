@@ -232,7 +232,7 @@ jobs:
           SOURCE: coolsnowwolf
         run: python $GITHUB_WORKSPACE/validate_build_output.py
 
-      - name: Auto fix with MiniMax AI on failure
+      - name: Auto fix with AI on failure
         if: needs.build.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}

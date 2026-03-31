@@ -42,7 +42,7 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-latest
     steps:
       - name: Maximize build space
@@ -177,6 +177,10 @@ jobs:
             exit 1
           }
 
+  compile-packages:
+    runs-on: ubuntu-latest
+    needs: prepare
+    steps:
       - name: Compile kernel
         run: |
           cd openwrt
@@ -191,22 +195,20 @@ jobs:
         run: |
           cd openwrt
           make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
-          
+
       - name: Compile  Batman-adv
         id: compile_batman_1
-        run: |   
+        run: |
           cd openwrt
-          # cp ../fix_batman_adv.sh . && bash ./fix_batman_adv.sh "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" 8 || bash ./fix_batman_adv.sh "make -j1 package/luci/modules/luci-base/compile V=s" "batman-adv.log" 8
-          #cp ../001-fix-multicast.patch ./feeds/routing/batman-adv/patches/0003-fix-multicast-implicit-declaration.patch
-          # cp ../0003-fix-multicast-implicit-declaration.patch ./feeds/routing/batman-adv/patches/
-          cp ../fix_batman_adv.py . 
-          #make -j1 package/feeds/routing/batman-adv/compile V=s
+          cp ../fix_batman_adv.py .
           make -j2 package/feeds/routing/batman-adv/compile V=s || { python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" && make -j1 package/feeds/routing/batman-adv/compile V=s; }
-          
 
+  compile-firmware:
+    runs-on: ubuntu-latest
+    needs: compile-packages
+    steps:
       - name: Compile the firmware
         id: compile
-        if: steps.compile_batman_1.outcome == 'success'
         run: |
           cd openwrt && cp ../compile_with_retry.py .
           make -j2 V=s || python compile_with_retry.py "make -j2 V=s" "compile.log" || python compile_with_retry.py "make -j1 V=s" "compile.log"
@@ -265,9 +267,14 @@ jobs:
       #       #设为false即为通过链接可直接访问，设为true得保存密钥比较麻烦
       #     timeout-minutes: 300
           
+  upload:
+    runs-on: ubuntu-latest
+    needs: compile-firmware
+    if: needs.compile-firmware.result == 'success'
+    steps:
       - name: Upload bin directory
         id: upload
-        uses: actions/upload-artifact@master
+        uses: actions/upload-artifact@v4
         if: steps.check_bin.outputs.check_bin_exist == 'success'
         with:
           name: OpenWrt_LEDE_coolsnowwolf_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
@@ -351,7 +358,7 @@ jobs:
         run: |
           python $GITHUB_WORKSPACE/validate_build_output.py
 
-      - name: Auto fix with MiniMax AI on failure
+      - name: Auto fix with AI on failure
         if: failure()
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
