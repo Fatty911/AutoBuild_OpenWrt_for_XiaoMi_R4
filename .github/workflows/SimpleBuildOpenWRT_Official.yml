@@ -293,7 +293,7 @@ jobs:
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
-      - name: Auto fix with MiniMax AI on failure
+      - name: Auto fix with AI on failure
         if: needs.build.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
