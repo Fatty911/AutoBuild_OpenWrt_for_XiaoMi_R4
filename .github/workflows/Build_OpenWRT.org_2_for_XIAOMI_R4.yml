@@ -43,11 +43,9 @@ env:
   AUTOPDATE_PROXY_PORT: 1080
 
 jobs:
-  prepare:
+  build:
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push'}}
-    outputs:
-      should_continue: ${{ steps.check.outputs.should_continue }}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -137,13 +135,6 @@ jobs:
             exit 1
           fi
 
-  transplant:
-    runs-on: ubuntu-22.04
-    needs: prepare
-    if: needs.prepare.outputs.should_continue == 'true'
-    outputs:
-      isFixed: ${{ steps.transplant.outputs.isFixed }}
-    steps:
       - name: Check for .bin file after initial compilation
         id: check_bin_initial
         run: |
@@ -212,11 +203,6 @@ jobs:
           echo "isFixed=true" >> $GITHUB_OUTPUT
           echo "::notice::Transplant completed successfully"
 
-  defconfig:
-    runs-on: ubuntu-22.04
-    needs: transplant
-    if: needs.transplant.outputs.isFixed == 'true' || needs.prepare.outputs.should_continue == 'true'
-    steps:
       - name: Defconfig and base-files fix
         run: |
           cd openwrt
@@ -230,10 +216,6 @@ jobs:
 
           echo "=== Defconfig completed ==="
 
-  compile-packages:
-    runs-on: ubuntu-22.04
-    needs: defconfig
-    steps:
       - name: Compile packages only
         run: |
           cd openwrt
@@ -244,10 +226,6 @@ jobs:
           }
           echo "=== packages 编译完成 ==="
 
-  compile-firmware:
-    runs-on: ubuntu-22.04
-    needs: compile-packages
-    steps:
       - name: Compile firmware
         run: |
           cd openwrt
@@ -259,11 +237,6 @@ jobs:
           echo "=== 固件编译完成 ==="
           ls -la bin/targets/*/
 
-  upload:
-    runs-on: ubuntu-22.04
-    needs: compile-firmware
-    if: success()
-    steps:
       - name: Set environment variables
         id: setEnv
         run: |
@@ -286,32 +259,12 @@ jobs:
             openwrt/bin
             openwrt/.config
 
-  release:
-    runs-on: ubuntu-22.04
-    needs: upload
-    if: success()
-    steps:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           files: openwrt/bin/targets/**/*.bin
-          name: OpenWrt.org_${{ needs.upload.outputs.device_name }}_${{ needs.upload.outputs.kernel_version }}
-          tag_name: OpenWrt.org_${{ needs.upload.outputs.device_name }}_${{ needs.upload.outputs.kernel_version }}
-      - name: Maximize build space
-        uses: easimon/maximize-build-space@master
-        with:
-            root-reserve-mb: 1536
-            temp-reserve-mb: 256
-            swap-size-mb: 1024
-            build-mount-path: /workdir
-            remove-dotnet: 'true'
-            remove-android: 'true'
-            remove-haskell: 'true'
-            remove-codeql: 'true'
-            remove-docker-images: 'true'
-            
-      - name: Checkout
-        uses: actions/checkout@main
+          name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
+          tag_name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
         with:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
