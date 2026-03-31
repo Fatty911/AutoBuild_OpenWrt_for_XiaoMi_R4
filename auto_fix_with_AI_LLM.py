@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 """
 当 GitHub Actions workflow 报错时，按顺序调用各家大模型分析并修复 workflow 文件。
-调用顺序：OPENCODE ZEN(mimo-v2-pro) → Claude → Gemini → GPT → Grok → GLM → MiniMax
+调用顺序：OPENCODE ZEN(mimo-v2-pro) → Claude → Gemini → GPT → Grok → GLM → 其他
 
 环境变量:
   ZEN_API_KEY            - OPENCODE ZEN API key（mimo v2 pro 模型）
-  MINIMAX_API_KEY        - MiniMax API key
-  MINIMAX_MODEL_LIST     - MiniMax 模型名称（可选，默认 MiniMax-M2.7）
   WORKFLOW_FILE          - 需要修复的 workflow 文件路径（相对于仓库根目录）
   ACTIONS_TRIGGER_PAT    - 用于 git push 的 PAT
   GITHUB_REPOSITORY      - 仓库名称（owner/repo）
@@ -20,6 +18,8 @@
   GEMINI_MODEL_LIST      - Gemini 模型列表（默认 gemini-3.1-pro,gemini-3.1-pro-preview）
   GROK_MODEL_LIST        - Grok 模型列表（默认 grok-4.2）
   GLM_MODEL_LIST         - GLM 模型列表（默认 glm-5）
+  MINIMAX_API_KEY        - MiniMax API key（可选）
+  MINIMAX_MODEL_LIST     - MiniMax 模型名称（可选，默认 MiniMax-M2.7）
   AUTO_FIX_AUTO_MERGE    - 创建 PR 后是否自动 merge（默认 false）
 """
 
@@ -183,13 +183,13 @@ def validate_required_steps(workflow_file, yaml_content):
         ".github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml": [
             "Generate release tag",
             "Upload firmware to release",
-            "Auto fix with MiniMax AI on failure",
+            "Auto fix with AI on failure",
             "Delete workflow runs",
         ],
         ".github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml": [
             "Generate release tag",
             "Upload firmware to release",
-            "Auto fix with MiniMax AI on failure",
+            "Auto fix with AI on failure",
             "Delete workflow runs",
         ],
     }
@@ -350,7 +350,7 @@ def main():
         "Output only the full corrected YAML."
     )
 
-    # 固定优先级：OPENCODE ZEN -> Claude -> Gemini -> GPT -> Grok -> GLM -> MiniMax
+    # 固定优先级：OPENCODE ZEN -> Claude -> Gemini -> GPT -> Grok -> GLM -> 其他
     zen_api_key = os.getenv("ZEN_API_KEY", "").strip()
     openai_api_key = os.getenv("OPENAI_API_KEY", "").strip()
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -477,7 +477,7 @@ def main():
 
     if not providers:
         print(
-            "No AI provider available. Please set at least one key (OPENROUTER_API_KEY/OPENAI_API_KEY/XAI_API_KEY/MINIMAX_API_KEY/GLM keys)."
+            "No AI provider available. Please set at least one key (OPENROUTER_API_KEY/OPENAI_API_KEY/XAI_API_KEY/GLM keys)."
         )
         sys.exit(1)
 
