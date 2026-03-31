@@ -35,10 +35,8 @@ env:
   SOURCE: OpenWrt.org_official
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-22.04
-    outputs:
-      mega_upload: ${{ steps.build_job_outputs.outputs.mega_upload }}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -233,39 +231,57 @@ jobs:
           sudo apt-get clean
           docker rmi $(docker images -q) 2>/dev/null || true
           df -hT
-        
 
-      - name: Compile 1
+  compile-toolchain:
+    runs-on: ubuntu-22.04
+    needs: prepare
+    steps:
+      - name: Compile 1 (tools)
         id: compile_1
         run: |
           cd openwrt
           make tools/install -j2 V=s || make tools/install -j1 V=s
-    
-      - name: Compile 2
+
+      - name: Compile 2 (toolchain)
         id: compile_2
         run: |
           cd openwrt
-          make toolchain/install -j2 V=s || make toolchain/install -j1 V=s 
+          make toolchain/install -j2 V=s || make toolchain/install -j1 V=s
 
-      - name: Compile 3
+  compile-kernel:
+    runs-on: ubuntu-22.04
+    needs: compile-toolchain
+    steps:
+      - name: Compile 3 (kernel)
         id: compile_3
         run: |
           cd openwrt
-          make target/linux/compile -j2 V=s || make target/linux/compile -j1 V=s 
- 
-      - name: Compile 4
+          make target/linux/compile -j2 V=s || make target/linux/compile -j1 V=s
+
+  compile-packages:
+    runs-on: ubuntu-22.04
+    needs: compile-kernel
+    steps:
+      - name: Compile 4 (packages)
         id: compile_4
         run: |
           cd openwrt
-
           make package/compile V=s -j2 || make package/compile V=s -j1 || make V=s -j2 || make V=s -j1 || true
-          
-      - name: Compile 5
+
+  compile-firmware:
+    runs-on: ubuntu-22.04
+    needs: compile-packages
+    steps:
+      - name: Compile 5 (firmware)
         id: compile_5
         run: |
           cd openwrt
           make V=s -j2 || make V=s -j1 || true
           
+  archive:
+    runs-on: ubuntu-22.04
+    needs: compile-firmware
+    steps:
       - name: Clean up build artifacts
         run: |
           cd openwrt
@@ -308,6 +324,12 @@ jobs:
           
           ls -lh ${{ env.SOURCE }}.tar.gz
           
+  upload:
+    runs-on: ubuntu-22.04
+    needs: archive
+    outputs:
+      mega_upload: ${{ steps.build_job_outputs.outputs.mega_upload }}
+    steps:
       - name: Upload to MEGA
         working-directory: /workdir
         env:
@@ -336,7 +358,7 @@ jobs:
         run: echo "mega_upload=true" >> $GITHUB_OUTPUT
 
   finalize:
-    needs: build
+    needs: [compile-firmware, upload]
     if: always() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
@@ -346,14 +368,14 @@ jobs:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
       - name: Validate build output
-        if: needs.build.result == 'success'
+        if: needs.upload.result == 'success'
         env:
-          MEGA_UPLOAD_SUCCESS: ${{ needs.build.outputs.mega_upload }}
+          MEGA_UPLOAD_SUCCESS: ${{ needs.upload.outputs.mega_upload }}
           SOURCE: OpenWrt.org_official
         run: python $GITHUB_WORKSPACE/validate_build_output.py
 
-      - name: Auto fix with MiniMax AI on failure
-        if: needs.build.result == 'failure'
+      - name: Auto fix with AI on failure
+        if: needs.compile-firmware.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
