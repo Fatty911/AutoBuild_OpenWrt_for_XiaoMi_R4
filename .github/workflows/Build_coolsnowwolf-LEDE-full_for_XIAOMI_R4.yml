@@ -42,7 +42,7 @@ permissions:
   packages: write
 
 jobs:
-  prepare:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Maximize build space
@@ -177,10 +177,6 @@ jobs:
             exit 1
           }
 
-  compile-packages:
-    runs-on: ubuntu-latest
-    needs: prepare
-    steps:
       - name: Compile kernel
         run: |
           cd openwrt
@@ -203,10 +199,6 @@ jobs:
           cp ../fix_batman_adv.py .
           make -j2 package/feeds/routing/batman-adv/compile V=s || { python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" && make -j1 package/feeds/routing/batman-adv/compile V=s; }
 
-  compile-firmware:
-    runs-on: ubuntu-latest
-    needs: compile-packages
-    steps:
       - name: Compile the firmware
         id: compile
         run: |
@@ -267,11 +259,6 @@ jobs:
       #       #设为false即为通过链接可直接访问，设为true得保存密钥比较麻烦
       #     timeout-minutes: 300
           
-  upload:
-    runs-on: ubuntu-latest
-    needs: compile-firmware
-    if: needs.compile-firmware.result == 'success'
-    steps:
       - name: Upload bin directory
         id: upload
         uses: actions/upload-artifact@v4
