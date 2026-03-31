@@ -41,7 +41,7 @@ env:
   SOURCE: Lienol
 
 jobs:
-  prepare:
+  build:
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push' }}
     steps:
@@ -155,21 +155,8 @@ jobs:
       run: |
         cd openwrt
         make defconfig
+        echo "=== defconfig 完成 ==="
 
-  defconfig:
-    runs-on: ubuntu-22.04
-    needs: prepare
-    steps:
-      - name: Run defconfig
-        run: |
-          cd openwrt
-          make defconfig
-          echo "=== defconfig 完成 ==="
-
-  compile-packages:
-    runs-on: ubuntu-22.04
-    needs: defconfig
-    steps:
     - name: Compile Remaining packages
       id: compile_remaining
       # if: steps.main_packages.conclusion == 'success'
@@ -198,10 +185,6 @@ jobs:
         fi
 
 
-  compile-firmware:
-    runs-on: ubuntu-22.04
-    needs: compile-packages
-    steps:
     - name: Try compiling the firmware
       id: compile_attempt
       run: |
@@ -233,13 +216,9 @@ jobs:
           echo "BIN_EXISTS=false" >> $GITHUB_ENV
         fi
 
-  transplant:
-    runs-on: ubuntu-22.04
-    needs: compile-firmware
-    if: env.BIN_EXISTS == 'false'
-    steps:
     - name: Perform manual porting for Xiaomi Mi Router 4
       id: transplant
+      if: env.BIN_EXISTS == 'false'
       run: |
         cd openwrt
         echo "Performing manual porting for Xiaomi Mi Router 4..."
@@ -400,11 +379,6 @@ jobs:
 
 
 
-  upload:
-    runs-on: ubuntu-22.04
-    needs: [compile-firmware, transplant]
-    if: always() && (needs.compile-firmware.result == 'success' || needs.transplant.result == 'success')
-    steps:
     - name: Set environment variables
       id: setEnv
       run: |
@@ -442,11 +416,6 @@ jobs:
         name: OpenWrt_${{ env.SOURCE }}_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
 
-  release:
-    runs-on: ubuntu-22.04
-    needs: upload
-    if: success()
-    steps:
     - name: Generate release tag
       id: generate_release_tag
       run: |
@@ -475,16 +444,8 @@ jobs:
       run: |
         python $GITHUB_WORKSPACE/validate_build_output.py
 
-  finalize:
-    needs: [compile-firmware, upload, release]
-    if: always() && !cancelled()
-    runs-on: ubuntu-22.04
-    steps:
-    - name: Checkout
-      uses: actions/checkout@main
-
     - name: Auto fix with AI on failure
-      if: needs.compile-firmware.result == 'failure'
+      if: failure()
       continue-on-error: true
       env:
         ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
