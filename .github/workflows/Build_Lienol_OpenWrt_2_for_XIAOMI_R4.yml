@@ -41,11 +41,11 @@ env:
   SOURCE: Lienol
 
 jobs:
-  build:    
+  prepare:
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push' }}
-    steps:    
-    
+    steps:
+
     - name: Maximize build space
       uses: easimon/maximize-build-space@master
       with:
@@ -58,7 +58,7 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
           remove-docker-images: 'true'
-          
+
     - name: Checkout
       uses: actions/checkout@main
 
@@ -155,7 +155,21 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        
+
+  defconfig:
+    runs-on: ubuntu-22.04
+    needs: prepare
+    steps:
+      - name: Run defconfig
+        run: |
+          cd openwrt
+          make defconfig
+          echo "=== defconfig 完成 ==="
+
+  compile-packages:
+    runs-on: ubuntu-22.04
+    needs: defconfig
+    steps:
     - name: Compile Remaining packages
       id: compile_remaining
       # if: steps.main_packages.conclusion == 'success'
@@ -184,6 +198,10 @@ jobs:
         fi
 
 
+  compile-firmware:
+    runs-on: ubuntu-22.04
+    needs: compile-packages
+    steps:
     - name: Try compiling the firmware
       id: compile_attempt
       run: |
@@ -196,9 +214,7 @@ jobs:
         # 确保 compile_with_retry.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         make -j1 V=s || python compile_with_retry.py --max-retry 6 "make -j1 V=s" "compile.log"
-        
-        
-        
+
     - name: Check for .bin file after initial compilation
       id: check_bin_initial
       run: |
@@ -216,10 +232,14 @@ jobs:
         else
           echo "BIN_EXISTS=false" >> $GITHUB_ENV
         fi
-        
+
+  transplant:
+    runs-on: ubuntu-22.04
+    needs: compile-firmware
+    if: env.BIN_EXISTS == 'false'
+    steps:
     - name: Perform manual porting for Xiaomi Mi Router 4
       id: transplant
-      if: env.BIN_EXISTS == 'false'
       run: |
         cd openwrt
         echo "Performing manual porting for Xiaomi Mi Router 4..."
@@ -380,9 +400,28 @@ jobs:
 
 
 
+  upload:
+    runs-on: ubuntu-22.04
+    needs: [compile-firmware, transplant]
+    if: always() && (needs.compile-firmware.result == 'success' || needs.transplant.result == 'success')
+    steps:
+    - name: Set environment variables
+      id: setEnv
+      run: |
+        cd openwrt
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        echo "TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+        echo "TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+        echo "TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')" >> $GITHUB_ENV
+        echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
+        KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
+        echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+        echo "set_env_variables=true" >> $GITHUB_OUTPUT
+
     - name: Upload bin directory
-      uses: actions/upload-artifact@master
-      if: env.FINAL_BIN_EXISTS == 'true' 
+      uses: actions/upload-artifact@v4
       with:
         name: OpenWrt_${{ env.SOURCE }}_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: |
@@ -391,7 +430,6 @@ jobs:
 
     - name: Organize files
       id: organize
-      if: env.FINAL_BIN_EXISTS == 'true' 
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
@@ -399,25 +437,24 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
-      uses: actions/upload-artifact@master
-      if: env.FINAL_BIN_EXISTS == 'true' 
+      uses: actions/upload-artifact@v4
       with:
         name: OpenWrt_${{ env.SOURCE }}_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
 
-
+  release:
+    runs-on: ubuntu-22.04
+    needs: upload
+    if: success()
+    steps:
     - name: Generate release tag
       id: generate_release_tag
-      if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' 
       run: |
         echo "release_tag=Lienol_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
-        echo "release_tag_status: ${{steps.generate_release_tag.outputs.release_tag_status}}"
 
     - name: Upload firmware to release
-      id: up-release
-      uses: softprops/action-gh-release@master
-      if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
+      uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ github.token }}
       with:
@@ -426,9 +463,8 @@ jobs:
             openwrt/bin/targets/**/*.bin
           name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
-     
+
     - name: Delete temporary files from MEGA
-      if: env.FINAL_BIN_EXISTS == 'true'
       env:
         MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
@@ -440,15 +476,15 @@ jobs:
         python $GITHUB_WORKSPACE/validate_build_output.py
 
   finalize:
-    needs: build
+    needs: [compile-firmware, upload, release]
     if: always() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
     - name: Checkout
       uses: actions/checkout@main
 
-    - name: Auto fix with MiniMax AI on failure
-      if: needs.build.result == 'failure'
+    - name: Auto fix with AI on failure
+      if: needs.compile-firmware.result == 'failure'
       continue-on-error: true
       env:
         ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
