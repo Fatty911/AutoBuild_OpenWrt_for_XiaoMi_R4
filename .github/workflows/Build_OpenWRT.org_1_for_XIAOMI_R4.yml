@@ -35,10 +35,8 @@ env:
   SOURCE: OpenWrt.org_official
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-22.04
-    outputs:
-      mega_upload: ${{ steps.build_job_outputs.outputs.mega_upload }}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
@@ -221,8 +219,11 @@ jobs:
       - name: Check space usage after download
         if: (!cancelled())
         run: df -hT
-        
 
+  compile-toolchain:
+    runs-on: ubuntu-22.04
+    needs: prepare
+    steps:
       - name: Compile tools and toolchain
         id: compile_tools
         run: |
@@ -230,6 +231,10 @@ jobs:
           make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
           make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
 
+  compile-kernel:
+    runs-on: ubuntu-22.04
+    needs: compile-toolchain
+    steps:
       - name: Compile kernel
         id: compile_kernel
         run: |
@@ -238,6 +243,10 @@ jobs:
           
      
      
+  archive:
+    runs-on: ubuntu-22.04
+    needs: compile-kernel
+    steps:
       - name: 归档前清理
         run: |
           cd openwrt
@@ -286,6 +295,12 @@ jobs:
           df -hT
           ls -lh ${{ env.SOURCE }}.tar.gz
 
+  upload:
+    runs-on: ubuntu-22.04
+    needs: archive
+    outputs:
+      mega_upload: ${{ steps.build_job_outputs.outputs.mega_upload }}
+    steps:
       - name: Upload to MEGA
         working-directory: /workdir
         env:
@@ -314,7 +329,7 @@ jobs:
         run: echo "mega_upload=true" >> $GITHUB_OUTPUT
 
   finalize:
-    needs: build
+    needs: [compile-kernel, upload]
     if: always() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
@@ -324,14 +339,14 @@ jobs:
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
       - name: Validate build output
-        if: needs.build.result == 'success'
+        if: needs.upload.result == 'success'
         env:
-          MEGA_UPLOAD_SUCCESS: ${{ needs.build.outputs.mega_upload }}
+          MEGA_UPLOAD_SUCCESS: ${{ needs.upload.outputs.mega_upload }}
           SOURCE: OpenWrt.org_official
         run: python $GITHUB_WORKSPACE/validate_build_output.py
 
-      - name: Auto fix with MiniMax AI on failure
-        if: needs.build.result == 'failure'
+      - name: Auto fix with AI on failure
+        if: needs.compile-kernel.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
