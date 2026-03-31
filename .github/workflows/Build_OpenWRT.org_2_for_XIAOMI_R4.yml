@@ -329,7 +329,7 @@ jobs:
           df -hT
 
       - name: Check for .bin file after initial compilation
-        id: check_bin_initial
+        id: check_bin_initial2
         run: |
           cd /workdir
           if [ ! -d "openwrt" ]; then
@@ -359,7 +359,7 @@ jobs:
           fi
 
       - name: Perform manual porting for Xiaomi Mi Router 4
-        id: transplant
+        id: transplant2
         if: steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
         run: |
           if [ ! -d "openwrt" ]; then
@@ -421,7 +421,7 @@ jobs:
             echo "status=success" >> $GITHUB_OUTPUT
 
       - name: Set environment variables
-        id: setEnv
+        id: setEnv2
         if: steps.compile_with_fixes.outputs.status == 'success'
         run: |
           cd openwrt
