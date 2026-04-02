@@ -221,20 +221,22 @@ jobs:
       - name: Compile packages only
         run: |
           cd openwrt
+          cp $GITHUB_WORKSPACE/compile_with_retry.py .
           echo "=== 开始编译 packages 部分 ==="
           make package/compile V=s || {
             echo "首次编译失败，开始自动修复..."
-            python ../compile_with_retry.py --max-retry 5 "make package/compile V=s" "packages.log" || exit 1
+            python compile_with_retry.py --max-retry 5 "make package/compile V=s" "packages.log" || exit 1
           }
           echo "=== packages 编译完成 ==="
 
       - name: Compile firmware
         run: |
           cd openwrt
+          cp $GITHUB_WORKSPACE/compile_with_retry.py .
           echo "=== 开始编译固件镜像 ==="
           make -j1 V=s || {
             echo "固件编译失败，尝试修复后重试..."
-            python ../compile_with_retry.py --max-retry 5 "make -j1 V=s" "compile.log" || exit 1
+            python compile_with_retry.py --max-retry 5 "make -j1 V=s" "compile.log" || exit 1
           }
           echo "=== 固件编译完成 ==="
           ls -la bin/targets/*/
@@ -548,10 +550,16 @@ jobs:
           done
 
       - name: Auto fix with AI on failure
-        if: failure() && github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        if: failure()
+        env:
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
+          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+          WORKFLOW_FILE: .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
         run: |
-          echo "Build failed. Running AI auto-fix..."
-          python $GITHUB_WORKSPACE/auto_fix.py --workflow "${{ github.workflow }}" --run_id "${{ github.run_id }}" || echo "Auto-fix not available"
+          pip install requests --quiet || true
+          python auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
         if: success() && github.event_name == 'workflow_run'
