@@ -7,6 +7,8 @@ on:
       - "Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4"
     types:
       - completed
+  repository_dispatch:
+    types: OpenWRT.org Org1 Complete
   workflow_dispatch:
     inputs:
       debug_enabled:
@@ -45,7 +47,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push'}}
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push'}}
     steps:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
