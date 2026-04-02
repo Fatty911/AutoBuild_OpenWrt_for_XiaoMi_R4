@@ -46,7 +46,7 @@ permissions:
   packages: write
 
 jobs:
-  prepare:
+  build:
     runs-on: ubuntu-22.04
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')|| github.event_name == 'push'}}
     steps:
@@ -132,10 +132,6 @@ jobs:
           make -j$(nproc) target/linux/prepare V=s || make -j1 target/linux/prepare V=s
           make -j$(nproc) package/feeds/luci/luci-base/compile V=s || make -j1 package/feeds/luci/luci-base/compile V=s
 
-  compile-packages:
-    runs-on: ubuntu-22.04
-    needs: prepare
-    steps:
     - name: Compile  Batman-adv
       id: compile_batman_1
       run: |
@@ -143,10 +139,6 @@ jobs:
         cp ../fix_batman_adv.py
         make -j1 V=s package/feeds/routing/batman-adv/compile || python ./fix_batman_adv.py "make -j1 V=s package/feeds/routing/batman-adv/compile" "batman-adv.log"
 
-  compile-firmware:
-    runs-on: ubuntu-22.04
-    needs: compile-packages
-    steps:
     - name: Compile the firmware
       id: compile
       run: |
@@ -184,106 +176,81 @@ jobs:
         if: (!cancelled())
         run: df -hT
 
-  upload:
-    runs-on: ubuntu-22.04
-    needs: compile-firmware
-    if: needs.compile-firmware.result == 'success'
-    steps:
     - name: Upload bin directory
       id: upload
       uses: actions/upload-artifact@v4
       if: env.UPLOAD_BIN_DIR == 'true'
-        with:
-          name: OpenWrt_LEDE_coolsnowwolf_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
-          path: |
-            openwrt/bin
-            openwrt/.config
+      with:
+        name: OpenWrt_LEDE_coolsnowwolf_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+        path: |
+          openwrt/bin
+          openwrt/.config
 
-      - name: Organize files
-        id: organize
-        if: env.UPLOAD_FIRMWARE == 'true' && steps.upload.conclusion == 'success'
-        run: |
-          cd openwrt/bin/targets/*/*
-          rm -rf packages
-          echo "firmware_path=$(pwd)" >> $GITHUB_ENV
-          echo "status=success" >> $GITHUB_OUTPUT
+    - name: Organize files
+      id: organize
+      if: env.UPLOAD_FIRMWARE == 'true' && steps.upload.conclusion == 'success'
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "firmware_path=$(pwd)" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
 
-      - name: Upload firmware directory
-        uses: actions/upload-artifact@master
-        if: steps.organize.outputs.status == 'success' && !cancelled()
-        with:
-          name: OpenWrt_LEDE_coolsnowwolf_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
-          path: ${{ env.firmware_path }}
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@master
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_LEDE_coolsnowwolf_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+        path: ${{ env.firmware_path }}
 
-      - name: Check for .bin files
-        id: check_bin
-        if: steps.organize.outputs.status == 'success' && !cancelled()
-        run: |
-          echo "Check File Sizes..."
-          ls -lh openwrt/bin/targets/*/*
-          BIN_COUNT=$(ls openwrt/bin/targets/*/*.bin 2>/dev/null | grep -v initramfs | wc -l)
-          if [ "$BIN_COUNT" -eq 0 ]; then
-            echo "No .bin files found in firmware_path (excluding initramfs)."
-            echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
-            echo "check_bin_exist=false" >> $GITHUB_OUTPUT
-          else
-            echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
-            echo "check_bin_exist=true" >> $GITHUB_OUTPUT
-          fi
+    - name: Cleanup invalid releases (no .bin)
+      if: env.FINAL_BIN_EXISTS == 'false'
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
+        python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
 
-      - name: Cleanup invalid releases (no .bin)
-        if: env.FINAL_BIN_EXISTS == 'false'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
-          python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+    - name: Build Quality Gate
+      id: build_quality_gate
+      run: |
+        python $GITHUB_WORKSPACE/validate_build_output.py --gate
+      env:
+        SOURCE: ${{ env.SOURCE }}
 
-      - name: Build Quality Gate
-        id: build_quality_gate
-        run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py --gate
-        env:
-          SOURCE: ${{ env.SOURCE }}
-
-  release:
-    runs-on: ubuntu-22.04
-    needs: upload
-    if: success()
-    steps:
     - name: Generate release tag
       id: generate_release_tag
-        run: |
-          echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-          echo "release_tag_status=success" >> $GITHUB_OUTPUT
+      if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true'
+      run: |
+        echo "release_tag=${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "release_tag_status=success" >> $GITHUB_OUTPUT
 
-      - name: Upload firmware to release
-        id: up-release
-        uses: softprops/action-gh-release@master
-        if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        with:
-          token: ${{ github.token }}
-          files: |
-            openwrt/bin/targets/**/*.bin
-          name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
-          tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
-          
-      - name: Delete temporary files from MEGA
-        if: steps.up-release.outcome == 'success'
-        env:
-          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
-          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
-        run: |
-          python delete_from_MEGA.py
+    - name: Upload firmware to release
+      id: up-release
+      uses: softprops/action-gh-release@master
+      if: env.BUILD_QUALITY_GATE == 'pass' && env.FINAL_BIN_EXISTS == 'true' && steps.generate_release_tag.outputs.release_tag_status == 'success'
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+        token: ${{ github.token }}
+        files: |
+          openwrt/bin/targets/**/*.bin
+        name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
+        tag_name: OpenWRT_LEDE_coolsnowwolf_${{ steps.generate_release_tag.outputs.release_tag }}
+        
+    - name: Delete temporary files from MEGA
+      if: steps.up-release.outcome == 'success'
+      env:
+        MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+        MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+      run: |
+        python delete_from_MEGA.py
 
-      - name: Validate build output
-        run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py
+    - name: Validate build output
+      run: |
+        python $GITHUB_WORKSPACE/validate_build_output.py
 
   finalize:
-    needs: [compile-firmware, upload]
+    needs: build
     if: always() && !cancelled()
     runs-on: ubuntu-22.04
     steps:
@@ -291,7 +258,7 @@ jobs:
         uses: actions/checkout@main
 
       - name: Auto fix with AI on failure
-        if: needs.compile-firmware.result == 'failure'
+        if: needs.build.result == 'failure'
         env:
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
