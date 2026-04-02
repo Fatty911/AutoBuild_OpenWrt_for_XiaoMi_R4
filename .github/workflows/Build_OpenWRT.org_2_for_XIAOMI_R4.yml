@@ -118,13 +118,27 @@ jobs:
             echo "ERROR: openwrt 目录不存在!"
             exit 1
           }
-          echo "=== 清理不需要的文件 ==="
-          rm -rf openwrt/build_dir/toolchain-* openwrt/staging_dir/toolchain-* openwrt/staging_dir/host openwrt/staging_dir/hostpkg openwrt/build_dir/host openwrt/build_dir/hostpkg-* openwrt/.git 2>/dev/null || true
+          echo "=== 清理不需要的文件（但保留 host 工具链） ==="
+          rm -rf openwrt/build_dir/toolchain-* openwrt/staging_dir/toolchain-* openwrt/build_dir/host openwrt/build_dir/hostpkg-* openwrt/.git 2>/dev/null || true
           find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
           find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
           echo "清理后磁盘空间："
           df -hT
+
+      - name: Verify and rebuild host tools if needed
+        id: verify_host_tools
+        run: |
+          cd openwrt
+          echo "=== 检查 host tools ==="
+          if [ ! -f "staging_dir/host/bin/openssl" ] || [ ! -f "staging_dir/host/bin/libdeflate-gzip" ]; then
+            echo "Host tools 缺失或损坏，需要重新构建..."
+            make tools/install -j$(nproc) V=s || make tools/install -j1 V=s
+            echo "Host tools 重新构建完成"
+          else
+            echo "Host tools 检查通过"
+          fi
+          ls -la staging_dir/host/bin/ | head -20
 
       - name: Check if we should continue
         id: check

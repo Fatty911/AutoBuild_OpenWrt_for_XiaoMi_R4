@@ -234,7 +234,7 @@ jobs:
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
           
      
-     
+      
       - name: 归档前清理
         run: |
           cd openwrt
@@ -244,9 +244,9 @@ jobs:
           rm -f *.log
           # 删除 dl 目录（源码包，第2步不需要）
           rm -rf dl
-          # 删除 host 工具链（第2步会重新用 target 工具链）
-          rm -rf staging_dir/host
-          rm -rf staging_dir/hostpkg
+          # 删除 host 工具链（但保留 staging_dir/host 因为 Org2 的 package/compile 需要）
+          # rm -rf staging_dir/host
+          # rm -rf staging_dir/hostpkg
           rm -rf build_dir/host
           rm -rf build_dir/hostpkg-*
           # 删除 target 编译中间文件（.o .a），保留 .so 和二进制
