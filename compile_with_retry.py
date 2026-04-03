@@ -84,6 +84,10 @@ def get_error_signature(log_content):
     # Out Of Memory (OOM)
     if re.search(r'Killed|signal 9|Error 137', log_content): return "oom_detected"
 
+    # root-ramips missing directory during initramfs generation
+    if re.search(r"cp: cannot create regular file.*root-ramips/init.*No such file or directory", log_content):
+        return "root_ramips_missing_dir"
+
     # Filesystem Conflicts
     if "mkdir: cannot create directory" in log_content and "File exists" in log_content: return "directory_conflict"
     if "ln: failed to create symbolic link" in log_content and "File exists" in log_content: return "symlink_conflict" # <-- Your specific error
@@ -176,6 +180,37 @@ def handle_oom(current_jobs, log_content):
     print(f"检测到 OOM，减少并行任务数: {current_jobs} -> {new_jobs}")
     return new_jobs
 
+
+def fix_root_ramips_missing_dir():
+    """修复 initramfs 生成时 root-ramips 目录缺失的问题"""
+    print("🔧 检测到 root-ramips 目录缺失，尝试修复...")
+
+    # Find the build_dir path dynamically
+    build_dir_pattern = "build_dir/target-*_*/"
+    build_dirs = list(Path(".").glob(build_dir_pattern))
+
+    if not build_dirs:
+        print("⚠️ 未找到 build_dir/target-*_*/ 目录，跳过修复")
+        return False
+
+    fixed_any = False
+    for build_dir in build_dirs:
+        # Target path: build_dir/target-XXX/root-ramips
+        root_ramips_path = build_dir / "root-ramips"
+        if not root_ramips_path.exists():
+            try:
+                root_ramips_path.mkdir(parents=True, exist_ok=True)
+                print(f"✅ 创建目录: {get_relative_path(str(root_ramips_path))}")
+                fixed_any = True
+            except Exception as e:
+                print(f"❌ 创建目录 {get_relative_path(str(root_ramips_path))} 失败: {e}")
+        else:
+            print(f"ℹ️ 目录已存在: {get_relative_path(str(root_ramips_path))}")
+            fixed_any = True  # Consider it fixed since dir exists
+
+    if fixed_any:
+        print("✅ root-ramips 目录修复完成")
+    return fixed_any
 
 
 def fix_symbolic_link_conflict(log_content):
@@ -954,7 +989,7 @@ def fix_depends_format(log_content):
     """自动修复 Makefile 中的无效依赖项 (增强版 v2)"""
     print("🔧 检测到依赖项格式错误，尝试自动修复 Makefile 中的 DEPENDS 字段...")
 
-    reported_files = set()
+    reported_files = {}
     # Regex to capture warnings like: WARNING: Makefile 'path/to/Makefile' has a dependency on 'bad-dep>=1.0', which does not exist
     warning_pattern = re.compile(r"WARNING: Makefile '([^']+)' has a dependency on '([^']*)', which does not exist")
     for match in warning_pattern.finditer(log_content):
@@ -964,7 +999,9 @@ def fix_depends_format(log_content):
         # Filter more aggressively: skip if bad_dep is empty, contains '$', '(', ')', '=>', or known noisy patterns
         if bad_dep and '$' not in bad_dep and '(' not in bad_dep and ')' not in bad_dep and '=>' not in bad_dep \
            and bad_dep.lower() not in ['perl_tests'] and not bad_dep.startswith('gst1-mod-'):
-            reported_files.add(makefile_path_str)
+            if makefile_path_str not in reported_files:
+                reported_files[makefile_path_str] = set()
+            reported_files[makefile_path_str].add(bad_dep)
 
     fixed_count = 0
     processed_files = set()
@@ -973,12 +1010,12 @@ def fix_depends_format(log_content):
     # 优先处理报告的文件
     if reported_files:
         print(f"🎯 优先处理日志中报告的 {len(reported_files)} 个 Makefile...")
-        for makefile_path_str in reported_files:
+        for makefile_path_str, bad_deps in reported_files.items():
             makefile_path = Path(makefile_path_str)
             if makefile_path.exists() and makefile_path.is_file():
                 resolved_path_str = str(makefile_path.resolve())
                 if resolved_path_str not in processed_files:
-                    if fix_single_makefile_depends(makefile_path):
+                    if fix_single_makefile_depends(makefile_path, bad_deps=bad_deps):
                         fixed_count += 1
                         files_actually_fixed.append(get_relative_path(makefile_path_str))
                     processed_files.add(resolved_path_str)
@@ -1035,7 +1072,7 @@ def fix_depends_format(log_content):
         print("ℹ️ 未发现或未成功修复需要处理的 DEPENDS 字段。")
         return False
 
-def fix_single_makefile_depends(makefile_path: Path):
+def fix_single_makefile_depends(makefile_path: Path, bad_deps=None):
     """修复单个 Makefile 中的 DEPENDS 字段 (增强版 v3 - 更精确替换)"""
     try:
         with open(makefile_path, 'r', encoding='utf-8', errors='replace') as f:
@@ -1048,6 +1085,8 @@ def fix_single_makefile_depends(makefile_path: Path):
     new_content = content
     modified = False
     offset_adjustment = 0 # Track changes in length for subsequent replacements
+    if bad_deps is None:
+        bad_deps = set()
 
     # Find DEPENDS lines (supports += and multi-line with \)
     depends_regex = r'^([ \t]*DEPENDS\s*[:+]?=\s*)((?:.*?\\\n)*.*)$'
@@ -1095,13 +1134,22 @@ def fix_single_makefile_depends(makefile_path: Path):
                 # Remove version constraints like >=, <=, =, >, <
                 dep_name_cleaned = re.split(r'[<>=!~]', dep_name, 1)[0].strip()
 
-                # Basic validation: ensure it looks like a package name
-                if dep_name_cleaned and re.match(r'^[a-zA-Z0-9._-]+$', dep_name_cleaned):
+                if dep_name_cleaned in bad_deps:
+                    print(f"  🚨 移除报告的缺失依赖: '{dep_name_cleaned}' (来自 '{original_dep}') 文件: {get_relative_path(str(makefile_path))}")
+                    cleaned_dep = None
+                elif dep_name_cleaned and re.match(r'^[a-zA-Z0-9._-]+$', dep_name_cleaned):
                     cleaned_dep = f"{dep_prefix}{dep_name_cleaned}"
                 elif dep_name_cleaned: # Looks invalid after cleaning
                     print(f"  ⚠️ 清理后的依赖 '{dep_name_cleaned}' (来自 '{original_dep}') 格式无效，已丢弃。文件: {get_relative_path(str(makefile_path))}")
                     cleaned_dep = None # Mark for removal
                 # else: keep original dep if cleaning results in empty string
+            else:
+                # Even for complex lines, try to remove bad_deps if there's a clear match
+                clean_name = re.sub(r'^[+@]+', '', dep)
+                clean_name = re.split(r'[<>=!~]', clean_name, 1)[0].strip()
+                if clean_name in bad_deps:
+                    print(f"  🚨 移除报告的缺失依赖(复杂模式): '{clean_name}' (来自 '{original_dep}') 文件: {get_relative_path(str(makefile_path))}")
+                    cleaned_dep = None
 
             if cleaned_dep is not None: # Add if not marked for removal
                 cleaned_depends.append(cleaned_dep)
@@ -1970,7 +2018,7 @@ def main():
     parser = argparse.ArgumentParser(description='OpenWrt 编译修复脚本')
     parser.add_argument('make_command', help='原始编译命令，例如 "make V=s"')
     parser.add_argument('log_file', help='主日志文件基础名 (不含 .run.N.log)')
-    parser.add_argument('--max-retry', type=int, default=8, help='最大重试次数')
+    parser.add_argument('--max-retry', type=int, default=1, help='最大重试次数')
     parser.add_argument('--jobs', type=int, default=0, help='初始并行任务数 (0 表示自动检测)')
     args = parser.parse_args()
 
@@ -2133,6 +2181,8 @@ def main():
             fix_attempted = fix_directory_conflict(log_content_global)
         elif current_error_signature == "symlink_conflict": # Your specific error
             fix_attempted = fix_symbolic_link_conflict(log_content_global)
+        elif current_error_signature == "root_ramips_missing_dir":
+            fix_attempted = fix_root_ramips_missing_dir()
         elif current_error_signature == "toolchain_provides_syntax":
             fix_attempted = fix_toolchain_provides_syntax(log_content_global)
         elif current_error_signature == "luci_lib_taskd_depends":

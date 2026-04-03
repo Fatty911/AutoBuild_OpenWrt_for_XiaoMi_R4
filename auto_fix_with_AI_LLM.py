@@ -68,7 +68,8 @@ def get_run_logs(repo, run_id, pat):
 
 
 def get_local_logs():
-    """读取本地编译日志文件"""
+    """读取本地编译日志文件，按组件分割，只提取最后一个失败的组件日志"""
+    import re
     log_files = [
         "tools.log",
         "toolchain.log",
@@ -78,16 +79,47 @@ def get_local_logs():
         "image.log",
         "batman-adv.log",
     ]
-    logs = []
+    
+    # 也检查带 run 次数的日志，例如 compile.log.run.1.log
+    import glob
+    all_possible_logs = []
     for log_file in log_files:
         for prefix in ["openwrt/", ""]:
-            path = f"{prefix}{log_file}"
-            if os.path.exists(path):
-                with open(path, "r", errors="ignore") as f:
-                    lines = f.readlines()
-                logs.append(f"=== {path} (last 60 lines) ===\n" + "".join(lines[-60:]))
-                break
-    return "\n\n".join(logs)
+            base_path = f"{prefix}{log_file}"
+            all_possible_logs.append(base_path)
+            all_possible_logs.extend(glob.glob(f"{base_path}.run.*.log"))
+            
+    # 按照文件修改时间排序，找最新的那个作为主错误日志
+    existing_logs = [f for f in all_possible_logs if os.path.exists(f)]
+    if not existing_logs:
+        return ""
+        
+    latest_log = max(existing_logs, key=os.path.getmtime)
+    
+    components = []
+    current_component = []
+    
+    # 解析组件 (Entering directory ... time: ... or error)
+    with open(latest_log, "r", errors="ignore") as f:
+        for line in f:
+            if re.search(r"make\[\d+\]: Entering directory", line):
+                if current_component:
+                    components.append("".join(current_component))
+                current_component = [line]
+            else:
+                current_component.append(line)
+                
+        if current_component:
+             components.append("".join(current_component))
+             
+    # 我们只关心最新两个组件，并且喂给大模型时只将失败的（通常是最后一个）日志给它以节省token
+    failed_log_content = components[-1] if components else ""
+    
+    # 截断如果单组件还是太长
+    if len(failed_log_content) > 10000:
+         failed_log_content = failed_log_content[-10000:]
+         
+    return f"=== Failed Component from {latest_log} ===\n{failed_log_content}"
 
 
 def call_api(proxy_url, api_key, model, prompt):

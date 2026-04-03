@@ -239,7 +239,7 @@ jobs:
           echo "=== 开始编译 packages 部分 ==="
           make package/compile V=s || {
             echo "首次编译失败，开始自动修复..."
-            python compile_with_retry.py --max-retry 5 "make package/compile V=s" "packages.log" || exit 1
+            python compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log" || exit 1
           }
           echo "=== packages 编译完成 ==="
 
@@ -250,7 +250,7 @@ jobs:
           echo "=== 开始编译固件镜像 ==="
           make -j1 V=s || {
             echo "固件编译失败，尝试修复后重试..."
-            python compile_with_retry.py --max-retry 5 "make -j1 V=s" "compile.log" || exit 1
+            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log" || exit 1
           }
           echo "=== 固件编译完成 ==="
           ls -la bin/targets/*/
@@ -413,7 +413,7 @@ jobs:
           make -j1 V=s || {
             echo "编译失败，尝试使用重试脚本..."
             cp $GITHUB_WORKSPACE/compile_with_retry.py .
-            python compile_with_retry.py --max-retry 5 "make -j1 V=s" "compile_fixed.log" || exit 1
+            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile_fixed.log" || exit 1
           }
           echo "=== 固件编译完成 ==="
           ls -la bin/targets/*/

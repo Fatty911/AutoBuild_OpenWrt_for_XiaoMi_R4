@@ -144,7 +144,7 @@ jobs:
       run: |
         cd openwrt && cp ../compile_with_retry.py .
         echo -e "先尝试$(nproc)线程编译"
-        make -j$(nproc) V=s || python compile_with_retry.py --max-retry 8 "make -j1 V=s" "compile.log"
+        make -j$(nproc) V=s || python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
