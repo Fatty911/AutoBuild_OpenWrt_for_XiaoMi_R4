@@ -419,16 +419,7 @@ def main():
 
     providers = []
 
-    # 1) OPENCODE ZEN (mimo-v2-pro)
-    if zen_api_key:
-        providers.append(
-            {
-                "name": "OPENCODE-ZEN",
-                "proxy_url": "https://opencode.ai/zen",
-                "api_key": zen_api_key,
-                "models": ["mimo-v2-pro-free"],
-            }
-        )
+    # 1) OPENCODE ZEN (已移除不可用的 mimo-v2-pro-free)
 
     # 2) Claude Sonnet (优先用 OpenRouter)
     if openrouter_api_key:

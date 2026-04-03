@@ -175,15 +175,34 @@ jobs:
         cd openwrt
         # set -x
         LOG_FILE="packages.log"
-        # 确保 compile_with_retry.py 存在
+        # 确保 compile_with_retry.py 和 extract_last_error.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
+        cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
         echo "=== 检查并尝试编译 packages 部分 ==="
         if make -n package/compile V=s >/dev/null 2>&1; then
-          make package/compile V=s || python compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
+          make package/compile V=s || true
+          echo "=== packages 编译步骤结束 ==="
+          # 提取最后一个失败组件的日志
+          python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+          if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+            echo "PACKAGES_BUILD_FAILED=true" >> $GITHUB_ENV
+            echo "检测到 packages 编译失败，已记录错误日志"
+          fi
         else
           echo "当前源码不支持目标 package/compile，跳过该步骤，交给后续整包固件编译。"
         fi
 
+    - name: Detect packages build failure
+      id: detect_packages_failure
+      run: |
+        if [ "$PACKAGES_BUILD_FAILED" = "true" ]; then
+          echo "检测到 packages 编译失败，准备提取错误信息..."
+          cd openwrt
+          python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          echo "failure_detected=true" >> $GITHUB_OUTPUT
+        else
+          echo "failure_detected=false" >> $GITHUB_OUTPUT
+        fi
 
     - name: Try compiling the firmware
       id: compile_attempt
@@ -194,9 +213,29 @@ jobs:
         [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
         echo "开始执行修复后重试编译..."
         LOG_FILE="compile.log"
-        # 确保 compile_with_retry.py 存在
+        # 确保 compile_with_retry.py 和 extract_last_error.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        make -j1 V=s || python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+        cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
+        make -j1 V=s || true
+        echo "=== firmware 初始编译步骤结束 ==="
+        # 提取最后一个失败组件的日志
+        python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+        if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+          echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
+          echo "检测到 firmware 编译失败，已记录错误日志"
+        fi
+
+    - name: Detect firmware build failure
+      id: detect_firmware_failure
+      run: |
+        if [ "$FIRMWARE_BUILD_FAILED" = "true" ]; then
+          echo "检测到 firmware 编译失败，准备提取错误信息..."
+          cd openwrt
+          python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          echo "failure_detected=true" >> $GITHUB_OUTPUT
+        else
+          echo "failure_detected=false" >> $GITHUB_OUTPUT
+        fi
 
     - name: Check for .bin file after initial compilation
       id: check_bin_initial
@@ -284,19 +323,29 @@ jobs:
         cd openwrt
         make defconfig
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
+        cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
         mkdir -p build_dir/target-*/root-ramips
-        make -j1 V=s > compile.log 2>&1 || {
-          echo "首次编译失败，开始自动修复与重试..."
-          if grep -q "Hash mismatch for file opkg" compile.log; then
-            echo "检测到 opkg 源码包 hash mismatch，清理下载缓存后重试..."
-            rm -f dl/opkg-*.tar.zst
-            make package/system/opkg/clean V=s || true
-            make package/system/opkg/download V=s || true
-          fi
-          mkdir -p build_dir/target-*/root-ramips
-          python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log" || exit 1
-        }
+        make -j1 V=s > compile.log 2>&1 || true
+        echo "=== 固件编译步骤结束 ==="
+        # 提取最后一个失败组件的日志
+        python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+        if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+          echo "FIXED_BUILD_FAILED=true" >> $GITHUB_ENV
+          echo "检测到固件编译失败，已记录错误日志"
+        fi
         echo "bin_status=success" >> $GITHUB_ENV
+
+    - name: Detect fixed firmware build failure
+      id: detect_fixed_failure
+      run: |
+        if [ "$FIXED_BUILD_FAILED" = "true" ]; then
+          echo "检测到固件编译失败，准备提取错误信息..."
+          cd openwrt
+          python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          echo "failure_detected=true" >> $GITHUB_OUTPUT
+        else
+          echo "failure_detected=false" >> $GITHUB_OUTPUT
+        fi
         
     - name: Check for .bin file after final compilation
       id: check_bin_final
@@ -439,6 +488,12 @@ jobs:
         WORKFLOW_FILE: .github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml
       run: |
         pip install requests --quiet || true
+        cd $GITHUB_WORKSPACE
+        python extract_last_error.py --log-dir openwrt --output last_error.log --max-chars 8000 || true
+        if [ -f "last_error.log" ]; then
+          echo "=== 最后错误日志 ==="
+          cat last_error.log
+        fi
         python auto_fix_with_AI_LLM.py || echo "Auto-fix failed, but build failure has been recorded above."
 
     - name: Delete workflow runs
