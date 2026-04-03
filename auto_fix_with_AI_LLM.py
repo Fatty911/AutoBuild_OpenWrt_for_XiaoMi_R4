@@ -70,6 +70,21 @@ def get_run_logs(repo, run_id, pat):
 def get_local_logs():
     """读取本地编译日志文件，按组件分割，只提取最后一个失败的组件日志"""
     import re
+    import glob
+    
+    # 首先检查是否有预提取的错误日志文件（由工作流中的 extract_last_error.py 生成）
+    for prefix in ["", "./", "openwrt/", "../"]:
+        last_error_path = prefix + "last_error.log"
+        if os.path.exists(last_error_path):
+            try:
+                with open(last_error_path, 'r', errors='ignore') as f:
+                    content = f.read()
+                if content and len(content) > 50:  # 有实质内容
+                    print(f"使用预提取的错误日志: {last_error_path}")
+                    return f"=== 预提取错误日志 (last_error.log) ===\n{content}"
+            except Exception as e:
+                print(f"⚠️ 读取 {last_error_path} 失败: {e}")
+    
     log_files = [
         "tools.log",
         "toolchain.log",
@@ -81,7 +96,6 @@ def get_local_logs():
     ]
     
     # 也检查带 run 次数的日志，例如 compile.log.run.1.log
-    import glob
     all_possible_logs = []
     for log_file in log_files:
         for prefix in ["openwrt/", ""]:

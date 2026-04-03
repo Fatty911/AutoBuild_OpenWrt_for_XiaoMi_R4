@@ -236,24 +236,58 @@ jobs:
         run: |
           cd openwrt
           cp $GITHUB_WORKSPACE/compile_with_retry.py .
+          cp $GITHUB_WORKSPACE/extract_last_error.py .
           echo "=== 开始编译 packages 部分 ==="
-          make package/compile V=s || {
-            echo "首次编译失败，开始自动修复..."
-            python compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log" || exit 1
-          }
-          echo "=== packages 编译完成 ==="
+          make package/compile V=s || true
+          echo "=== packages 编译步骤结束 ==="
+          
+          # 提取最后一个失败组件的日志
+          python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+          if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+            echo "BUILD_FAILED=true" >> $GITHUB_ENV
+            echo "检测到编译失败，已记录错误日志"
+          fi
+
+      - name: Detect packages build failure
+        id: detect_packages_failure
+        run: |
+          if [ "$BUILD_FAILED" = "true" ]; then
+            echo "检测到 packages 编译失败，准备提取错误信息..."
+            cd openwrt
+            python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+            echo "failure_detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "failure_detected=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Compile firmware
         run: |
           cd openwrt
           cp $GITHUB_WORKSPACE/compile_with_retry.py .
+          cp $GITHUB_WORKSPACE/extract_last_error.py .
           echo "=== 开始编译固件镜像 ==="
-          make -j1 V=s || {
-            echo "固件编译失败，尝试修复后重试..."
-            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log" || exit 1
-          }
-          echo "=== 固件编译完成 ==="
+          make -j1 V=s || true
+          echo "=== 固件编译步骤结束 ==="
           ls -la bin/targets/*/
+          
+          # 提取最后一个失败组件的日志
+          python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+          if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+            echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
+            echo "检测到固件编译失败，已记录错误日志"
+          fi
+
+      - name: Detect firmware build failure
+        id: detect_firmware_failure
+        run: |
+          if [ "$FIRMWARE_BUILD_FAILED" = "true" ]; then
+            echo "检测到固件编译失败，准备提取错误信息..."
+            cd openwrt
+            python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+            echo "failure_detected=true" >> $GITHUB_OUTPUT
+          else
+            echo "failure_detected=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Set environment variables
         id: setEnv
@@ -408,15 +442,20 @@ jobs:
         if: steps.transplant2.outputs.isFixed == 'true'
         run: |
           cd openwrt
+          cp $GITHUB_WORKSPACE/compile_with_retry.py .
+          cp $GITHUB_WORKSPACE/extract_last_error.py .
           echo "=== 编译修复后的固件 ==="
           make defconfig
-          make -j1 V=s || {
-            echo "编译失败，尝试使用重试脚本..."
-            cp $GITHUB_WORKSPACE/compile_with_retry.py .
-            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile_fixed.log" || exit 1
-          }
-          echo "=== 固件编译完成 ==="
+          make -j1 V=s || true
+          echo "=== 固件编译步骤结束 ==="
           ls -la bin/targets/*/
+          
+          # 提取最后一个失败组件的日志
+          python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+          if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+            echo "FIXED_BUILD_FAILED=true" >> $GITHUB_ENV
+            echo "检测到固件编译失败，已记录错误日志"
+          fi
 
       - name: Upload firmware to release
         uses: softprops/action-gh-release@v2
@@ -431,14 +470,13 @@ jobs:
         if: failure()
         run: |
           echo "Build failed, attempting AI-assisted fix..."
-          cd openwrt
-          if [ -f "compile.log" ]; then
-            tail -n 100 compile.log > last_errors.log
+          cd $GITHUB_WORKSPACE
+          python extract_last_error.py --log-dir openwrt --output last_error.log --max-chars 8000 || true
+          if [ -f "last_error.log" ]; then
+            echo "=== 最后错误日志 ==="
+            cat last_error.log
           fi
-          if [ -f "packages.log" ]; then
-            tail -n 100 packages.log >> last_errors.log
-          fi
-          echo "Error logs collected. Manual intervention may be required."
+          echo "Error logs extracted. Passing to AI assistant..."
 
       - name: Delete workflow runs
         if: always()

@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""从编译日志中提取最后一个失败组件的日志，节省 LLM token"""
+
+import sys
+import re
+import os
+from pathlib import Path
+
+
+def extract_last_error_component(log_content):
+    """
+    解析日志，返回 (component_name, component_log, was_error)
+    识别 make[x]: Entering directory 到 time: 之间的完整组件块
+    """
+    if not log_content:
+        return None, "", False
+    
+    lines = log_content.splitlines()
+    
+    # 找到所有 Entering directory 块
+    component_blocks = []  # [(start_line_idx, end_line_idx, component_name, has_error)]
+    current_block = None  # (start_idx, lines_buffer, component_name)
+    
+    for i, line in enumerate(lines):
+        # 匹配 Entering directory
+        entering_match = re.search(r"make\[(\d+)\]: Entering directory '([^']+)'", line)
+        if entering_match:
+            # 保存上一个块
+            if current_block is not None:
+                component_blocks.append(current_block)
+            start_idx = i
+            component_name = entering_match.group(2)
+            # 特殊标记错误关键词
+            current_block = [start_idx, [line], component_name, False]
+        elif current_block is not None:
+            current_block[1].append(line)
+            # 检查是否包含错误
+            if any(k in line.lower() for k in ['error', 'failed', 'make: ***']):
+                current_block[3] = True
+            # 匹配 time: target/linux/prereq 或 make[x]: Leaving directory 表示组件结束
+            time_match = re.search(r"time:\s+(\S+)", line)
+            leaving_match = re.search(r"make\[\d+\]: Leaving directory", line)
+            if time_match or leaving_match:
+                component_blocks.append(tuple(current_block))
+                current_block = None
+    
+    # 保存最后一个块
+    if current_block is not None:
+        component_blocks.append(tuple(current_block))
+    
+    if not component_blocks:
+        return None, log_content, False
+    
+    # 找最后一个有错误的组件
+    for block in reversed(component_blocks):
+        if block[3]:  # has_error
+            start_idx, block_lines, component_name, has_error = block
+            return component_name, "\n".join(block_lines), True
+    
+    # 没有错误，返回最后一个组件
+    last_block = component_blocks[-1]
+    start_idx, block_lines, component_name, has_error = last_block
+    return component_name, "\n".join(block_lines), False
+
+
+def find_last_error_in_logs(log_dir=".", log_files=None):
+    """
+    在多个日志文件中查找最后一个失败的组件
+    返回 (failed_component_name, failed_log_content, which_log_file)
+    """
+    if log_files is None:
+        log_files = [
+            "packages.log",
+            "compile.log",
+            "compile_fixed.log",
+            "kernel.log",
+            "tools.log",
+            "toolchain.log",
+        ]
+    
+    all_errors = []
+    
+    for log_file in log_files:
+        for prefix in ["", "openwrt/", "./"]:
+            path = Path(prefix + log_file)
+            if path.exists():
+                try:
+                    with open(path, 'r', errors='ignore') as f:
+                        content = f.read()
+                    
+                    component_name, component_log, has_error = extract_last_error_component(content)
+                    
+                    if has_error:
+                        all_errors.append({
+                            'file': str(path),
+                            'component': component_name,
+                            'log': component_log[-8000:],  # 截断到 8000 字符
+                        })
+                except Exception as e:
+                    print(f"⚠️ 读取 {path} 失败: {e}", file=sys.stderr)
+    
+    if not all_errors:
+        return None, "No error found in logs", None
+    
+    # 返回最后一个错误的详情
+    last_error = all_errors[-1]
+    return last_error['component'], last_error['log'], last_error['file']
+
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description='提取最后一个失败组件的日志')
+    parser.add_argument('--log-dir', default='.', help='日志目录')
+    parser.add_argument('--output', help='输出文件路径')
+    parser.add_argument('--max-chars', type=int, default=8000, help='最大字符数')
+    args = parser.parse_args()
+    
+    os.chdir(args.log_dir)
+    
+    component, log_content, log_file = find_last_error_in_logs()
+    
+    output = f"=== Last Failed Component ===\n"
+    if component:
+        output += f"Component: {component}\n"
+    if log_file:
+        output += f"Log File: {log_file}\n"
+    output += f"\n{log_content}"
+    
+    # 截断
+    if len(output) > args.max_chars:
+        output = output[-args.max_chars:]
+    
+    print(output)
+    
+    if args.output:
+        with open(args.output, 'w') as f:
+            f.write(output)
+        print(f"\n✅ 错误日志已保存到: {args.output}", file=sys.stderr)
+    
+    return 0 if component else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
