@@ -216,6 +216,13 @@ jobs:
         # 确保 compile_with_retry.py 和 extract_last_error.py 存在
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
+        
+        TARGET_DIR=$(ls -d build_dir/target-* 2>/dev/null | head -n 1 || echo "build_dir/target-mipsel_24kc_musl")
+        if [ -n "$TARGET_DIR" ]; then
+          mkdir -p "$TARGET_DIR/root-ramips"
+          echo "Created $TARGET_DIR/root-ramips"
+        fi
+        
         make -j1 V=s || true
         echo "=== firmware 初始编译步骤结束 ==="
         # 提取最后一个失败组件的日志
@@ -272,6 +279,7 @@ jobs:
         define Image/Prepare
         	rm -f $$(KDIR)/ubi_mark
         	echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
+        	mkdir -p $(TARGET_DIR)
         endef
         
         define Device/nand
@@ -327,7 +335,14 @@ jobs:
         make defconfig
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
-        mkdir -p build_dir/target-*/root-ramips
+        
+        # 强制显式创建目标目录，避免通配符不生效
+        TARGET_DIR=$(ls -d build_dir/target-* 2>/dev/null | head -n 1 || echo "build_dir/target-mipsel_24kc_musl")
+        if [ -n "$TARGET_DIR" ]; then
+          mkdir -p "$TARGET_DIR/root-ramips"
+          echo "Created $TARGET_DIR/root-ramips"
+        fi
+        
         make -j1 V=s > compile.log 2>&1 || true
         echo "=== 固件编译步骤结束 ==="
         # 提取最后一个失败组件的日志
@@ -349,6 +364,20 @@ jobs:
         else
           echo "failure_detected=false" >> $GITHUB_OUTPUT
         fi
+        
+    - name: "Gate: Ensure .bin exists before release"
+      id: gate_bin
+      run: |
+        cd openwrt
+        echo "=== 检查 .bin 固件是否存在 ==="
+        BIN_COUNT=$(ls bin/targets/*/*/*.bin 2>/dev/null | grep -v initramfs | wc -l)
+        echo "找到 $BIN_COUNT 个 .bin 固件（排除 initramfs）"
+        if [ "$BIN_COUNT" -eq 0 ]; then
+          echo "::error::没有找到任何 .bin 固件，终止工作流"
+          echo "BUILD_GATE_FAILED=true" >> $GITHUB_ENV
+          exit 1
+        fi
+        echo "BUILD_GATE_PASSED=true" >> $GITHUB_ENV
         
     - name: Check for .bin file after final compilation
       id: check_bin_final
