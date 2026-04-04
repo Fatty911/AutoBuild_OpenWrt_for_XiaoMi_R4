@@ -289,6 +289,20 @@ jobs:
             echo "failure_detected=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: "Gate: Ensure .bin exists before release"
+        id: gate_bin
+        run: |
+          cd openwrt
+          echo "=== 检查 .bin 固件是否存在 ==="
+          BIN_COUNT=$(ls bin/targets/*/*/*.bin 2>/dev/null | grep -v initramfs | wc -l)
+          echo "找到 $BIN_COUNT 个 .bin 固件（排除 initramfs）"
+          if [ "$BIN_COUNT" -eq 0 ]; then
+            echo "::error::没有找到任何 .bin 固件，终止工作流"
+            echo "BUILD_GATE_FAILED=true" >> $GITHUB_ENV
+            exit 1
+          fi
+          echo "BUILD_GATE_PASSED=true" >> $GITHUB_ENV
+
       - name: Set environment variables
         id: setEnv
         run: |
