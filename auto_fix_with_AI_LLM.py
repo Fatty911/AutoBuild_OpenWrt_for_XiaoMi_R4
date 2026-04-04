@@ -320,14 +320,44 @@ def git_push(workflow_file, pat, repo, model_name):
     msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
     subprocess.run(["git", "commit", "-m", msg], check=True)
     try:
-        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
-        print("Fix committed and pushed successfully!")
-    except subprocess.CalledProcessError:
+        result = subprocess.run(["git", "push", remote_url, "HEAD:main"], capture_output=True, text=True)
+        if result.returncode == 0:
+            print("Fix committed and pushed successfully!")
+            return True
+        # Check if it's a workflow permission error
+        if "workflow" in result.stderr.lower() and ("permission" in result.stderr.lower() or "refusing" in result.stderr.lower()):
+            print("⚠️ GitHub App 没有 workflow 权限，无法直接推送 workflow 文件修改")
+            print("将尝试创建 PR 来提交修复...")
+            # Create PR instead
+            pr_result = subprocess.run([
+                "gh", "pr", "create",
+                "--title", f"Auto-fix: {os.path.basename(workflow_file)} by {model_name}",
+                "--body", f"Auto-fix applied by {model_name}. Please review and merge.",
+                "--base", "main"
+            ], capture_output=True, text=True)
+            if pr_result.returncode == 0:
+                print(f"✅ PR 创建成功: {pr_result.stdout.strip()}")
+                return True
+            else:
+                print(f"⚠️ PR 创建失败: {pr_result.stderr}")
+                print("建议：手动应用以下修改到 workflow 文件")
+                subprocess.run(["git", "diff", "--cached", "--stat"])
+                return False
+        # Try rebasing and pushing again for other errors
         print("首次 push 失败，尝试 fetch + rebase 后再推送...")
         subprocess.run(["git", "fetch", remote_url, "main"], check=True)
         subprocess.run(["git", "rebase", "FETCH_HEAD"], check=True)
-        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=True)
-        print("Rebase 后 push 成功。")
+        push_result = subprocess.run(["git", "push", remote_url, "HEAD:main"], capture_output=True, text=True)
+        if push_result.returncode == 0:
+            print("Rebase 后 push 成功。")
+            return True
+        else:
+            print(f"⚠️ Push 仍然失败: {push_result.stderr[:500]}")
+            return False
+    except subprocess.CalledProcessError as e:
+        print(f"⚠️ Push 过程中出错: {e}")
+        return False
+    return True
 
 
 def main():

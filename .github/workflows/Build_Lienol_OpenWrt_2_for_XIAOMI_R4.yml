@@ -310,6 +310,9 @@ jobs:
         # Adjust DTS partition size to 114MB
         sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts 2>/dev/null || true
         sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts 2>/dev/null || true
+        # Fix factory phandle reference error by adding missing factory nvmem label
+        echo "添加 factory 标签定义修复 phandle 错误..."
+        printf '\n/ {\n    nvmem {\n        compatible = "nvmem-cells";\n        #address-cells = <1>;\n        #size-cells = <1>;\n        factory: factory@0 {\n            reg = <0x0 0x10000>;\n        };\n    };\n};\n' >> target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
         # Verify Makefile syntax
         echo "=== Generated mt7621.mk ==="
         head -30 target/linux/ramips/image/mt7621.mk
