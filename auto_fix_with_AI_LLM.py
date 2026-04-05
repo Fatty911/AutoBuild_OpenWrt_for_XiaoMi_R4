@@ -593,7 +593,7 @@ def main():
     gpt_models = split_models("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3,gpt-5.2")
     grok_models = split_models("GROK_MODEL_LIST", "grok-4.2")
     glm_models = split_models("GLM_MODEL_LIST", "glm-5")
-    minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7")
+    # minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7") # 注释掉 MiniMax，防幻觉
 
     providers = []
 
@@ -688,16 +688,16 @@ def main():
                 }
             )
 
-    # 7) MiniMax
-    if minimax_api_key:
-        providers.append(
-            {
-                "name": "MiniMax",
-                "proxy_url": "https://api.minimax.chat",
-                "api_key": minimax_api_key,
-                "models": minimax_models,
-            }
-        )
+    # 7) MiniMax - 暂时禁用，容易产生幻觉
+    # if minimax_api_key:
+    #     providers.append(
+    #         {
+    #             "name": "MiniMax",
+    #             "proxy_url": "https://api.minimax.chat",
+    #             "api_key": minimax_api_key,
+    #             "models": minimax_models,
+    #         }
+    #     )
 
     if not providers:
         print(

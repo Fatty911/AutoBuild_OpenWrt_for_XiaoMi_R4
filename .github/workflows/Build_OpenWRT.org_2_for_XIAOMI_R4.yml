@@ -506,7 +506,7 @@ jobs:
           WORKFLOW_FILE: .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
         run: |
           echo "Build failed, attempting AI-assisted fix..."
-          pip install requests --quiet || true
+          pip install requests beautifulsoup4 --quiet --break-system-packages 2>/dev/null || pip install requests beautifulsoup4 --quiet || true
           cd $GITHUB_WORKSPACE
           python extract_last_error.py --log-dir openwrt --output last_error.log --max-chars 8000 || true
           if [ -f "last_error.log" ]; then
