@@ -217,12 +217,6 @@ jobs:
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
         
-        TARGET_DIR=$(ls -d build_dir/target-* 2>/dev/null | head -n 1 || echo "build_dir/target-mipsel_24kc_musl")
-        if [ -n "$TARGET_DIR" ]; then
-          mkdir -p "$TARGET_DIR/root-ramips"
-          echo "Created $TARGET_DIR/root-ramips"
-        fi
-        
         make -j1 V=s || true
         echo "=== firmware 初始编译步骤结束 ==="
         # 提取最后一个失败组件的日志
@@ -279,7 +273,6 @@ jobs:
         define Image/Prepare
         	rm -f $$(KDIR)/ubi_mark
         	echo -ne '\xde\xad\xc0\xde' > $$(KDIR)/ubi_mark
-        	mkdir -p $(TARGET_DIR)
         endef
         
         define Device/nand
@@ -335,13 +328,6 @@ jobs:
         make defconfig
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
-        
-        # 强制显式创建目标目录，避免通配符不生效
-        TARGET_DIR=$(ls -d build_dir/target-* 2>/dev/null | head -n 1 || echo "build_dir/target-mipsel_24kc_musl")
-        if [ -n "$TARGET_DIR" ]; then
-          mkdir -p "$TARGET_DIR/root-ramips"
-          echo "Created $TARGET_DIR/root-ramips"
-        fi
         
         make -j1 V=s > compile.log 2>&1 || true
         echo "=== 固件编译步骤结束 ==="
