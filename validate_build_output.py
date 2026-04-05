@@ -3,13 +3,10 @@
 构建输出验证门：
 必须满足以下至少一项：
 1. 成功上传压缩包到 MEGA 网盘
-2. 成功生成 .bin 固件文件
+2. 成功生成 .bin 固件文件，并且固件大小合理（排除 initramfs，正常固件需 > 5MB）
 
-如果两者都没有，报错并触发 AI 自动修复。
-
-用法：
-  python validate_build_output.py              # 普通验证模式（当前步骤失败）
-  python validate_build_output.py --gate       # 质量门模式（输出结果供后续判断）
+如果两者都没有（或生成的固件是个空壳），报错并触发 AI 自动修复。
+这可以防止打包出 1MB 左右的“假”固件骗过工作流，导致误删 MEGA 备份。
 """
 
 import os
@@ -31,7 +28,7 @@ def main():
     github_output = os.getenv("GITHUB_OUTPUT", "/tmp/build_output.env")
     github_workspace = os.getenv("GITHUB_WORKSPACE", "/github/workspace")
     has_mega_upload = False
-    has_bin_file = False
+    has_valid_bin_file = False
 
     print(f"=== 构建输出验证开始 (SOURCE={source}) ===")
     print(f"工作目录: {os.getcwd()}")
@@ -40,10 +37,30 @@ def main():
     bin_pattern = os.path.join(github_workspace, "openwrt/bin/targets/**/*.bin")
     bin_files = glob.glob(bin_pattern, recursive=True)
     if bin_files:
-        has_bin_file = True
-        print(f"✓ 找到 {len(bin_files)} 个 .bin 文件")
-        for f in bin_files[:5]:
-            print(f"  - {f}")
+        print(f"✓ 找到 {len(bin_files)} 个 .bin 文件，正在验证大小...")
+        
+        # 定义一个最低大小阈值：正常的 Sysupgrade 固件应该在 15-20MB 以上
+        # 我们设一个相对保守的底线：只要发现至少一个大于 5MB 的固件，就认为打包成功。
+        MIN_VALID_SIZE = 5 * 1024 * 1024  # 5MB
+        
+        valid_files = []
+        for f in bin_files:
+            size_bytes = os.path.getsize(f)
+            size_mb = size_bytes / (1024 * 1024)
+            if "initramfs" in f:
+                print(f"  - 跳过 initramfs: {f} ({size_mb:.2f} MB)")
+                continue
+            
+            if size_bytes > MIN_VALID_SIZE:
+                valid_files.append((f, size_mb))
+                print(f"  - ✅ 合格固件: {f} ({size_mb:.2f} MB)")
+            else:
+                print(f"  - ❌ 异常过小: {f} ({size_mb:.2f} MB) < {MIN_VALID_SIZE/(1024*1024):.1f} MB")
+                
+        if valid_files:
+            has_valid_bin_file = True
+        else:
+            print("❌ 所有找到的 .bin 文件大小都严重异常（疑似打包失败产生空壳固件）")
     else:
         print(f"✗ 未找到 .bin 文件 (搜索: {bin_pattern})")
 
@@ -59,8 +76,8 @@ def main():
     else:
         print("✗ 未检测到 MEGA 上传成功")
 
-    if has_mega_upload or has_bin_file:
-        print("✓ 验证通过：满足至少一项输出要求")
+    if has_mega_upload or has_valid_bin_file:
+        print("✓ 验证通过：满足至少一项有效的输出要求")
         with open("/tmp/build_validation.txt", "w") as f:
             f.write("SUCCESS")
         if args.gate:
@@ -74,7 +91,7 @@ def main():
             print(f"已输出到 {github_output} 和 GITHUB_ENV: BUILD_QUALITY_GATE=pass")
         sys.exit(0)
     else:
-        print("✗ 验证失败：既没有上传 MEGA 压缩包，也没有生成 .bin 固件")
+        print("✗ 验证失败：既没有上传 MEGA 压缩包，也没有生成正常大小的 .bin 固件")
         print("触发 AI 自动修复...")
         with open("/tmp/build_validation.txt", "w") as f:
             f.write("FAILED")
