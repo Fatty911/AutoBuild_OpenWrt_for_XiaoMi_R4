@@ -164,6 +164,13 @@ def call_api(proxy_url, api_key, model, prompt):
 
     try:
         resp = requests.post(url, headers=headers, json=data, timeout=180)
+        
+        # 捕捉额度用尽/不再免费等特有错误，抛出特殊异常标记
+        if resp.status_code in [401, 402, 403]:
+            err_text = resp.text[:500].lower()
+            if "free promotion has ended" in err_text or "insufficient quota" in err_text or "balance" in err_text:
+                raise Exception(f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}")
+                
         if resp.status_code != 200:
             raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
         
@@ -189,6 +196,7 @@ def call_api(proxy_url, api_key, model, prompt):
 
 def try_provider(name, proxy_url, api_key, model, prompt):
     """尝试调用单个提供商"""
+    import json
     for m in model if isinstance(model, list) else [model]:
         print(f"[{name}] 尝试模型: {m} ...")
         try:
@@ -197,6 +205,32 @@ def try_provider(name, proxy_url, api_key, model, prompt):
             return result
         except Exception as e:
             print(f"[{name}] 模型 {m} 失败: {e}")
+            
+            # 如果是明确的额度耗尽/不再免费，从缓存中剔除（针对 ZEN 等动态抓取的模型）
+            if "[QUOTA_EXHAUSTED]" in str(e):
+                cache_file = ".zen_free_models_cache.json"
+                if os.path.exists(cache_file):
+                    try:
+                        with open(cache_file, "r") as f:
+                            cache_data = json.load(f)
+                        if m in cache_data.get("valid_models", []):
+                            print(f"⚠️ 模型 {m} 已不再免费/额度耗尽，从缓存中永久移除。")
+                            cache_data["valid_models"].remove(m)
+                            with open(cache_file, "w") as f:
+                                json.dump(cache_data, f)
+                            
+                            # 直接使用 git 提交并推送缓存更新，防止下次运行再次调用
+                            import subprocess
+                            try:
+                                subprocess.run(["git", "add", cache_file], check=True)
+                                subprocess.run(["git", "commit", "-m", f"Auto-remove expired free model {m} from cache"], check=True)
+                                # 注意这里可能会和其他推送冲突，如果失败就在最后的 git_push 一起推
+                                subprocess.run(["git", "push"], check=False)
+                            except Exception as git_err:
+                                print(f"自动提交剔除失效模型的缓存失败: {git_err}")
+                                
+                    except Exception as cache_err:
+                        print(f"更新缓存剔除失败: {cache_err}")
     return None
 
 
@@ -438,6 +472,116 @@ def main():
         source = raw if raw else default_csv
         return [m.strip() for m in source.split(",") if m.strip()]
 
+    # ======================================================================
+    # 动态获取并验证 ZEN 免费模型（爬虫判断排行榜前 15 名）
+    # ======================================================================
+    zen_valid_free_models = []
+    if zen_api_key:
+        cache_file = ".zen_free_models_cache.json"
+        cache_days = 3
+        need_update = True
+        
+        # 1. 检查持久化在仓库的缓存
+        if os.path.exists(cache_file):
+            try:
+                import json
+                import time
+                with open(cache_file, "r") as f:
+                    cache_data = json.load(f)
+                last_updated = cache_data.get("timestamp", 0)
+                cached_models = cache_data.get("valid_models", [])
+                
+                days_since_update = (time.time() - last_updated) / (24 * 3600)
+                if cached_models and days_since_update < cache_days:
+                    print(f"[ZEN] 发现距今 {days_since_update:.1f} 天的缓存模型，跳过爬虫直接使用: {cached_models}")
+                    zen_valid_free_models = cached_models
+                    need_update = False
+                elif not cached_models:
+                    print("[ZEN] 缓存的模型列表为空，将重新爬取...")
+                else:
+                    print(f"[ZEN] 缓存距今已达 {days_since_update:.1f} 天，需要更新验证...")
+            except Exception as e:
+                print(f"[ZEN] 读取缓存失败: {e}")
+
+        # 2. 需要更新缓存：去排行榜比对并验证有效性
+        if need_update:
+            print("[ZEN] 正在实时获取免费模型并从排行榜比对有效性...")
+            try:
+                import requests
+                from bs4 import BeautifulSoup
+                import json
+                import time
+                
+                # a. 获取排行榜前 15 名
+                ranking_url = "https://artificialanalysis.ai/leaderboards/models"
+                headers = {"User-Agent": "Mozilla/5.0"}
+                resp = requests.get(ranking_url, headers=headers, timeout=15)
+                resp.raise_for_status()
+                soup = BeautifulSoup(resp.text, 'html.parser')
+                table = soup.find('table')
+                
+                top_15_names = []
+                if table:
+                    # 前两行通常是表头
+                    for row in table.find_all('tr')[2:17]:
+                        cells = row.find_all(['th', 'td'])
+                        if cells:
+                            top_15_names.append(cells[0].get_text(strip=True).lower())
+                
+                # b. 获取 ZEN 的模型列表
+                zen_url = "https://opencode.ai/zen/v1/models"
+                z_headers = {"Authorization": f"Bearer {zen_api_key}"}
+                z_resp = requests.get(zen_url, headers=z_headers, timeout=10)
+                z_resp.raise_for_status()
+                zen_models = z_resp.json().get("data", [])
+                
+                # c. 筛选并比对
+                valid_models = []
+                for m in zen_models:
+                    model_id = m.get("id", "").lower()
+                    if "free" in model_id:
+                        # 从 model_id 中提取基础名字进行模糊匹配
+                        # 比如 mimo-v2-pro-free -> mimo v2 pro
+                        base_name = model_id.replace("-free", "").replace("_free", "").replace("-", " ").replace("_", " ")
+                        
+                        is_top_15 = False
+                        for top_name in top_15_names:
+                            clean_top = top_name.replace("-", " ").replace("_", " ")
+                            if base_name in clean_top or clean_top in base_name or all(part in clean_top for part in base_name.split()):
+                                is_top_15 = True
+                                break
+                        
+                        if is_top_15:
+                            print(f"[ZEN] 发现排名前 15 的免费模型: {m.get('id')}")
+                            valid_models.append(m.get("id"))
+                
+                zen_valid_free_models = valid_models
+                
+                # d. 写入缓存
+                with open(cache_file, "w") as f:
+                    json.dump({
+                        "timestamp": time.time(),
+                        "valid_models": zen_valid_free_models
+                    }, f)
+                # 尝试将新的模型缓存推送到仓库持久化
+                import subprocess
+                try:
+                    subprocess.run(["git", "config", "--local", "--unset-all", "http.https://github.com/.extraheader"], check=False)
+                    subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+                    subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+                    remote_url = f"https://{pat}@github.com/{repo}.git"
+                    subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
+                    subprocess.run(["git", "add", cache_file], check=True)
+                    diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
+                    if diff.returncode != 0:
+                        subprocess.run(["git", "commit", "-m", "Update ZEN free models cache"], check=True)
+                        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=False)
+                except Exception as git_err:
+                    print(f"自动持久化模型缓存到 git 失败 (非致命): {git_err}")
+                    
+            except Exception as e:
+                print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
+
     claude_models = split_models("CLAUDE_MODEL_LIST", "claude-sonnet-4.6")
     gemini_models = split_models(
         "GEMINI_MODEL_LIST", "gemini-3.1-pro,gemini-3.1-pro-preview"
@@ -449,7 +593,16 @@ def main():
 
     providers = []
 
-    # 1) OPENCODE ZEN (已移除不可用的 mimo-v2-pro-free)
+    # 1) OPENCODE ZEN (动态获取符合前 15 名的 free 模型)
+    if zen_api_key and zen_valid_free_models:
+        providers.append(
+            {
+                "name": "OPENCODE-ZEN",
+                "proxy_url": "https://opencode.ai/zen",
+                "api_key": zen_api_key,
+                "models": zen_valid_free_models,
+            }
+        )
 
     # 2) Claude Sonnet (优先用 OpenRouter)
     if openrouter_api_key:
