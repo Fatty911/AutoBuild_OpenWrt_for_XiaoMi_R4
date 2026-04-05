@@ -7,9 +7,9 @@ on:
       - master
     paths:
       - .github/workflows/Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml
-      - config_for_coolsnowwolf
-      - diy-part1.sh
-      - diy-part2.sh
+      - custom_configs/config_for_coolsnowwolf
+      - custom_scripts/diy-part1.sh
+      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
   repository_dispatch:
     types: coolsnowwolf Source Code Update
@@ -24,9 +24,9 @@ env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: config_for_coolsnowwolf
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
+  CONFIG_FILE: custom_configs/config_for_coolsnowwolf
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -122,8 +122,8 @@ jobs:
           WIFI_SSID: ${{ secrets.WIFI_SSID }}
           WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
         run: |
-          chmod +x $GITHUB_WORKSPACE/replace_wifi_config.sh
-          $GITHUB_WORKSPACE/replace_wifi_config.sh openwrt/files/etc/config/wireless
+          chmod +x $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh
+          $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh openwrt/files/etc/config/wireless
 
       - name: Download package
         id: package
@@ -208,7 +208,7 @@ jobs:
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
           ls -lh ${{ env.SOURCE }}.tar.gz || echo "归档文件不存在"
-          python $GITHUB_WORKSPACE/upload_to_MEGA.py
+          python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py upload
           echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
 
       - name: Record build job outputs
@@ -221,7 +221,7 @@ jobs:
         env:
           MEGA_UPLOAD_SUCCESS: ${{ env.MEGA_UPLOAD_SUCCESS }}
           SOURCE: coolsnowwolf
-        run: python $GITHUB_WORKSPACE/validate_build_output.py
+        run: python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
       - name: Auto fix with AI on failure
         if: failure()
@@ -233,7 +233,7 @@ jobs:
           WORKFLOW_FILE: .github/workflows/Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml
         run: |
           pip install requests --quiet || true
-          python auto_fix_with_AI_LLM.py
+          python custom_scripts/auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
         if: always()

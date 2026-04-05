@@ -7,11 +7,11 @@ on:
       - master
     paths:
       - .github/workflows/Build_coolsnowwolf-LEDE-full_for_XIAOMI_R4.yml
-      - config_for_coolsnowwolf
-      - diy-part1.sh
-      - diy-part2.sh
+      - custom_configs/config_for_coolsnowwolf
+      - custom_scripts/diy-part1.sh
+      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
-      - select_kernel.py
+      - custom_scripts/select_kernel.py
   repository_dispatch:
     types: coolsnowwolf Source Code Update
   workflow_dispatch:
@@ -26,16 +26,16 @@ env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: config_for_coolsnowwolf
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
+  CONFIG_FILE: custom_configs/config_for_coolsnowwolf
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   ACTIONS_STEP_DEBUG: true
   SOURCE: coolsnowwolf
-  KERNEL_SELECTOR_PY: select_kernel.py # Define script name
+  KERNEL_SELECTOR_PY: custom_scripts/select_kernel.py # Define script name
 
 permissions:
   contents: write
@@ -124,8 +124,8 @@ jobs:
           WIFI_SSID: ${{ secrets.WIFI_SSID }}
           WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
         run: |
-          chmod +x $GITHUB_WORKSPACE/replace_wifi_config.sh
-          $GITHUB_WORKSPACE/replace_wifi_config.sh openwrt/files/etc/config/wireless
+          chmod +x $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh
+          $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh openwrt/files/etc/config/wireless
 
       - name: Select Kernel Version
         id: select_kernel
@@ -201,8 +201,8 @@ jobs:
       - name: Compile the firmware
         id: compile
         run: |
-          cd openwrt && cp ../compile_with_retry.py .
-          make -j2 V=s || python compile_with_retry.py "make -j2 V=s" "compile.log" || python compile_with_retry.py "make -j1 V=s" "compile.log"
+          cd openwrt && cp .custom_scripts/compile_with_retry.py .
+          make -j2 V=s || python custom_scripts/compile_with_retry.py "make -j2 V=s" "compile.log" || python custom_scripts/compile_with_retry.py "make -j1 V=s" "compile.log"
           echo "status=success" >> $GITHUB_OUTPUT
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -302,12 +302,12 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
-          python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+          python $GITHUB_WORKSPACE/custom_scripts/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
 
       - name: Build Quality Gate
         id: build_quality_gate
         run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py --gate
+          python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py --gate
         env:
           SOURCE: ${{ env.SOURCE }}
 
@@ -342,7 +342,7 @@ jobs:
 
       - name: Validate build output
         run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py
+          python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
       - name: Auto fix with AI on failure
         if: failure()
@@ -354,7 +354,7 @@ jobs:
           WORKFLOW_FILE: .github/workflows/Build_coolsnowwolf-LEDE-full_for_XIAOMI_R4.yml
         run: |
           pip install requests --quiet || true
-          python auto_fix_with_AI_LLM.py
+          python custom_scripts/auto_fix_with_AI_LLM.py
 
       - name: Delete Older Releases
         uses: dev-drprasad/delete-older-releases@master

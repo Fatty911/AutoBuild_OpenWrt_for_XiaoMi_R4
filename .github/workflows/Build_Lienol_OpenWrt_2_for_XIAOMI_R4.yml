@@ -22,18 +22,18 @@ on:
       - main
     paths:
       - .github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml
-      - config_for_Lienol
-      - diy-part1.sh
-      - diy-part2.sh
+      - custom_configs/config_for_Lienol
+      - custom_scripts/diy-part1.sh
+      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
 
 env:
   REPO_URL: https://github.com/Lienol/openwrt
   REPO_BRANCH: main
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: config_for_Lienol
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
+  CONFIG_FILE: custom_configs/config_for_Lienol
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -82,7 +82,7 @@ jobs:
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
       run: |
         # 下载到 /workdir（构建挂载点），避免占用根文件系统空间
-        python download_from_MEGA.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}" /workdir
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download \"${{ env.SOURCE }}\" /workdir
     
     - name: 解压文件
       run: |
@@ -175,20 +175,20 @@ jobs:
         cd openwrt
         # set -x
         LOG_FILE="packages.log"
-        # 确保 compile_with_retry.py 和 extract_last_error.py 存在
-        cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
+        # 确保 custom_scripts/compile_with_retry.py 和 custom_scripts/extract_last_error.py 存在
+        cp -f $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py . || echo "Warning: custom_scripts/compile_with_retry.py not found in workspace"
+        cp -f $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py . || echo "Warning: custom_scripts/extract_last_error.py not found in workspace"
         echo "=== 检查并尝试编译 packages 部分 ==="
         if make -n package/compile V=s >/dev/null 2>&1; then
           {
             make package/compile V=s > packages.log 2>&1 || {
               echo "首次编译 packages 失败，尝试运行修复脚本..."
-              python compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
+              python custom_scripts/compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
             }
           } || true
           echo "=== packages 编译步骤结束 ==="
           # 提取最后一个失败组件的日志
-          python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+          python custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
           if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
             echo "PACKAGES_BUILD_FAILED=true" >> $GITHUB_ENV
             echo "检测到 packages 编译失败，已记录错误日志"
@@ -203,7 +203,7 @@ jobs:
         if [ "$PACKAGES_BUILD_FAILED" = "true" ]; then
           echo "检测到 packages 编译失败，准备提取错误信息..."
           cd openwrt
-          python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          python custom_scripts/extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
           echo "failure_detected=true" >> $GITHUB_OUTPUT
         else
           echo "failure_detected=false" >> $GITHUB_OUTPUT
@@ -218,19 +218,19 @@ jobs:
         [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
         echo "开始执行修复后重试编译..."
         LOG_FILE="compile.log"
-        # 确保 compile_with_retry.py 和 extract_last_error.py 存在
-        cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
+        # 确保 custom_scripts/compile_with_retry.py 和 custom_scripts/extract_last_error.py 存在
+        cp -f $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py . || echo "Warning: custom_scripts/compile_with_retry.py not found in workspace"
+        cp -f $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py . || echo "Warning: custom_scripts/extract_last_error.py not found in workspace"
         
         {
           make -j1 V=s > compile.log 2>&1 || {
             echo "首次固件编译失败，尝试运行修复脚本..."
-            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+            python custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
           }
         } || true
         echo "=== firmware 初始编译步骤结束 ==="
         # 提取最后一个失败组件的日志
-        python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+        python custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
         if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
           echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
           echo "检测到 firmware 编译失败，已记录错误日志"
@@ -242,7 +242,7 @@ jobs:
         if [ "$FIRMWARE_BUILD_FAILED" = "true" ]; then
           echo "检测到 firmware 编译失败，准备提取错误信息..."
           cd openwrt
-          python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          python custom_scripts/extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
           echo "failure_detected=true" >> $GITHUB_OUTPUT
         else
           echo "failure_detected=false" >> $GITHUB_OUTPUT
@@ -336,18 +336,18 @@ jobs:
         set -euo pipefail
         cd openwrt
         make defconfig
-        cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
-        cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
+        cp -f $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py . || echo "Warning: custom_scripts/compile_with_retry.py not found in workspace"
+        cp -f $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py . || echo "Warning: custom_scripts/extract_last_error.py not found in workspace"
         
         {
           make -j1 V=s > compile.log 2>&1 || {
             echo "修复后编译固件仍失败，尝试运行修复脚本..."
-            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+            python custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
           }
         } || true
         echo "=== 固件编译步骤结束 ==="
         # 提取最后一个失败组件的日志
-        python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+        python custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
         if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
           echo "FIXED_BUILD_FAILED=true" >> $GITHUB_ENV
           echo "检测到固件编译失败，已记录错误日志"
@@ -360,7 +360,7 @@ jobs:
         if [ "$FIXED_BUILD_FAILED" = "true" ]; then
           echo "检测到固件编译失败，准备提取错误信息..."
           cd openwrt
-          python extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          python custom_scripts/extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
           echo "failure_detected=true" >> $GITHUB_OUTPUT
         else
           echo "failure_detected=false" >> $GITHUB_OUTPUT
@@ -404,12 +404,12 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
-        python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+        python $GITHUB_WORKSPACE/custom_scripts/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
 
     - name: Build Quality Gate
       id: build_quality_gate
       run: |
-        python $GITHUB_WORKSPACE/validate_build_output.py --gate
+        python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py --gate
       env:
         SOURCE: ${{ env.SOURCE }}
 
@@ -504,11 +504,11 @@ jobs:
         MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
       run: |
-        python delete_from_MEGA.py
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py delete
 
     - name: Validate build output
       run: |
-        python $GITHUB_WORKSPACE/validate_build_output.py
+        python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
     - name: Auto fix with AI on failure
       if: failure()
@@ -522,12 +522,12 @@ jobs:
       run: |
         pip install requests beautifulsoup4 --quiet --break-system-packages 2>/dev/null || pip install requests beautifulsoup4 --quiet || true
         cd $GITHUB_WORKSPACE
-        python extract_last_error.py --log-dir openwrt --output last_error.log --max-chars 8000 || true
+        python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log --max-chars 8000 || true
         if [ -f "last_error.log" ]; then
           echo "=== 最后错误日志 ==="
           cat last_error.log
         fi
-        python auto_fix_with_AI_LLM.py || echo "Auto-fix failed, but build failure has been recorded above."
+        python custom_scripts/auto_fix_with_AI_LLM.py || echo "Auto-fix failed, but build failure has been recorded above."
 
     - name: Delete workflow runs
       if: always()

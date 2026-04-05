@@ -43,4 +43,4 @@ jobs:
           GLM_MODEL_LIST: glm-5
           MINIMAX_MODEL_LIST: MiniMax-M2.7
         run: |
-          python resolve_pr_conflicts_with_ai.py
+          python custom_scripts/resolve_pr_conflicts_with_ai.py

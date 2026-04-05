@@ -15,9 +15,9 @@ on:
       - main
     paths:
       - .github/workflows/SimpleBuildOpenWRT_Official.yml
-      - config_for_OpenWrt_org
-      - diy-part1.sh
-      - diy-part2.sh
+      - custom_configs/config_for_OpenWrt_org
+      - custom_scripts/diy-part1.sh
+      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
   repository_dispatch:
     types: Openwrt.org Source Code Update
@@ -26,9 +26,9 @@ env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: main
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: config_for_OpenWrt_org
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
+  CONFIG_FILE: custom_configs/config_for_OpenWrt_org
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -81,7 +81,7 @@ jobs:
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          cp ../config_for_OpenWrt_org .config
+          cp ../custom_configs/config_for_OpenWrt_org .config
           sed -i 's/--set=llvm.download-ci-llvm=true/--set=llvm.download-ci-llvm=false/g' feeds/packages/lang/rust/Makefile || true
           echo "删除 sendmail（权限 bug 导致编译失败，且未被启用）"
           rm -rf feeds/packages/mail/sendmail
@@ -144,15 +144,15 @@ jobs:
       #     make package/system/uci/compile V=s || echo "uci compile failed"
       #     make package/network/config/libnl-tiny/compile V=s || echo "libnl-tiny compile failed" # dnsmasq 可能依赖
       #     make package/network/services/dnsmasq/compile V=s -j1 # 单线程编译 dnsmasq，看详细错误
-      #     cp ../compile_with_retry.py .
+      #     cp .custom_scripts/compile_with_retry.py .
       #     # echo "先尝试编译容易失败的lua-neturl"
-      #     # cp ../compile_with_retry.py . && python compile_with_retry.py "make -j1 package/feeds/small8/lua-neturl/compile V=s" "packages.log" 8
+      #     # cp .custom_scripts/compile_with_retry.py . && python custom_scripts/compile_with_retry.py "make -j1 package/feeds/small8/lua-neturl/compile V=s" "packages.log" 8
       #     #echo "先尝试编译容易失败的trojan-plus"
-      #     #python compile_with_retry.py "make -j1 package/feeds/small8/trojan-plus/compile V=s" "packages.log" 6
+      #     #python custom_scripts/compile_with_retry.py "make -j1 package/feeds/small8/trojan-plus/compile V=s" "packages.log" 6
       #     echo "开始尝试编译所有packages" 
       #     # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 package/compile V=s" "packages.log" 8 
-      #     #cp ../compile_with_retry.py .
-      #     python compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
+      #     #cp .custom_scripts/compile_with_retry.py .
+      #     python custom_scripts/compile_with_retry.py "make -j1 package/compile V=s" "packages.log" 
           
 
 
@@ -163,8 +163,8 @@ jobs:
           cd openwrt
           LOG_FILE="image.log"
           # cp ../compile_with_retry.sh . && bash compile_with_retry.sh "make -j1 V=s" "image.log" 7 
-          # cp ../compile_with_retry.py . 
-          #make -j2 V=s || python compile_with_retry.py "make -j2 V=s" "image.log"  || python compile_with_retry.py "make -j1 V=s" "image.log" 
+          # cp .custom_scripts/compile_with_retry.py . 
+          #make -j2 V=s || python custom_scripts/compile_with_retry.py "make -j2 V=s" "image.log"  || python custom_scripts/compile_with_retry.py "make -j1 V=s" "image.log" 
           if ! make -j2 V=s; then
             make package/feeds/packages/kmod/clean V=s || make package/kmod/clean V=s
             rm -rf build_dir/target-mipsel_24kc_musl/kmod-32
@@ -238,12 +238,12 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
-          python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+          python $GITHUB_WORKSPACE/custom_scripts/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
 
       - name: Build Quality Gate
         id: build_quality_gate
         run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py --gate
+          python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py --gate
         env:
           SOURCE: ${{ env.SOURCE }}
 
@@ -281,7 +281,7 @@ jobs:
 
       - name: Validate build output
         run: |
-          python $GITHUB_WORKSPACE/validate_build_output.py
+          python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
   finalize:
     needs: build
@@ -303,7 +303,7 @@ jobs:
           WORKFLOW_FILE: .github/workflows/SimpleBuildOpenWRT_Official.yml
         run: |
           pip install requests --quiet || true
-          python auto_fix_with_AI_LLM.py
+          python custom_scripts/auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
         if: always()

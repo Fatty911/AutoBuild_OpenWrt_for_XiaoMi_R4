@@ -17,18 +17,18 @@ on:
       - main
     paths:
       - .github/workflows/Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware.yml
-      - config_for_coolsnowwolf
-      - diy-part1.sh
-      - diy-part2.sh
+      - custom_configs/config_for_coolsnowwolf
+      - custom_scripts/diy-part1.sh
+      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
 
 env:
   REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_BRANCH: master
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: config_for_coolsnowwolf
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
+  CONFIG_FILE: custom_configs/config_for_coolsnowwolf
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
   UPLOAD_BIN_DIR: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -101,7 +101,7 @@ jobs:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          python download_from_MEGA.py "$MEGA_USERNAME" "$MEGA_PASSWORD" "${{ env.SOURCE }}" /workdir
+          python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download \"${{ env.SOURCE }}\" /workdir
       
       - name: 解压文件
         run: |
@@ -141,9 +141,9 @@ jobs:
     - name: Compile the firmware
       id: compile
       run: |
-        cd openwrt && cp ../compile_with_retry.py .
+        cd openwrt && cp .custom_scripts/compile_with_retry.py .
         echo -e "先尝试$(nproc)线程编译"
-        make -j$(nproc) V=s || python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+        make -j$(nproc) V=s || python custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
@@ -207,12 +207,12 @@ jobs:
         GITHUB_TOKEN: ${{ github.token }}
       run: |
         echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
-        python $GITHUB_WORKSPACE/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+        python $GITHUB_WORKSPACE/custom_scripts/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
 
     - name: Build Quality Gate
       id: build_quality_gate
       run: |
-        python $GITHUB_WORKSPACE/validate_build_output.py --gate
+        python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py --gate
       env:
         SOURCE: ${{ env.SOURCE }}
 
@@ -242,11 +242,11 @@ jobs:
         MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
       run: |
-        python delete_from_MEGA.py
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py delete
 
     - name: Validate build output
       run: |
-        python $GITHUB_WORKSPACE/validate_build_output.py
+        python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
   finalize:
     needs: build
@@ -266,7 +266,7 @@ jobs:
           WORKFLOW_FILE: .github/workflows/Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware.yml
         run: |
           pip install requests --quiet || true
-          python auto_fix_with_AI_LLM.py
+          python custom_scripts/auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
         if: always()
