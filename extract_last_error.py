@@ -68,6 +68,8 @@ def find_last_error_in_logs(log_dir=".", log_files=None):
     在多个日志文件中查找最后一个失败的组件
     返回 (failed_component_name, failed_log_content, which_log_file)
     """
+    import glob
+    
     if log_files is None:
         log_files = [
             "packages.log",
@@ -77,29 +79,58 @@ def find_last_error_in_logs(log_dir=".", log_files=None):
             "tools.log",
             "toolchain.log",
         ]
+        
+    all_possible_logs = []
+    for log_file in log_files:
+        for prefix in ["", "openwrt/", "./"]:
+            base_path = f"{prefix}{log_file}"
+            all_possible_logs.append(base_path)
+            all_possible_logs.extend(glob.glob(f"{base_path}.run.*.log"))
     
     all_errors = []
     
-    for log_file in log_files:
-        for prefix in ["", "openwrt/", "./"]:
-            path = Path(prefix + log_file)
-            if path.exists():
-                try:
-                    with open(path, 'r', errors='ignore') as f:
-                        content = f.read()
-                    
-                    component_name, component_log, has_error = extract_last_error_component(content)
-                    
-                    if has_error:
-                        all_errors.append({
-                            'file': str(path),
-                            'component': component_name,
-                            'log': component_log[-8000:],  # 截断到 8000 字符
-                        })
-                except Exception as e:
-                    print(f"⚠️ 读取 {path} 失败: {e}", file=sys.stderr)
+    # Sort files by modification time, oldest first, so the newest error is at the end of all_errors
+    existing_logs = [f for f in all_possible_logs if os.path.exists(f)]
+    existing_logs.sort(key=os.path.getmtime)
+    
+    for log_path in existing_logs:
+        try:
+            with open(log_path, 'r', errors='ignore') as f:
+                content = f.read()
+            
+            component_name, component_log, has_error = extract_last_error_component(content)
+            
+            # If no component was extracted but the file has errors, grab the tail
+            if not has_error and any(k in content.lower() for k in ['error', 'failed', 'make: ***']):
+                has_error = True
+                component_name = "unknown_component"
+                # Find lines around 'error' or 'make: ***'
+                lines = content.splitlines()
+                err_lines = []
+                for i, line in enumerate(lines):
+                    if any(k in line.lower() for k in ['error', 'failed', 'make: ***']):
+                        start = max(0, i - 15)
+                        end = min(len(lines), i + 5)
+                        err_lines.extend(lines[start:end])
+                component_log = "\n".join(err_lines) if err_lines else content[-2000:]
+            
+            if has_error:
+                all_errors.append({
+                    'file': str(log_path),
+                    'component': component_name,
+                    'log': component_log[-8000:],  # 截断到 8000 字符
+                })
+        except Exception as e:
+            print(f"⚠️ 读取 {log_path} 失败: {e}", file=sys.stderr)
     
     if not all_errors:
+        # If still no errors found but files exist, return the tail of the newest file
+        if existing_logs:
+            latest_log = existing_logs[-1]
+            with open(latest_log, 'r', errors='ignore') as f:
+                content = f.read()
+            if len(content.strip()) > 0:
+                return "tail_of_log", content[-2000:], latest_log
         return None, "No error found in logs", None
     
     # 返回最后一个错误的详情
