@@ -17,7 +17,6 @@ sed -i 's/192.168.1.1/192.168.88.1/g' package/base-files/files/bin/config_genera
 # sed -i '/KERNEL_PATCHVER/cKERNEL_PATCHVER:=5.10' target/linux/ramips/Makefile
 
 #复制内核5.10版本CPU超频补丁
-#wget -O target/linux/ramips/patches-5.10/322-mt7621-fix-cpu-clk-add-clkdev.patch https://github.com/Fatty911/AutoBuild_OpenWRT_for_Mi_R4/blob/main/mt7621_overclocking-322-mt7621-fix-cpu-clk-add-clkdev.patch 
 
 
 # echo "开始修复 Rust Makefile 以解决 CI 环境下的 llvm.download-ci-llvm 问题"

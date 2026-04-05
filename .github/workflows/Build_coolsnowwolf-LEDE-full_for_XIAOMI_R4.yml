@@ -196,8 +196,7 @@ jobs:
         id: compile_batman_1
         run: |
           cd openwrt
-          cp ../fix_batman_adv.py .
-          make -j2 package/feeds/routing/batman-adv/compile V=s || { python ./fix_batman_adv.py "make -j1 package/feeds/routing/batman-adv/compile V=s" "batman-adv.log" && make -j1 package/feeds/routing/batman-adv/compile V=s; }
+          make -j2 package/feeds/routing/batman-adv/compile V=s 
 
       - name: Compile the firmware
         id: compile
