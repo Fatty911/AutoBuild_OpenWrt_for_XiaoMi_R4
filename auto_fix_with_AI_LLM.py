@@ -427,8 +427,12 @@ def main():
     local_logs = get_local_logs()
     remote_logs = get_run_logs(repo, run_id, pat) if run_id else ""
     error_log = "\n\n".join(filter(None, [local_logs, remote_logs]))
-    if not error_log:
-        error_log = "No log files found."
+    
+    if not error_log or "No error found in logs" in error_log:
+        print("⚠️ 未能在日志中找到明确的编译错误特征 (No error found in logs)。")
+        print("这可能是由于网络问题、磁盘空间不足、或者编译在非常早期的阶段就已退出。")
+        print("为了防止大模型在没有上下文时产生幻觉破坏文件，已中止自动修复流程。")
+        sys.exit(1)
 
     with open(workflow_file, "r") as f:
         workflow_content = f.read()
