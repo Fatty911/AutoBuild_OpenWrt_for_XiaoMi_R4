@@ -361,7 +361,7 @@ jobs:
             -H "Authorization: token ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}" \
             -H "Content-Type: application/json" \
             https://api.github.com/repos/${{ github.repository }}/dispatches \
-            -d '{"event_type":"OpenWRT.org Org1 Complete","client_payload":{"triggered_by":"simple1","source":"openwrt_org"}}}'
+            -d '{"event_type":"OpenWRT.org Org1 Complete","client_payload":{"triggered_by":"simple1","source":"openwrt_org"}}'
 
       - name: Delete workflow runs
         if: always()
