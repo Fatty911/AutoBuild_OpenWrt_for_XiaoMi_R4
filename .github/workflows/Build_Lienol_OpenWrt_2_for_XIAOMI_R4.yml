@@ -180,7 +180,12 @@ jobs:
         cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
         echo "=== 检查并尝试编译 packages 部分 ==="
         if make -n package/compile V=s >/dev/null 2>&1; then
-          make package/compile V=s || true
+          {
+            make package/compile V=s > packages.log 2>&1 || {
+              echo "首次编译 packages 失败，尝试运行修复脚本..."
+              python compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
+            }
+          } || true
           echo "=== packages 编译步骤结束 ==="
           # 提取最后一个失败组件的日志
           python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
@@ -217,7 +222,12 @@ jobs:
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
         
-        make -j1 V=s || true
+        {
+          make -j1 V=s > compile.log 2>&1 || {
+            echo "首次固件编译失败，尝试运行修复脚本..."
+            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+          }
+        } || true
         echo "=== firmware 初始编译步骤结束 ==="
         # 提取最后一个失败组件的日志
         python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
@@ -329,7 +339,12 @@ jobs:
         cp -f $GITHUB_WORKSPACE/compile_with_retry.py . || echo "Warning: compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/extract_last_error.py . || echo "Warning: extract_last_error.py not found in workspace"
         
-        make -j1 V=s > compile.log 2>&1 || true
+        {
+          make -j1 V=s > compile.log 2>&1 || {
+            echo "修复后编译固件仍失败，尝试运行修复脚本..."
+            python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+          }
+        } || true
         echo "=== 固件编译步骤结束 ==="
         # 提取最后一个失败组件的日志
         python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true

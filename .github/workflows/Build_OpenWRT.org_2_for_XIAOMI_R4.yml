@@ -238,7 +238,12 @@ jobs:
           cp $GITHUB_WORKSPACE/compile_with_retry.py .
           cp $GITHUB_WORKSPACE/extract_last_error.py .
           echo "=== 开始编译 packages 部分 ==="
-          make package/compile V=s || true
+          {
+            make package/compile V=s > packages.log 2>&1 || {
+              echo "首次编译 packages 失败，尝试运行修复脚本..."
+              python compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
+            }
+          } || true
           echo "=== packages 编译步骤结束 ==="
           
           # 提取最后一个失败组件的日志
@@ -266,9 +271,14 @@ jobs:
           cp $GITHUB_WORKSPACE/compile_with_retry.py .
           cp $GITHUB_WORKSPACE/extract_last_error.py .
           echo "=== 开始编译固件镜像 ==="
-          make -j1 V=s || true
+          {
+            make -j1 V=s > compile.log 2>&1 || {
+              echo "首次编译固件失败，尝试运行修复脚本..."
+              python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+            }
+          } || true
           echo "=== 固件编译步骤结束 ==="
-          ls -la bin/targets/*/
+          ls -la bin/targets/*/ 2>/dev/null || true
           
           # 提取最后一个失败组件的日志
           python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
@@ -460,9 +470,14 @@ jobs:
           cp $GITHUB_WORKSPACE/extract_last_error.py .
           echo "=== 编译修复后的固件 ==="
           make defconfig
-          make -j1 V=s || true
+          {
+            make -j1 V=s > compile_fixed.log 2>&1 || {
+              echo "修复后编译固件失败，尝试运行重试脚本..."
+              python compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile_fixed.log"
+            }
+          } || true
           echo "=== 固件编译步骤结束 ==="
-          ls -la bin/targets/*/
+          ls -la bin/targets/*/ 2>/dev/null || true
           
           # 提取最后一个失败组件的日志
           python extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
