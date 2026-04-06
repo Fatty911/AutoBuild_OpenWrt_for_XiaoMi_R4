@@ -101,7 +101,7 @@ jobs:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         run: |
-          python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download \"${{ env.SOURCE }}\" /workdir
+          python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir
       
       - name: 解压文件
         run: |

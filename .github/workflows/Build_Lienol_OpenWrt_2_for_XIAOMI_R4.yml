@@ -82,7 +82,7 @@ jobs:
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
       run: |
         # 下载到 /workdir（构建挂载点），避免占用根文件系统空间
-        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download \"${{ env.SOURCE }}\" /workdir
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir
     
     - name: 解压文件
       run: |
