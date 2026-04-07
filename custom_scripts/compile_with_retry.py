@@ -213,6 +213,51 @@ def fix_root_ramips_missing_dir():
     return fixed_any
 
 
+def fix_base_files_version(log_content):
+    """修复 APK 打包由于 ~unknown 导致的包版本无效错误"""
+    import re
+    from pathlib import Path
+    
+    print("🔧 检测到 base-files 版本格式无效错误，尝试修复...")
+    
+    # Locate base-files Makefile
+    base_files_mk = Path("package/base-files/Makefile")
+    if not base_files_mk.exists():
+        print(f"⚠️ 找不到 {base_files_mk}，修复失败")
+        return False
+        
+    try:
+        with open(base_files_mk, "r") as f:
+            content = f.read()
+            
+        # Look for PKG_VERSION:=1~unknown or something similar
+        # And replace with a valid SemVer format like 1-unknown or 1.0.0
+        
+        # Replace 1~unknown with 1-unknown in PKG_VERSION
+        new_content = re.sub(r'PKG_VERSION:=([^\n]*?)~([^\n]*?)', r'PKG_VERSION:=\1-\2', content)
+        
+        # If no change, try changing just ~ to -
+        if new_content == content:
+             new_content = content.replace("~unknown", "-unknown")
+             
+        # Or if it's derived from VERSION_NUMBER
+        if new_content == content:
+             # Just force it to 1.0.0 if we can't find the exact match
+             new_content = re.sub(r'PKG_VERSION:=.*', 'PKG_VERSION:=1.0.0', content)
+             
+        if new_content != content:
+            with open(base_files_mk, "w") as f:
+                f.write(new_content)
+            print("✅ 成功修复 base-files 的版本格式问题")
+            return True
+        else:
+            print("⚠️ 未能在 Makefile 中找到不合规的版本号格式")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 修复 base-files 版本时出错: {e}")
+        return False
+
 def fix_symbolic_link_conflict(log_content):
     """修复符号链接冲突 (ln: failed to create symbolic link ...: File exists)"""
     print("🔧 检测到符号链接冲突，尝试修复...")
@@ -2181,6 +2226,8 @@ def main():
             fix_attempted = fix_directory_conflict(log_content_global)
         elif current_error_signature == "symlink_conflict": # Your specific error
             fix_attempted = fix_symbolic_link_conflict(log_content_global)
+        elif current_error_signature == "base_files_version_invalid":
+            fix_attempted = fix_base_files_version(log_content_global)
         elif current_error_signature == "root_ramips_missing_dir":
             fix_attempted = fix_root_ramips_missing_dir()
         elif current_error_signature == "toolchain_provides_syntax":
