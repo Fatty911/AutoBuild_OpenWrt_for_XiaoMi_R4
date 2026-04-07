@@ -209,17 +209,23 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
     cache_key = f"{name}_{proxy_url}"
     cached_info = cache_data.get(cache_key, {})
     
-    # Cache hit check (within 3 days)
+    # Simple strict matching function
+    def match_model(req, fm):
+        req_l = req.lower()
+        fm_l = fm.lower()
+        if req_l == fm_l:
+            return True
+        # Match 'openai/gpt-4' against 'gpt-4'
+        if fm_l.endswith(f"/{req_l}"):
+            return True
+        return False
+    
     if time.time() - cached_info.get("timestamp", 0) < 3 * 24 * 3600 and "models" in cached_info:
         resolved = []
         for req in requested_models:
             found = False
             for c_id in cached_info["models"]:
-                req_clean = req.replace("-", " ").replace("_", " ").lower()
-                c_clean = c_id.replace("-", " ").replace("_", " ").lower()
-                
-                # Check if exact match or semantic match
-                if req.lower() == c_id.lower() or all(part in c_clean for part in req_clean.split()):
+                if match_model(req, c_id):
                     if c_id not in resolved:
                         resolved.append(c_id)
                     found = True
@@ -228,7 +234,6 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
         if resolved:
             return resolved, cache_data
             
-    # Cache miss, fetch models from provider
     print(f"[{name}] 正在向 {proxy_url} 请求最新模型列表并缓存...")
     base_url = proxy_url.replace("/chat/completions", "").rstrip("/")
     if not base_url.endswith("/v1"):
@@ -251,7 +256,6 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
     if not fetched_models:
         return requested_models, cache_data
         
-    # Save fetched models to cache
     cache_data[cache_key] = {
         "timestamp": time.time(),
         "models": fetched_models
@@ -266,9 +270,7 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
     for req in requested_models:
         found = False
         for fm in fetched_models:
-            req_clean = req.replace("-", " ").replace("_", " ").lower()
-            fm_clean = fm.replace("-", " ").replace("_", " ").lower()
-            if req.lower() == fm.lower() or all(part in fm_clean for part in req_clean.split()):
+            if match_model(req, fm):
                 if fm not in resolved:
                     resolved.append(fm)
                 found = True
@@ -858,14 +860,14 @@ def main():
             except Exception as e:
                 print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
 
-    claude_models = split_models("CLAUDE_MODEL_LIST", "claude-sonnet-4.6")
-    gemini_models = split_models(
-        "GEMINI_MODEL_LIST", "gemini-3.1-pro,gemini-3.1-pro-preview"
-    )
-    gpt_models = split_models("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3,gpt-5.2")
-    grok_models = split_models("GROK_MODEL_LIST", "grok-4.2")
-    glm_models = split_models("GLM_MODEL_LIST", "glm-5")
-    # minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7") # 注释掉 MiniMax，防幻觉
+    
+    claude_models = split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-3.5-sonnet")
+    gemini_models = split_models("GEMINI_MODEL_LIST", "google/gemini-3.1-pro,google/gemini-1.5-pro")
+    gpt_models = split_models("OPENAI_MODEL_LIST", "openai/gpt-5.4,openai/gpt-4o")
+    grok_models = split_models("GROK_MODEL_LIST", "x-ai/grok-4.2,x-ai/grok-2")
+    glm_models_or = split_models("GLM_MODEL_LIST", "z-ai/glm-5,zhipu/glm-4-plus")
+    glm_models_cn = split_models("GLM_MODEL_LIST", "glm-5,glm-4-plus")
+    minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7") # 注释掉 MiniMax，防幻觉
 
     providers = []
 
@@ -941,7 +943,7 @@ def main():
                 "name": "GLM-OR",
                 "proxy_url": "https://openrouter.ai/api/v1",
                 "api_key": openrouter_api_key,
-                "models": glm_models,
+                "models": glm_models_or,
             }
         )
     for name, proxy_url, key_env in [
@@ -956,20 +958,9 @@ def main():
                     "name": name,
                     "proxy_url": proxy_url,
                     "api_key": api_key,
-                    "models": glm_models,
+                    "models": glm_models_cn,
                 }
             )
-
-    # 7) MiniMax - 暂时禁用，容易产生幻觉
-    # if minimax_api_key:
-    #     providers.append(
-    #         {
-    #             "name": "MiniMax",
-    #             "proxy_url": "https://api.minimax.chat",
-    #             "api_key": minimax_api_key,
-    #             "models": minimax_models,
-    #         }
-    #     )
 
     if not providers:
         print(
