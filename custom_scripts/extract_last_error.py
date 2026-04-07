@@ -37,10 +37,10 @@ def extract_last_error_component(log_content):
             # 检查是否包含错误
             if any(k in line.lower() for k in ['error', 'failed', 'make: ***']):
                 current_block[3] = True
-            # 匹配 time: target/linux/prereq 或 make[x]: Leaving directory 表示组件结束
-            time_match = re.search(r"time:\s+(\S+)", line)
-            leaving_match = re.search(r"make\[\d+\]: Leaving directory", line)
-            if time_match or leaving_match:
+            # 只匹配 time: ... 作为组件结束标志。移除 make[x]: Leaving directory 
+            # 因为 Makefile 有多层嵌套，遇到内层的 Leaving 就会导致当前块被过早截断
+            time_match = re.search(r"^time:\s+(\S+)", line)
+            if time_match:
                 component_blocks.append(tuple(current_block))
                 current_block = None
     
