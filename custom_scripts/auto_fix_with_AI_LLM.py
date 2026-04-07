@@ -891,13 +891,13 @@ def main():
                 print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
 
     
-    claude_models = split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-3.5-sonnet")
-    gemini_models = split_models("GEMINI_MODEL_LIST", "google/gemini-3.1-pro,google/gemini-1.5-pro")
-    gpt_models = split_models("OPENAI_MODEL_LIST", "openai/gpt-5.4,openai/gpt-4o")
-    grok_models = split_models("GROK_MODEL_LIST", "x-ai/grok-4.2,x-ai/grok-2")
-    glm_models_or = split_models("GLM_MODEL_LIST", "z-ai/glm-5,zhipu/glm-4-plus")
-    glm_models_cn = split_models("GLM_MODEL_LIST", "glm-5,glm-4-plus")
-    minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7") # 注释掉 MiniMax，防幻觉
+        claude_models = split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-opus-4.6")
+    gemini_models = split_models("GEMINI_MODEL_LIST", "google/gemini-3.1-pro,google/gemini-3.1-pro-preview")
+    gpt_models = split_models("OPENAI_MODEL_LIST", "openai/gpt-5.4,openai/gpt-5.3,openai/gpt-5.2")
+    grok_models = split_models("GROK_MODEL_LIST", "x-ai/grok-4.2,x-ai/grok-4.1")
+    glm_models_or = split_models("GLM_MODEL_LIST", "z-ai/glm-5-turbo,z-ai/glm-5")
+    glm_models_cn = split_models("GLM_MODEL_LIST", "glm-5-turbo,glm-5")
+    # minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7") # 注释掉 MiniMax，防幻觉
 
     providers = []
 
