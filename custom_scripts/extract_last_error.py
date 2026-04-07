@@ -51,11 +51,17 @@ def extract_last_error_component(log_content):
     if not component_blocks:
         return None, log_content, False
     
-    # 找最后一个有错误的组件
+    # 找最后一个有错误的组件，并过滤掉常见的误导性次生错误
     for block in reversed(component_blocks):
         if block[3]:  # has_error
             start_idx, block_lines, component_name, has_error = block
-            return component_name, "\n".join(block_lines), True
+            block_text = "\n".join(block_lines)
+            
+            # 如果这个报错只是抱怨最后打包时找不到目录，这说明真正的错误在前面，忽略这个果，去查因
+            if "Cannot stat source directory" in block_text and "root-ramips" in block_text:
+                continue
+                
+            return component_name, block_text, True
     
     # 没有错误，返回最后一个组件
     last_block = component_blocks[-1]
