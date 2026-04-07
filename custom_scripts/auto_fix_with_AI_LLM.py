@@ -211,12 +211,18 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
     
     # Simple strict matching function
     def match_model(req, fm):
-        req_l = req.lower()
-        fm_l = fm.lower()
-        if req_l == fm_l:
-            return True
-        # Match 'openai/gpt-4' against 'gpt-4'
-        if fm_l.endswith(f"/{req_l}"):
+        # 移除请求名中可能包含的提供商前缀 (如 zhipu/glm-4)
+        req_model_only = req.lower().split('/')[-1]
+        req_clean = req_model_only.replace("-", "").replace("_", "").replace(".", "")
+        
+        # 移除实际名中的提供商前缀 (如 z-ai/glm-5)
+        fm_model_only = fm.lower().split('/')[-1]
+        fm_clean = fm_model_only.replace("-", "").replace("_", "").replace(".", "")
+        
+        # 如果请求了具体的名字，且实际存在的模型名称以该名字作为开头，视为匹配。
+        # 比如 req="glm-5", fm="glm-5-FP8" 或 "z-ai/glm-5v-turbo" 都会匹配成功。
+        # 这种宽松匹配可以防止不同服务商对同一模型命名后缀不一致导致的问题。
+        if fm_clean.startswith(req_clean):
             return True
         return False
     
