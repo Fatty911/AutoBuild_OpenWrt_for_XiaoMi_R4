@@ -586,12 +586,13 @@ def main():
             except Exception as e:
                 print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
 
-    claude_models = split_models("CLAUDE_MODEL_LIST", "anthropic/claude-3.5-sonnet")
-    gemini_models = split_models("GEMINI_MODEL_LIST", "google/gemini-1.5-pro,google/gemini-2.5-pro")
-    gpt_models = split_models("OPENAI_MODEL_LIST", "openai/gpt-4o,openai/gpt-4-turbo")
-    grok_models = split_models("GROK_MODEL_LIST", "grok-2,grok-2-latest")
-    glm_models_or = split_models("GLM_MODEL_LIST", "zhipu/glm-4-plus")
-    glm_models_cn = split_models("GLM_MODEL_LIST", "glm-4-plus,glm-4-air")
+    claude_models = split_models("CLAUDE_MODEL_LIST", "claude-sonnet-4.6")
+    gemini_models = split_models(
+        "GEMINI_MODEL_LIST", "gemini-3.1-pro,gemini-3.1-pro-preview"
+    )
+    gpt_models = split_models("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3,gpt-5.2")
+    grok_models = split_models("GROK_MODEL_LIST", "grok-4.2")
+    glm_models = split_models("GLM_MODEL_LIST", "glm-5")
     # minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7") # 注释掉 MiniMax，防幻觉
 
     providers = []
@@ -668,7 +669,7 @@ def main():
                 "name": "GLM-OR",
                 "proxy_url": "https://openrouter.ai/api/v1",
                 "api_key": openrouter_api_key,
-                "models": glm_models_or,
+                "models": glm_models,
             }
         )
     for name, proxy_url, key_env in [
@@ -683,7 +684,7 @@ def main():
                     "name": name,
                     "proxy_url": proxy_url,
                     "api_key": api_key,
-                    "models": glm_models_cn,
+                    "models": glm_models,
                 }
             )
 
