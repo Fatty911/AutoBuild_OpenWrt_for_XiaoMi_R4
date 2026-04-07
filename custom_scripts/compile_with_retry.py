@@ -2215,7 +2215,11 @@ def main():
         elif current_error_signature == "lua_neturl_download":
             fix_attempted = fix_lua_neturl_download(log_content_global)
         elif current_error_signature.startswith("apk_invalid_version_format:"):
-            fix_attempted = fix_metadata_errors() # This handles version format issues
+            # First try the specialized fix for base-files, then fallback to general metadata fix
+            if "base-files" in current_error_signature:
+                fix_attempted = fix_base_files_version(log_content_global)
+            if not fix_attempted:
+                fix_attempted = fix_metadata_errors() # This handles generic version format issues
         elif current_error_signature == "trojan_plus_build_error": # Renamed signature
             fix_attempted = fix_trojan_plus_issues()
         elif current_error_signature.startswith("patch_failed"):
@@ -2226,8 +2230,6 @@ def main():
             fix_attempted = fix_directory_conflict(log_content_global)
         elif current_error_signature == "symlink_conflict": # Your specific error
             fix_attempted = fix_symbolic_link_conflict(log_content_global)
-        elif current_error_signature == "base_files_version_invalid":
-            fix_attempted = fix_base_files_version(log_content_global)
         elif current_error_signature == "root_ramips_missing_dir":
             fix_attempted = fix_root_ramips_missing_dir()
         elif current_error_signature == "toolchain_provides_syntax":
