@@ -211,18 +211,18 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
     
     # Simple strict matching function
     def match_model(req, fm):
-        # 移除请求名中可能包含的提供商前缀 (如 zhipu/glm-4)
-        req_model_only = req.lower().split('/')[-1]
-        req_clean = req_model_only.replace("-", "").replace("_", "").replace(".", "")
+        import re
+        # 移除提供商前缀 (如 openai/gpt-5 -> gpt-5)
+        req_base = req.lower().split('/')[-1]
+        fm_base = fm.lower().split('/')[-1]
         
-        # 移除实际名中的提供商前缀 (如 z-ai/glm-5)
-        fm_model_only = fm.lower().split('/')[-1]
-        fm_clean = fm_model_only.replace("-", "").replace("_", "").replace(".", "")
+        # 移除所有非字母数字的字符，这样 gpt-5.4 = gpt54, glm-5 = glm5
+        req_alpha = re.sub(r'[^a-z0-9]', '', req_base)
+        fm_alpha = re.sub(r'[^a-z0-9]', '', fm_base)
         
-        # 如果请求了具体的名字，且实际存在的模型名称以该名字作为开头，视为匹配。
-        # 比如 req="glm-5", fm="glm-5-FP8" 或 "z-ai/glm-5v-turbo" 都会匹配成功。
-        # 这种宽松匹配可以防止不同服务商对同一模型命名后缀不一致导致的问题。
-        if fm_clean.startswith(req_clean):
+        # 只要服务商实际模型名以我们请求的基础名称为开头，就认为匹配成功
+        # 比如 req="glm-5", fm="z-ai/glm-5-FP8" -> req_alpha="glm5", fm_alpha="glm5fp8" -> True!
+        if fm_alpha.startswith(req_alpha):
             return True
         return False
     
@@ -260,7 +260,31 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
         print(f"[{name}] 获取模型列表失败: {e}")
         
     if not fetched_models:
-        return requested_models, cache_data
+        # 兜底方案：如果 API 没开 /models 或者无权限查询模型列表，
+        # 我们按照各家常见的前缀规则强行构造几个常见变体，而不是原样发回去报错。
+        resolved = []
+        for req in requested_models:
+            req_base = req.lower().split('/')[-1]
+            if name == "OPENROUTER" or name == "GLM-OR" or name == "GPT-OR":
+                if "gpt" in req_base: resolved.append(f"openai/{req_base}")
+                elif "claude" in req_base: resolved.append(f"anthropic/{req_base}")
+                elif "gemini" in req_base: resolved.append(f"google/{req_base}")
+                elif "glm" in req_base: resolved.append(f"zhipu/{req_base}")
+                elif "grok" in req_base: resolved.append(f"x-ai/{req_base}")
+                else: resolved.append(req)
+            elif name == "SILICONFLOW":
+                if "glm" in req_base: 
+                    resolved.append(f"THUDM/{req_base}")
+                    resolved.append(f"ZhipuAI/{req_base}")
+                if "deepseek" in req_base:
+                    resolved.append(f"deepseek-ai/{req_base}")
+                resolved.append(req)
+            elif name == "ATOMGIT" or name == "MODELSCOPE":
+                if "glm" in req_base: resolved.append(f"ZhipuAI/{req_base}")
+                resolved.append(req)
+            else:
+                resolved.append(req)
+        return resolved, cache_data
         
     cache_data[cache_key] = {
         "timestamp": time.time(),
