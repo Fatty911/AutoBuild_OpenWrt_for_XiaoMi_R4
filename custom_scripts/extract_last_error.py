@@ -118,7 +118,7 @@ def find_last_error_in_logs(log_dir=".", log_files=None):
                 all_errors.append({
                     'file': str(log_path),
                     'component': component_name,
-                    'log': component_log[-8000:],  # 截断到 8000 字符
+                    'log': component_log,  # 截断到 8000 字符
                 })
         except Exception as e:
             print(f"⚠️ 读取 {log_path} 失败: {e}", file=sys.stderr)
@@ -158,8 +158,8 @@ def main():
     output += f"\n{log_content}"
     
     # 截断
-    if len(output) > args.max_chars:
-        output = output[-args.max_chars:]
+    
+        
     
     print(output)
     
