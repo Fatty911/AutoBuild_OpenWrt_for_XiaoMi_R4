@@ -194,6 +194,278 @@ def call_api(proxy_url, api_key, model, prompt):
         raise Exception(f"请求失败: {e}")
 
 
+
+def get_resolved_models(name, proxy_url, api_key, requested_models):
+    import os, json, time, requests
+    cache_file = ".model_resolution_cache.json"
+    cache_data = {}
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cache_data = json.load(f)
+        except Exception:
+            pass
+            
+    cache_key = f"{name}_{proxy_url}"
+    cached_info = cache_data.get(cache_key, {})
+    
+    # Cache hit check (within 3 days)
+    if time.time() - cached_info.get("timestamp", 0) < 3 * 24 * 3600 and "models" in cached_info:
+        resolved = []
+        for req in requested_models:
+            found = False
+            for c_id in cached_info["models"]:
+                req_clean = req.replace("-", " ").replace("_", " ").lower()
+                c_clean = c_id.replace("-", " ").replace("_", " ").lower()
+                
+                # Check if exact match or semantic match
+                if req.lower() == c_id.lower() or all(part in c_clean for part in req_clean.split()):
+                    if c_id not in resolved:
+                        resolved.append(c_id)
+                    found = True
+            if not found and req not in resolved:
+                resolved.append(req)
+        if resolved:
+            return resolved, cache_data
+            
+    # Cache miss, fetch models from provider
+    print(f"[{name}] 正在向 {proxy_url} 请求最新模型列表并缓存...")
+    base_url = proxy_url.replace("/chat/completions", "").rstrip("/")
+    if not base_url.endswith("/v1"):
+        if "/v1" in base_url:
+            base_url = base_url.split("/v1")[0] + "/v1"
+            
+    models_url = f"{base_url}/models"
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    
+    fetched_models = []
+    try:
+        resp = requests.get(models_url, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            data = resp.json()
+            if "data" in data:
+                fetched_models = [m.get("id") for m in data["data"] if m.get("id")]
+    except Exception as e:
+        print(f"[{name}] 获取模型列表失败: {e}")
+        
+    if not fetched_models:
+        return requested_models, cache_data
+        
+    # Save fetched models to cache
+    cache_data[cache_key] = {
+        "timestamp": time.time(),
+        "models": fetched_models
+    }
+    
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+    except: pass
+        
+    resolved = []
+    for req in requested_models:
+        found = False
+        for fm in fetched_models:
+            req_clean = req.replace("-", " ").replace("_", " ").lower()
+            fm_clean = fm.replace("-", " ").replace("_", " ").lower()
+            if req.lower() == fm.lower() or all(part in fm_clean for part in req_clean.split()):
+                if fm not in resolved:
+                    resolved.append(fm)
+                found = True
+        if not found and req not in resolved:
+            resolved.append(req)
+            
+    return resolved, cache_data
+
+def try_provider(name, proxy_url, api_key, model, prompt):
+    """尝试调用单个提供商"""
+    import json, os, subprocess
+    requested_models = model if isinstance(model, list) else [model]
+    
+    # 动态将用户配置的缩写（如 glm-5）解析为平台上真实的模型ID（如 zhipuai/glm-5）
+    resolved_models, cache_data = get_resolved_models(name, proxy_url, api_key, requested_models)
+    
+    for m in resolved_models:
+        print(f"[{name}] 尝试模型: {m} ...")
+        try:
+            result = call_api(proxy_url, api_key, m, prompt)
+            print(f"[{name}] 调用成功")
+            return result
+        except Exception as e:
+            print(f"[{name}] 模型 {m} 失败: {e}")
+            err_str = str(e).lower()
+            
+            # 如果是明确的额度耗尽/不再免费，从特定的 ZEN 缓存中剔除（老逻辑）
+            if name == "OPENCODE-ZEN" and "[quota_exhausted]" in err_str:
+                zen_cache_file = ".zen_free_models_cache.json"
+                if os.path.exists(zen_cache_file):
+                    try:
+                        with open(zen_cache_file, "r") as f:
+                            zen_data = json.load(f)
+                        if m in zen_data.get("valid_models", []):
+                            print(f"⚠️ ZEN 模型 {m} 已不再免费/额度耗尽，从缓存中永久移除。")
+                            zen_data["valid_models"].remove(m)
+                            with open(zen_cache_file, "w") as f:
+                                json.dump(zen_data, f)
+                            try:
+                                subprocess.run(["git", "add", zen_cache_file], check=True)
+                                subprocess.run(["git", "commit", "-m", f"Auto-remove expired free model {m} from cache"], check=True)
+                                subprocess.run(["git", "push"], check=False)
+                            except: pass
+                    except Exception as cache_err:
+                        print(f"更新 ZEN 缓存剔除失败: {cache_err}")
+                        
+            # 对于所有提供商，如果是明确的无效模型/TOS/404，从全局动态解析缓存中移除
+            elif any(k in err_str for k in ["not a valid model", "not found", "does not exist", "violation of provider", "[quota_exhausted]"]):
+                global_cache_file = ".model_resolution_cache.json"
+                cache_key = f"{name}_{proxy_url}"
+                if os.path.exists(global_cache_file):
+                    try:
+                        with open(global_cache_file, "r") as f:
+                            g_data = json.load(f)
+                        if cache_key in g_data and "models" in g_data[cache_key]:
+                            if m in g_data[cache_key]["models"]:
+                                print(f"⚠️ 检测到模型 {m} 在 {name} 已不可用，正在从动态缓存白名单中摘除。")
+                                g_data[cache_key]["models"].remove(m)
+                                with open(global_cache_file, "w") as f:
+                                    json.dump(g_data, f)
+                                try:
+                                    subprocess.run(["git", "add", global_cache_file], check=True)
+                                    subprocess.run(["git", "commit", "-m", f"Auto-remove invalid model {m} from {name} resolution cache"], check=True)
+                                    subprocess.run(["git", "push"], check=False)
+                                except: pass
+                    except Exception as cache_err:
+                        print(f"全局缓存更新剔除失败: {cache_err}")
+    return None
+
+
+def get_local_logs():
+    """读取本地编译日志文件，按组件分割，只提取最后一个失败的组件日志"""
+    import re
+    import glob
+    
+    # 首先检查是否有预提取的错误日志文件（由工作流中的 extract_last_error.py 生成）
+    for prefix in ["", "./", "openwrt/", "../"]:
+        last_error_path = prefix + "last_error.log"
+        if os.path.exists(last_error_path):
+            try:
+                with open(last_error_path, 'r', errors='ignore') as f:
+                    content = f.read()
+                if content and len(content) > 50:  # 有实质内容
+                    print(f"使用预提取的错误日志: {last_error_path}")
+                    return f"=== 预提取错误日志 (last_error.log) ===\n{content}"
+            except Exception as e:
+                print(f"⚠️ 读取 {last_error_path} 失败: {e}")
+    
+    log_files = [
+        "tools.log",
+        "toolchain.log",
+        "kernel.log",
+        "packages.log",
+        "compile.log",
+        "image.log",
+        "batman-adv.log",
+    ]
+    
+    # 也检查带 run 次数的日志，例如 compile.log.run.1.log
+    all_possible_logs = []
+    for log_file in log_files:
+        for prefix in ["openwrt/", ""]:
+            base_path = f"{prefix}{log_file}"
+            all_possible_logs.append(base_path)
+            all_possible_logs.extend(glob.glob(f"{base_path}.run.*.log"))
+            
+    # 按照文件修改时间排序，找最新的那个作为主错误日志
+    existing_logs = [f for f in all_possible_logs if os.path.exists(f)]
+    if not existing_logs:
+        return ""
+        
+    latest_log = max(existing_logs, key=os.path.getmtime)
+    
+    components = []
+    current_component = []
+    
+    # 解析组件 (Entering directory ... time: ... or error)
+    with open(latest_log, "r", errors="ignore") as f:
+        for line in f:
+            if re.search(r"make\[\d+\]: Entering directory", line):
+                if current_component:
+                    components.append("".join(current_component))
+                current_component = [line]
+            else:
+                current_component.append(line)
+                
+        if current_component:
+             components.append("".join(current_component))
+             
+    # 我们只关心最新两个组件，并且喂给大模型时只将失败的（通常是最后一个）日志给它以节省token
+    failed_log_content = components[-1] if components else ""
+    
+    # 截断如果单组件还是太长
+    if len(failed_log_content) > 10000:
+         failed_log_content = failed_log_content[-10000:]
+         
+    return f"=== Failed Component from {latest_log} ===\n{failed_log_content}"
+
+
+def call_api(proxy_url, api_key, model, prompt):
+    """调用 API（OpenAI 兼容格式）"""
+    import requests
+
+    if not proxy_url.startswith(("http://", "https://")):
+        proxy_url = f"https://{proxy_url}"
+
+    base = proxy_url.rstrip("/")
+    if base.endswith("/v1"):
+        url = f"{base}/chat/completions"
+    else:
+        url = f"{base}/v1/chat/completions"
+
+    print(f"请求 URL: {url}")
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}",
+    }
+    data = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 8192,
+        "temperature": 0.3,
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, json=data, timeout=180)
+        
+        # 捕捉额度用尽/不再免费等特有错误，抛出特殊异常标记
+        if resp.status_code in [401, 402, 403]:
+            err_text = resp.text[:500].lower()
+            if "free promotion has ended" in err_text or "insufficient quota" in err_text or "balance" in err_text:
+                raise Exception(f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}")
+                
+        if resp.status_code != 200:
+            raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
+        
+        # 检查响应是否为空
+        if not resp.text or not resp.text.strip():
+            raise Exception(f"API返回空响应")
+        
+        try:
+            result = resp.json()
+        except Exception as json_err:
+            raise Exception(f"JSON解析失败: {json_err}, 响应内容: {resp.text[:500]}")
+        
+        # 检查响应结构
+        if "choices" not in result:
+            raise Exception(f"响应缺少choices字段: {str(result)[:500]}")
+        if not result["choices"] or "message" not in result["choices"][0]:
+            raise Exception(f"响应choices结构无效: {str(result)[:500]}")
+            
+        return result["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        raise Exception(f"请求失败: {e}")
+
+
 def try_provider(name, proxy_url, api_key, model, prompt):
     """尝试调用单个提供商"""
     import json
