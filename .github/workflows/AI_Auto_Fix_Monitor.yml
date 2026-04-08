@@ -2,6 +2,17 @@ name: AI Auto Fix Monitor
 
 on:
   workflow_run:
+    workflows: [
+      "Build coolsnowwolf-LEDE 1 Toolchain and Kernel for XIAOMI_R4",
+      "Build coolsnowwolf-LEDE 2 Packages and Firmware for XIAOMI_R4",
+      "Build coolsnowwolf-LEDE Full for XIAOMI_R4",
+      "Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4",
+      "Build Lienol 2 packages and fixes for XIAOMI_R4",
+      "Build OpenWRT.org 1 before transplant for XIAOMI_R4",
+      "Build OpenWRT.org 2 fix and transplant for XIAOMI_R4 ",
+      "Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4",
+      "Simple Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages"
+    ]
     types:
       - completed
 
