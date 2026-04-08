@@ -115,10 +115,10 @@ def find_last_error_in_logs(log_dir=".", log_files=None):
                 err_lines = []
                 for i, line in enumerate(lines):
                     if any(k in line.lower() for k in ['error', 'failed', 'make: ***']):
-                        start = max(0, i - 15)
-                        end = min(len(lines), i + 5)
+                        start = max(0, i - 100)
+                        end = min(len(lines), i + 50)
                         err_lines.extend(lines[start:end])
-                component_log = "\n".join(err_lines) if err_lines else content[-2000:]
+                component_log = "\n".join(err_lines) if err_lines else content[-15000:]
             
             if has_error:
                 all_errors.append({
@@ -136,7 +136,7 @@ def find_last_error_in_logs(log_dir=".", log_files=None):
             with open(latest_log, 'r', errors='ignore') as f:
                 content = f.read()
             if len(content.strip()) > 0:
-                return "tail_of_log", content[-2000:], latest_log
+                return "tail_of_log", content[-15000:], latest_log
         return None, "No error found in logs", None
     
     # 返回最后一个错误的详情
