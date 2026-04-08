@@ -628,7 +628,7 @@ def build_error_focus(error_log, max_lines=80):
     return "\n".join(dedup) if dedup else "\n".join(lines[-max_lines:])
 
 
-def git_push(workflow_file, pat, repo, model_name):
+def git_push(workflow_file, pat, repo, model_name, run_id="unknown"):
     """配置 git 并提交推送修复"""
     subprocess.run(
         [
@@ -1006,6 +1006,7 @@ def main():
         )
         sys.exit(1)
 
+    claude_models = []
     # 依次尝试每个提供商
     fixed_content = None
     used_provider = None
@@ -1036,7 +1037,7 @@ def main():
     print(f"Fixed content written to {workflow_file}")
 
     try:
-        if not git_push(workflow_file, pat, repo, used_provider):
+        if not git_push(workflow_file, pat, repo, used_provider, run_id):
             print("Git push function returned False (e.g. PR failed or push rejected).")
             print("Auto-fix 已完成文件写入，但自动提交推送失败。退出 1 以便 Track 3 接管。")
             sys.exit(1)

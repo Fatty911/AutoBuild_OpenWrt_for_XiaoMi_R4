@@ -108,7 +108,7 @@ jobs:
           # 运行 OpenCode 进行深度分析与修复
           # 允许跳过权限确认，在 CI 中无头运行
           git config --local --unset-all http.https://github.com/.extraheader || true
-          oh-my-opencode run --dangerously-skip-permissions --model "openai/gpt-4o" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。"
+          oh-my-opencode run --model "openai/gpt-4o" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。"
           
           # 提交修复
           git config user.name "github-actions[bot]"
