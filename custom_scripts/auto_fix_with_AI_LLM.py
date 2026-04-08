@@ -666,13 +666,21 @@ def git_push(workflow_file, pat, repo, model_name):
         if "workflow" in result.stderr.lower() and ("permission" in result.stderr.lower() or "refusing" in result.stderr.lower()):
             print("⚠️ GitHub App 没有 workflow 权限，无法直接推送 workflow 文件修改")
             print("将尝试创建 PR 来提交修复...")
+            # We need to push to a new branch first before creating PR
+            branch_name = f"auto-fix-{run_id}"
+            subprocess.run(["git", "checkout", "-b", branch_name], check=True)
+            subprocess.run(["git", "push", "-u", remote_url, branch_name], check=True)
+            
             # Create PR instead
+            env = os.environ.copy()
+            env["GH_TOKEN"] = pat
             pr_result = subprocess.run([
                 "gh", "pr", "create",
                 "--title", f"Auto-fix: {os.path.basename(workflow_file)} by {model_name}",
                 "--body", f"Auto-fix applied by {model_name}. Please review and merge.",
-                "--base", "main"
-            ], capture_output=True, text=True)
+                "--base", "main",
+                "--head", branch_name
+            ], capture_output=True, text=True, env=env)
             if pr_result.returncode == 0:
                 print(f"✅ PR 创建成功: {pr_result.stdout.strip()}")
                 return True
