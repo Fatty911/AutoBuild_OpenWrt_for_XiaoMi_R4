@@ -552,15 +552,14 @@ def validate_required_steps(workflow_file, yaml_content):
             ],
         }
         
-        
-    # Normalize workflow_file to relative path from workspace root if it's absolute
-    import os
-    try:
-        rel_path = os.path.relpath(workflow_file, os.getcwd())
-    except ValueError:
-        rel_path = workflow_file
-        
-    expected = required_steps.get(rel_path, required_steps.get(workflow_file, []))
+        # Normalize workflow_file to relative path from workspace root if it's absolute
+        import os
+        try:
+            rel_path = os.path.relpath(workflow_file, os.getcwd())
+        except ValueError:
+            rel_path = workflow_file
+            
+        expected = required_steps.get(rel_path, required_steps.get(workflow_file, []))
         missing = [s for s in expected if s not in step_names]
         if missing:
             print(f"AI 输出缺少关键步骤，拒绝覆盖文件: {missing}")
@@ -863,20 +862,19 @@ def main():
                         "valid_models": zen_valid_free_models
                     }, f)
                 # 尝试将新的模型缓存推送到仓库持久化
-                import subprocess
-                try:
-                    subprocess.run(["git", "config", "--local", "--unset-all", "http.https://github.com/.extraheader"], check=False)
-                    subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-                    subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
-                    remote_url = f"https://{pat}@github.com/{repo}.git"
-                    subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
-                    subprocess.run(["git", "add", cache_file], check=True)
-                    diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
-                    if diff.returncode != 0:
-                        subprocess.run(["git", "commit", "-m", "Update ZEN free models cache"], check=True)
-                        subprocess.run(["git", "push", remote_url, "HEAD:main"], check=False)
-                except Exception as git_err:
-                    print(f"自动持久化模型缓存到 git 失败 (非致命): {git_err}")
+                    try:
+                        subprocess.run(["git", "config", "--local", "--unset-all", "http.https://github.com/.extraheader"], check=False)
+                        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+                        subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+                        remote_url = f"https://{pat}@github.com/{repo}.git"
+                        subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
+                        subprocess.run(["git", "add", cache_file], check=True)
+                        diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
+                        if diff.returncode != 0:
+                            subprocess.run(["git", "commit", "-m", "Update ZEN free models cache"], check=True)
+                            subprocess.run(["git", "push", remote_url, "HEAD:main"], check=False)
+                    except Exception as git_err:
+                        print(f"自动持久化模型缓存到 git 失败 (非致命): {git_err}")
                     
             except Exception as e:
                 print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
