@@ -552,7 +552,15 @@ def validate_required_steps(workflow_file, yaml_content):
             ],
         }
         
-        expected = required_steps.get(workflow_file, [])
+        
+    # Normalize workflow_file to relative path from workspace root if it's absolute
+    import os
+    try:
+        rel_path = os.path.relpath(workflow_file, os.getcwd())
+    except ValueError:
+        rel_path = workflow_file
+        
+    expected = required_steps.get(rel_path, required_steps.get(workflow_file, []))
         missing = [s for s in expected if s not in step_names]
         if missing:
             print(f"AI 输出缺少关键步骤，拒绝覆盖文件: {missing}")

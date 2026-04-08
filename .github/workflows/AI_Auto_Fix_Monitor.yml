@@ -74,7 +74,7 @@ jobs:
           CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-          WORKFLOW_FILE: ${{ github.workspace }}/.github/workflows/${{ github.event.workflow_run.name }}.yml
+          WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path }}
         run: |
           if [ -f "last_error.log" ]; then
             echo "=== 找到 last_error.log ==="
