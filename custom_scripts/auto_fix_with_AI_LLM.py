@@ -526,27 +526,42 @@ def clean_yaml(content):
 
 def validate_required_steps(workflow_file, yaml_content):
     """Prevent destructive AI rewrites that drop critical workflow steps."""
-    # AI Auto fix block was moved to the central monitor, so we no longer strictly require it inside the build files
-    required_steps = {
-        ".github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml": [
-            "Generate release tag",
-            "Upload firmware to release",
-        ],
-        ".github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml": [
-            "Generate release tag",
-            "Upload firmware to release",
-        ],
-    }
-
-    expected = required_steps.get(workflow_file, [])
-    missing = []
-    for step in expected:
-        if step not in yaml_content:
-            missing.append(step)
-    if missing:
-        print(f"AI 输出缺少关键步骤，拒绝覆盖文件: {missing}")
+    try:
+        import yaml
+        data = yaml.safe_load(yaml_content)
+        
+        # Check basic structure
+        if not data or 'jobs' not in data:
+            print("YAML 验证失败: 缺少 jobs 块")
+            return False
+            
+        step_names = []
+        for job_name, job_data in data.get('jobs', {}).items():
+            for step in job_data.get('steps', []):
+                if 'name' in step:
+                    step_names.append(step['name'])
+                    
+        required_steps = {
+            ".github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml": [
+                "Generate release tag",
+                "Upload firmware to release",
+            ],
+            ".github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml": [
+                "Generate release tag",
+                "Upload firmware to release",
+            ],
+        }
+        
+        expected = required_steps.get(workflow_file, [])
+        missing = [s for s in expected if s not in step_names]
+        if missing:
+            print(f"AI 输出缺少关键步骤，拒绝覆盖文件: {missing}")
+            return False
+            
+        return True
+    except Exception as e:
+        print(f"YAML 解析失败，拒绝覆盖: {e}")
         return False
-    return True
 
 
 def build_error_focus(error_log, max_lines=80):

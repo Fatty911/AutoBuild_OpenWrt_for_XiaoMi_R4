@@ -46,37 +46,35 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
+          
       - name: Install dependencies
-        run: pip install requests beautifulsoup4 --quiet --break-system-packages 2>/dev/null || pip install requests beautifulsoup4 --quiet
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pyyaml
+          
+      - name: Download Error Log Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: error-log
+          github-token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Run AI Auto Fix
-        env:
-          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
-          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
-          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
-          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
-          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
-          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
-          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
-          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
-          CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
-          CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
-          MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
-          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-          # 将出问题的工作流路径动态传给 AI 脚本
-          WORKFLOW_FILE: ${{ github.event.workflow_run.path }}
+      - name: Run AI Auto Fix (Track 2)
         id: track2
         continue-on-error: true
+        env:
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
+          CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          WORKFLOW_FILE: ${{ github.workspace }}/.github/workflows/${{ github.event.workflow_run.name }}.yml
         run: |
           if [ -f "last_error.log" ]; then
             echo "=== 找到 last_error.log ==="
@@ -126,6 +124,7 @@ jobs:
           # 提交修复
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          rm -f last_error.log  # Delete the downloaded log so it isn't committed
           git add .
           git commit -m "Auto-fix build error with OpenCode Deep Repair" || { echo "No changes to commit, considering fix failed"; exit 1; }
           git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git
