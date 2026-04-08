@@ -880,7 +880,7 @@ def main():
                 print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
 
     
-        claude_models = split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-opus-4.6")
+    claude_models = split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-opus-4.6")
     gemini_models = split_models("GEMINI_MODEL_LIST", "google/gemini-3.1-pro,google/gemini-3.1-pro-preview")
     gpt_models = split_models("OPENAI_MODEL_LIST", "openai/gpt-5.4,openai/gpt-5.3,openai/gpt-5.2")
     grok_models = split_models("GROK_MODEL_LIST", "x-ai/grok-4.2,x-ai/grok-4.1")
