@@ -526,29 +526,25 @@ def clean_yaml(content):
 
 def validate_required_steps(workflow_file, yaml_content):
     """Prevent destructive AI rewrites that drop critical workflow steps."""
+    # AI Auto fix block was moved to the central monitor, so we no longer strictly require it inside the build files
     required_steps = {
         ".github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml": [
             "Generate release tag",
             "Upload firmware to release",
-            "Auto fix with AI on failure",
-            "Delete workflow runs",
         ],
         ".github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml": [
             "Generate release tag",
             "Upload firmware to release",
-            "Auto fix with AI on failure",
-            "Delete workflow runs",
         ],
     }
 
     expected = required_steps.get(workflow_file, [])
-    # 改进校验：只要求包含“关键步骤名称”的一部分关键词，避免严格匹配导致拒绝
     missing = []
     for step in expected:
-        if not any(keyword in yaml_content for keyword in ["Upload firmware", "Auto fix with AI", "Delete workflow runs", "Generate release tag"]):
+        if step not in yaml_content:
             missing.append(step)
     if missing:
-        print(f"AI 输出可能缺少关键步骤，拒绝覆盖文件: {missing}")
+        print(f"AI 输出缺少关键步骤，拒绝覆盖文件: {missing}")
         return False
     return True
 
@@ -616,7 +612,7 @@ def git_push(workflow_file, pat, repo, model_name, run_id="unknown"):
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
     if diff.returncode == 0:
         print("No changes detected, nothing to commit.")
-        return True
+        return False
 
     msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
     subprocess.run(["git", "commit", "-m", msg], check=True)
@@ -674,7 +670,7 @@ def main():
     workflow_file = os.getenv("WORKFLOW_FILE", "")
     pat = os.getenv("ACTIONS_TRIGGER_PAT", "")
     repo = os.getenv("GITHUB_REPOSITORY", "")
-    run_id = os.getenv("GITHUB_RUN_ID", "")
+    run_id = os.getenv("FAILED_RUN_ID", "") or os.getenv("GITHUB_RUN_ID", "")
     auto_create_pr = os.getenv("AUTO_FIX_CREATE_PR", "true").lower() == "true"
     auto_merge_pr = os.getenv("AUTO_FIX_AUTO_MERGE", "false").lower() == "true"
     base_branch = os.getenv("AUTO_FIX_BASE_BRANCH", "main").strip() or "main"
