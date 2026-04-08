@@ -1,0 +1,69 @@
+name: AI Auto Fix Monitor
+
+on:
+  workflow_run:
+    types:
+      - completed
+
+jobs:
+  ai_fix:
+    # 只有当触发它的工作流状态是 failure，并且它不是自己（防止死循环）时才执行
+    if: ${{ github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.name != 'AI Auto Fix Monitor' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download error log artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+        run: |
+          echo "检测到工作流 [${{ github.event.workflow_run.name }}] 运行失败！"
+          echo "正在下载错误日志 (Run ID: ${{ github.event.workflow_run.id }})..."
+          gh run download ${{ github.event.workflow_run.id }} -n error-log || echo "未找到 error-log 产物，可能错误过早发生或未被提取。"
+          ls -la
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4 --quiet --break-system-packages 2>/dev/null || pip install requests beautifulsoup4 --quiet
+
+      - name: Run AI Auto Fix
+        env:
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
+          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
+          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
+          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
+          CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
+          CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
+          MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
+          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          # 将出问题的工作流路径动态传给 AI 脚本
+          WORKFLOW_FILE: ${{ github.event.workflow_run.path }}
+        run: |
+          if [ -f "last_error.log" ]; then
+            echo "=== 找到 last_error.log ==="
+            cat last_error.log
+            python custom_scripts/auto_fix_with_AI_LLM.py
+          else
+            echo "没有找到 last_error.log，无法执行 AI 修复。"
+          fi

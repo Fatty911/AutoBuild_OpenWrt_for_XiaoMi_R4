@@ -495,43 +495,19 @@ jobs:
           tag_name: OpenWrt.org_fixed_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
-      - name: Auto fix with AI on failure
+      - name: Extract Error Log
         if: failure()
-        continue-on-error: true
-        env:
-          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
-          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
-          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
-          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
-          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
-          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
-          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
-          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
-          CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
-          CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
-          MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
-          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
-          WORKFLOW_FILE: .github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml
         run: |
-          echo "Build failed, attempting AI-assisted fix..."
-          pip install requests beautifulsoup4 --quiet --break-system-packages 2>/dev/null || pip install requests beautifulsoup4 --quiet || true
           cd $GITHUB_WORKSPACE
-          python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log --max-chars 8000 || true
-          if [ -f "last_error.log" ]; then
-            echo "=== 最后错误日志 ==="
-            cat last_error.log
-          fi
-          python custom_scripts/auto_fix_with_AI_LLM.py || echo "Auto-fix failed, but build failure has been recorded above."
+          python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
 
+      - name: Upload Error Log Artifact
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: error-log
+          path: last_error.log
+          retention-days: 1
       - name: Delete workflow runs
         if: always()
         run: |
