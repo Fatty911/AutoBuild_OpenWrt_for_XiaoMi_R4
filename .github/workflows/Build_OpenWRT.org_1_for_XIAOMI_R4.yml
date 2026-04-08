@@ -15,10 +15,9 @@ on:
       - master
       - main
     paths:
+      - 'custom_scripts/**'
+      - 'custom_configs/**'
       - .github/workflows/Build_OpenWRT.org_1_for_XIAOMI_R4.yml
-      - custom_configs/config_for_OpenWrt_org
-      - custom_scripts/diy-part1.sh
-      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
 
 env:

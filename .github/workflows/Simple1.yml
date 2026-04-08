@@ -15,10 +15,9 @@ on:
       - master
       - main
     paths:
+      - 'custom_scripts/**'
+      - 'custom_configs/**'
       - .github/workflows/Simple1.yml
-      - custom_configs/config_for_OpenWrt_org
-      - custom_scripts/diy-part1.sh
-      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
 
 env:

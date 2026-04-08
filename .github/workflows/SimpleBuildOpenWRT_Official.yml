@@ -14,10 +14,9 @@ on:
     branches:
       - main
     paths:
+      - 'custom_scripts/**'
+      - 'custom_configs/**'
       - .github/workflows/SimpleBuildOpenWRT_Official.yml
-      - custom_configs/config_for_OpenWrt_org
-      - custom_scripts/diy-part1.sh
-      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
   repository_dispatch:
     types: Openwrt.org Source Code Update

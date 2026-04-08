@@ -6,10 +6,9 @@ on:
       - main
       - master
     paths:
+      - 'custom_scripts/**'
+      - 'custom_configs/**'
       - .github/workflows/Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml
-      - custom_configs/config_for_coolsnowwolf
-      - custom_scripts/diy-part1.sh
-      - custom_scripts/diy-part2.sh
       - package/luci-app-autoupdate/**
   repository_dispatch:
     types: coolsnowwolf Source Code Update
