@@ -343,6 +343,19 @@ jobs:
         run: |
           python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
+      - name: Extract Error Log
+        if: failure()
+        run: |
+          python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --output last_error.log --max-chars 15000
+
+      - name: Upload Error Log Artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-log
+          path: last_error.log
+          retention-days: 7
+
       - name: Auto fix with AI on failure
         if: failure()
         env:

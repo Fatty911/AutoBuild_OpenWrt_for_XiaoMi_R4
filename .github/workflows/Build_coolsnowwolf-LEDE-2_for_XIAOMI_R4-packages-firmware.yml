@@ -247,6 +247,19 @@ jobs:
         run: |
           python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
+      - name: Extract Error Log
+        if: failure()
+        run: |
+          python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --output last_error.log --max-chars 15000
+
+      - name: Upload Error Log Artifact
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-log
+          path: last_error.log
+          retention-days: 7
+
   finalize:
     needs: build
     if: always() && !cancelled()
@@ -254,18 +267,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@main
-
-      - name: Auto fix with AI on failure
-        if: needs.build.result == 'failure'
-        env:
-          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
-          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT }}
-          WORKFLOW_FILE: .github/workflows/Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware.yml
-        run: |
-          pip install requests --quiet || true
-          python custom_scripts/auto_fix_with_AI_LLM.py
 
       - name: Delete workflow runs
         if: always()

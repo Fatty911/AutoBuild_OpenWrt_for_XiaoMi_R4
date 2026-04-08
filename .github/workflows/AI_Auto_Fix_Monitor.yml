@@ -9,7 +9,7 @@ on:
       "Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4",
       "Build Lienol 2 packages and fixes for XIAOMI_R4",
       "Build OpenWRT.org 1 before transplant for XIAOMI_R4",
-      "Build OpenWRT.org 2 fix and transplant for XIAOMI_R4 ",
+      "Build OpenWRT.org 2 fix and transplant for XIAOMI_R4",
       "Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4",
       "Simple Build OpenWRT for Xiaomi Mi Router 4 with Custom Packages"
     ]
@@ -93,7 +93,7 @@ jobs:
           echo "=== Track 2 失败，启动 OpenCode 深度修复 ==="
           # 安装 OpenCode
           # (假设存在官方安装脚本，若无可替换为 npm i -g @opencode/cli 等)
-          curl -fsSL https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/main/install.sh | bash || npm install -g oh-my-opencode
+          npm install -g oh-my-opencode
           
           # 安装 npm 依赖（若需要）
           npm install -g oh-my-opencode
@@ -107,7 +107,8 @@ jobs:
         run: |
           # 运行 OpenCode 进行深度分析与修复
           # 允许跳过权限确认，在 CI 中无头运行
-          opencode run "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" --dangerously-skip-permissions --model "openai/gpt-4o"
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          oh-my-opencode run "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" --dangerously-skip-permissions --model "openai/gpt-4o"
           
           # 提交修复
           git config user.name "github-actions[bot]"

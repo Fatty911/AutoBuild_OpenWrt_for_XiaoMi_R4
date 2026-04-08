@@ -741,12 +741,12 @@ def main():
     with open(workflow_file, "r") as f:
         workflow_content = f.read()
 
-    max_workflow_len = 15000
+    max_workflow_len = 30000
     max_log_len = 8000
     if len(workflow_content) > max_workflow_len:
         workflow_content = workflow_content[:max_workflow_len] + "\n... (truncated)"
     if len(error_log) > max_log_len:
-        error_log = error_log[:max_log_len] + "\n... (truncated)"
+        error_log = error_log[:15000] + "\n... (truncated)"
     error_focus = build_error_focus(error_log)
 
     prompt = (
@@ -1028,10 +1028,14 @@ def main():
     print(f"Fixed content written to {workflow_file}")
 
     try:
-        git_push(workflow_file, pat, repo, used_provider)
+        if not git_push(workflow_file, pat, repo, used_provider):
+            print("Git push function returned False (e.g. PR failed or push rejected).")
+            print("Auto-fix 已完成文件写入，但自动提交推送失败。退出 1 以便 Track 3 接管。")
+            sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"Git push failed after retry: {e}")
-        print("Auto-fix 已完成文件写入，但自动提交推送失败，请人工处理。")
+        print("Auto-fix 已完成文件写入，但自动提交推送失败。退出 1 以便 Track 3 接管。")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
