@@ -11,6 +11,10 @@
 
 name: Update Checker for OpenWrt.org
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   # REPO_URL: https://github.com/coolsnowwolf/lede
   REPO_URL: https://github.com/openwrt/openwrt

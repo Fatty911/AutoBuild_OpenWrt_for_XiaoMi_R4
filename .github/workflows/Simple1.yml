@@ -20,6 +20,10 @@ on:
       - .github/workflows/Simple1.yml
       - package/luci-app-autoupdate/**
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REPO_URL: https://github.com/openwrt/openwrt
   REPO_BRANCH: main

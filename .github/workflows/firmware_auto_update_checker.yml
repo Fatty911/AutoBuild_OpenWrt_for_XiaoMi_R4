@@ -15,6 +15,10 @@ on:
         required: false
         default: ''
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
 

@@ -11,6 +11,10 @@
 
 name: Update Checker for Lienol
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   REPO_URL: https://github.com/Lienol/openwrt
 

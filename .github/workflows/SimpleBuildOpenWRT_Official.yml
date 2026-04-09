@@ -20,6 +20,10 @@ on:
       - package/luci-app-autoupdate/**
   repository_dispatch:
     types: Openwrt.org Source Code Update
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   TERM: xterm
   REPO_URL: https://github.com/openwrt/openwrt
