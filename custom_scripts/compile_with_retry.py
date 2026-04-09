@@ -220,7 +220,6 @@ def fix_base_files_version(log_content):
     
     print("🔧 检测到 base-files 版本格式无效错误，尝试修复...")
     
-    # Locate base-files Makefile
     base_files_mk = Path("package/base-files/Makefile")
     if not base_files_mk.exists():
         print(f"⚠️ 找不到 {base_files_mk}，修复失败")
@@ -228,35 +227,39 @@ def fix_base_files_version(log_content):
         
     try:
         with open(base_files_mk, "r") as f:
-            content = f.read()
+            mk_content = f.read()
             
-        # Look for PKG_VERSION:=1~unknown or something similar
-        # And replace with a valid SemVer format like 1-unknown or 1.0.0
-        
-        # Replace 1~unknown with 1-unknown in PKG_VERSION
-        new_content = re.sub(r'PKG_VERSION:=([^\n]*?)~([^\n]*?)', r'PKG_VERSION:=\1-\2', content)
-        
-        # If no change, try changing just ~ to -
-        if new_content == content:
-             new_content = content.replace("~unknown", "-unknown")
+        new_content = mk_content
+        if "PKG_VERSION:=" in new_content:
+            new_content = re.sub(r'PKG_VERSION:=([^\n]*?)~([^\n]*?)', r'PKG_VERSION:=\1-\2', new_content)
+            new_content = new_content.replace("~unknown", "-unknown")
+            if new_content == mk_content:
+                new_content = re.sub(r'PKG_VERSION:=.*', 'PKG_VERSION:=1.0.0-unknown', new_content)
+        else:
+            if "PKG_NAME:=" in new_content:
+                new_content = re.sub(r'(PKG_NAME:=.*?\n)', r'\g<1>PKG_VERSION:=1.0.0-unknown\n', new_content)
+            else:
+                new_content = re.sub(r'(include \$\(TOPDIR\)/rules.mk\n)', r'\g<1>\nPKG_VERSION:=1.0.0-unknown\n', new_content)
              
-        # Or if it's derived from VERSION_NUMBER or missing entirely
-        if new_content == content:
-             if 'PKG_VERSION:=' in content:
-                 # Force it to a valid version if we couldn't match the ~
-                 new_content = re.sub(r'PKG_VERSION:=.*', 'PKG_VERSION:=1.0.0-unknown', content)
-             else:
-                 # Insert it right after PKG_NAME
-                 new_content = re.sub(r'(PKG_NAME:=.*?\n)', r'\1PKG_VERSION:=1.0.0-unknown\n', content)
-             
-        if new_content != content:
+        if new_content != mk_content:
             with open(base_files_mk, "w") as f:
                 f.write(new_content)
-            print("✅ 成功修复 base-files 的版本格式问题")
-            return True
+            print("✅ 成功在 Makefile 中强制注入了规范的 base-files 版本号")
         else:
-            print("⚠️ 未能在 Makefile 中找到不合规的版本号格式")
-            return False
+            print("⚠️ 已经是标准版本或无法强制替换")
+            
+        # 同时尝试修改 include/version.mk 里的全局变量
+        version_mk = Path("include/version.mk")
+        if version_mk.exists():
+            with open(version_mk, "r") as f2:
+                v_content = f2.read()
+            v_new = v_content.replace("~unknown", "-unknown")
+            if v_new != v_content:
+                with open(version_mk, "w") as f2:
+                    f2.write(v_new)
+                print("✅ 连带修复了 include/version.mk 全局变量")
+                
+        return True
             
     except Exception as e:
         print(f"❌ 修复 base-files 版本时出错: {e}")
