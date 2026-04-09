@@ -240,10 +240,14 @@ def fix_base_files_version(log_content):
         if new_content == content:
              new_content = content.replace("~unknown", "-unknown")
              
-        # Or if it's derived from VERSION_NUMBER
+        # Or if it's derived from VERSION_NUMBER or missing entirely
         if new_content == content:
-             # Just force it to 1.0.0 if we can't find the exact match
-             new_content = re.sub(r'PKG_VERSION:=.*', 'PKG_VERSION:=1.0.0', content)
+             if 'PKG_VERSION:=' in content:
+                 # Force it to a valid version if we couldn't match the ~
+                 new_content = re.sub(r'PKG_VERSION:=.*', 'PKG_VERSION:=1.0.0-unknown', content)
+             else:
+                 # Insert it right after PKG_NAME
+                 new_content = re.sub(r'(PKG_NAME:=.*?\n)', r'\1PKG_VERSION:=1.0.0-unknown\n', content)
              
         if new_content != content:
             with open(base_files_mk, "w") as f:
