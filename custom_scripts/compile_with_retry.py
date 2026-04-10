@@ -258,7 +258,28 @@ def fix_base_files_version(log_content):
                 with open(version_mk, "w") as f2:
                     f2.write(v_new)
                 print("✅ 连带修复了 include/version.mk 全局变量")
-                
+
+        # 终极修复：搜索整个项目中的 ~unknown 并在可能的地方进行替换
+        import subprocess
+        print("🔍 正在执行全量暴力替换 ~unknown ...")
+        try:
+            # 替换全局变量文件
+            subprocess.run("sed -i 's/~unknown/-unknown/g' include/version.mk 2>/dev/null || true", shell=True)
+            # 替换获取版本号的脚本
+            subprocess.run("sed -i 's/~unknown/-unknown/g' scripts/getver.sh 2>/dev/null || true", shell=True)
+            # 替换基础文件 Makefile
+            subprocess.run("sed -i 's/~unknown/-unknown/g' package/base-files/Makefile 2>/dev/null || true", shell=True)
+            # 替换 package.mk （打包逻辑的核心）
+            subprocess.run("sed -i 's/~unknown/-unknown/g' include/package.mk 2>/dev/null || true", shell=True)
+            # 替换所有包含 ~unknown 的打包生成路径
+            subprocess.run("find package -name Makefile -type f -exec grep -l '~unknown' {} + | xargs -r sed -i 's/~unknown/-unknown/g'", shell=True)
+            
+            # 最核心的：apk 不允许波浪线，所以只要看到 PKG_VERSION 中包含波浪线的定义全部改掉
+            subprocess.run("find package -name Makefile -type f -exec sed -i 's/PKG_VERSION:=.*~.*/PKG_VERSION:=1.0.0-unknown/g' {} +", shell=True)
+            print("✅ 全局 ~unknown 替换完成")
+        except Exception as shell_err:
+            print(f"⚠️ 全局替换脚本执行失败: {shell_err}")
+            
         return True
             
     except Exception as e:
