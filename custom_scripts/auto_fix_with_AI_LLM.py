@@ -172,6 +172,9 @@ def call_api(proxy_url, api_key, model, prompt):
                 raise Exception(f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}")
                 
         if resp.status_code != 200:
+            err_text = resp.text[:500].lower()
+            if resp.status_code == 400 and ("context length" in err_text or "too many tokens" in err_text or "context window" in err_text or "maximum context" in err_text or "prompt is too long" in err_text):
+                raise Exception(f"HTTP {resp.status_code} [CONTEXT_LENGTH_EXCEEDED]: {resp.text[:500]}")
             raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
         
         # 检查响应是否为空
@@ -324,8 +327,11 @@ def try_provider(name, proxy_url, api_key, model, prompt):
             print(f"[{name}] 调用成功")
             return result
         except Exception as e:
-            print(f"[{name}] 模型 {m} 失败: {e}")
             err_str = str(e).lower()
+            if "[context_length_exceeded]" in err_str:
+                print(f"[{name}] 模型 {m} 失败: [上下文超出限制] 将跳过此模型，尝试下一个...")
+            else:
+                print(f"[{name}] 模型 {m} 失败: {e}")
             
             # 如果是明确的额度耗尽/不再免费，从特定的 ZEN 缓存中剔除（老逻辑）
             if name == "OPENCODE-ZEN" and "[quota_exhausted]" in err_str:
