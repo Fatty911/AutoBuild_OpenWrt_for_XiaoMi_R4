@@ -228,10 +228,16 @@ jobs:
           echo "=== Running defconfig ==="
           make defconfig
 
-          # 修复 base-files 版本问题
-          echo "=== 修复 base-files 版本 ==="
+          echo "=== 修复 base-files 版本 (APK 兼容性) ==="
+          # 1) 强制 PKG_RELEASE:=1（避免 $(COMMITCOUNT) 在非 git 环境下为空）
           sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || echo 'PKG_RELEASE:=1' >> package/base-files/Makefile
-          echo "base-files PKG_RELEASE 已强制设为 1"
+          # 2) 核心修复：base-files Makefile 中 VERSION 和 echo 均使用 ~ 分隔版本号，
+          #    但 apk mkpkg 不接受 ~ — 全局替换为 -
+          sed -i 's/\~/-/g' package/base-files/Makefile
+          # 3) 清理可能残留的旧版本缓存
+          find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
+          rm -rf build_dir/target-*/base-files/ tmp/.base-files_* 2>/dev/null || true
+          echo "base-files APK 版本格式修复完成"
 
           echo "=== Defconfig completed ==="
 
