@@ -73,6 +73,19 @@ jobs:
           CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
           CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
+          MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
+          MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
+          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
+          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
+          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
+          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
+          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
           WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path }}
         run: |
@@ -97,6 +110,10 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
           GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
         run: |
@@ -112,9 +129,34 @@ jobs:
             gh run download ${{ github.event.workflow_run.id }} -n error-log || echo "日志下载彻底失败，将由大模型自行探索"
           fi
 
-          printf '%s\n' '{"mcp_servers":{},"agents":{"sisyphus":{"model":"openai/gpt-4o"}}}' > opencode.json
+          printf '%s' '{
+            "$schema":"https://opencode.ai/config.schema.json",
+            "providers":{
+              "zen":{"type":"openai-compatible","baseURL":"https://opencode.ai/zen/v1","apiKey":"'"$ZEN_API_KEY"'"},
+              "claude-proxy":{"type":"anthropic","baseURL":"'"$CLAUDE_PROXY_URL"'","apiKey":"'"$ANTHROPIC_API_KEY"'"},
+              "openrouter":{"type":"openai-compatible","baseURL":"https://openrouter.ai/api/v1","apiKey":"'"$OPENROUTER_API_KEY"'"},
+              "xai":{"type":"openai-compatible","baseURL":"https://api.x.ai/v1","apiKey":"'"$XAI_API_KEY"'"},
+              "deepseek":{"type":"openai-compatible","baseURL":"https://api.deepseek.com/v1","apiKey":"'"$DEEPSEEK_API_KEY"'"},
+              "siliconflow":{"type":"openai-compatible","baseURL":"https://api.siliconflow.cn/v1","apiKey":"'"$SILICONFLOW_API_KEY"'"}
+            },
+            "agents":{
+              "sisyphus":{
+                "model":"zen/mimo-v2-pro-free",
+                "fallbackModels":[
+                  "zen/qwen-3.6-plus-free",
+                  "claude-proxy/claude-sonnet-4.6",
+                  "openrouter/anthropic/claude-sonnet-4.6",
+                  "openrouter/google/gemini-3.1-pro",
+                  "openrouter/openai/gpt-5.4",
+                  "xai/grok-4.2",
+                  "deepseek/deepseek-r1",
+                  "siliconflow/glm-5"
+                ]
+              }
+            }
+          }' > opencode.json
           
-          oh-my-opencode run --model "openai/gpt-4o" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" || opencode run --agent general "分析 last_error.log 中的报错信息。搜索源码找到根本原因并修复。不要修改 yml 工作流文件。修复后退出。"
+          oh-my-opencode run "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" || opencode run --agent general "分析 last_error.log 中的报错信息。搜索源码找到根本原因并修复。不要修改 yml 工作流文件。修复后退出。"
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
