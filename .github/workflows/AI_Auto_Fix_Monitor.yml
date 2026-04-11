@@ -89,7 +89,7 @@ jobs:
         if: steps.track2.outcome == 'failure'
         run: |
           echo "=== Track 2 失败，启动 OpenCode 深度修复 ==="
-          npm install -g opencode-ai
+          npm install -g opencode-ai oh-my-opencode
 
       - name: Run OpenCode Agent
         if: steps.track2.outcome == 'failure'
