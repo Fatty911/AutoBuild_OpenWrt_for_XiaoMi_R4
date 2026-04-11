@@ -496,7 +496,7 @@ jobs:
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
-      uses: softprops/action-gh-release@main
+      uses: softprops/action-gh-release@master
       env:
         GITHUB_TOKEN: ${{ github.token }}
       with:
