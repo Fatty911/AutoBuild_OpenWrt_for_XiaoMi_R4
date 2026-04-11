@@ -263,7 +263,7 @@ jobs:
           
       - name: Upload bin directory
         id: upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@main
         if: steps.check_bin.outputs.check_bin_exist == 'success'
         with:
           name: OpenWrt_LEDE_coolsnowwolf_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
@@ -354,7 +354,7 @@ jobs:
 
       - name: Upload Error Log Artifact
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@main
         with:
           name: error-log
           path: last_error.log

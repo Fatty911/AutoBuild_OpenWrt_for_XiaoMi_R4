@@ -345,7 +345,7 @@ jobs:
           echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
 
       - name: Rename and Upload Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@main
         with:
           name: OpenWrt.org_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: |
@@ -353,7 +353,7 @@ jobs:
             openwrt/.config
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@main
         with:
           files: openwrt/bin/targets/**/*.bin
           name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
@@ -504,7 +504,7 @@ jobs:
           fi
 
       - name: Upload firmware to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@main
         if: steps.transplant2.outputs.isFixed == 'true'
         with:
           files: openwrt/bin/targets/**/*.bin
@@ -519,7 +519,7 @@ jobs:
           python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
 
       - name: Upload Error Log Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@main
         if: failure()
         with:
           name: error-log

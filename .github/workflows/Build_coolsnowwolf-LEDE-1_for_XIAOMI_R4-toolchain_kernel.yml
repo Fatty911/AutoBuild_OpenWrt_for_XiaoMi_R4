@@ -233,7 +233,7 @@ jobs:
           python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
 
       - name: Upload Error Log Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@main
         if: failure()
         with:
           name: error-log

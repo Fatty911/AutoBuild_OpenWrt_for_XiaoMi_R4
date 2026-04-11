@@ -468,7 +468,7 @@ jobs:
         echo "set_env_variables=true" >> $GITHUB_OUTPUT
 
     - name: Upload bin directory
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@main
       with:
         name: OpenWrt_${{ env.SOURCE }}_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: |
@@ -484,7 +484,7 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware directory
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@main
       with:
         name: OpenWrt_${{ env.SOURCE }}_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
         path: ${{ env.firmware_path }}
@@ -496,7 +496,7 @@ jobs:
         echo "release_tag_status=success" >> $GITHUB_OUTPUT
 
     - name: Upload firmware to release
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@main
       env:
         GITHUB_TOKEN: ${{ github.token }}
       with:
@@ -524,7 +524,7 @@ jobs:
         python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
 
     - name: Upload Error Log Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@main
       if: failure()
       with:
         name: error-log

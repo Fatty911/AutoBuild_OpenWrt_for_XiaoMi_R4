@@ -18,7 +18,7 @@ on:
 
 jobs:
   ai_fix:
-    # 只有当触发它的工作流状态是 failure，并且它不是自己（防止死循环）时才执行
+    name: "AI Fix → ${{ github.event.workflow_run.name }}"
     if: ${{ github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.name != 'AI Auto Fix Monitor' }}
     runs-on: ubuntu-22.04
     permissions:
@@ -26,7 +26,7 @@ jobs:
       actions: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@main
 
       - name: Download error log artifact
         env:
@@ -38,14 +38,14 @@ jobs:
           ls -la
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@main
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@main
         with:
-          python-version: '3.10'
+          python-version: '3.12'
           
       - name: Install dependencies
         run: |
@@ -54,7 +54,7 @@ jobs:
           
       - name: Download Error Log Artifact
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@main
         with:
           name: error-log
           github-token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
