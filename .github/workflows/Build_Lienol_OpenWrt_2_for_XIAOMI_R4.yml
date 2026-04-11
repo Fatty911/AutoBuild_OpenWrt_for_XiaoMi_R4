@@ -224,7 +224,9 @@ jobs:
         # 确保 custom_scripts/compile_with_retry.py 和 custom_scripts/extract_last_error.py 存在
         cp -f $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py . || echo "Warning: custom_scripts/compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py . || echo "Warning: custom_scripts/extract_last_error.py not found in workspace"
-        
+        echo "=== 先构建 root filesystem ==="
+        make target/compile V=s > rootfs_compile.log 2>&1 || true
+        echo "=== root filesystem 构建完成，开始完整固件编译 ==="
         {
           make -j1 V=s > compile.log 2>&1 || {
             echo "首次固件编译失败，尝试运行修复脚本..."
@@ -341,7 +343,9 @@ jobs:
         make defconfig
         cp -f $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py . || echo "Warning: custom_scripts/compile_with_retry.py not found in workspace"
         cp -f $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py . || echo "Warning: custom_scripts/extract_last_error.py not found in workspace"
-        
+        echo "=== 先构建 root filesystem ==="
+        make target/compile V=s > rootfs_compile.log 2>&1 || true
+        echo "=== root filesystem 构建完成，开始完整固件编译 ==="
         {
           make -j1 V=s > compile.log 2>&1 || {
             echo "修复后编译固件仍失败，尝试运行修复脚本..."
@@ -534,3 +538,8 @@ jobs:
         repository: ${{ github.repository }}
         retain_days: 0
         keep_minimum_runs: 2
+    - name: Auto fix with AI on failure
+      if: failure()
+      run: |
+        echo "Build failed, auto-fix triggered"
+        python $GITHUB_WORKSPACE/custom_scripts/auto_fix.py || true
