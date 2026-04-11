@@ -237,6 +237,8 @@ jobs:
           # 3) 清理可能残留的旧版本缓存
           find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
           rm -rf build_dir/target-*/base-files/ tmp/.base-files_* 2>/dev/null || true
+          # 4) 确保版本变量只包含合法字符
+          sed -i 's/VERSION:=.*/VERSION:=0.0.0/' package/base-files/Makefile
           echo "base-files APK 版本格式修复完成"
 
           echo "=== Defconfig completed ==="
