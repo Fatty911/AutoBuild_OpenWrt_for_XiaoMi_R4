@@ -306,22 +306,140 @@ def fix_root_ramips_missing_dir():
 
 
 def fix_base_files_version(log_content):
-    """修复 APK 打包由于 ~unknown 导致的包版本无效错误
+    """修复 APK 打包版本无效错误
 
-    根因：package/base-files/Makefile 中硬编码了
+    根因：package/base-files/Makefile 硬编码了
       VERSION:=$(PKG_RELEASE)~$(lastword $(subst -, ,$(REVISION)))
-    以及
-      echo $(PKG_RELEASE)~$(lastword $(subst -, ,$(REVISION))) >$(STAGING_DIR)/base-files.version
-    apk mkpkg 不接受 ~ 作为版本字符，必须替换为 -
+    非 git 环境下 REVISION=unknown → 版本变 1~unknown 或 1-unknown
+    apk mkpkg 和 apk add 均不接受这些格式，合法格式为 1-r1
     """
     import re
     from pathlib import Path
+    import subprocess, glob
 
     print("🔧 检测到 base-files 版本格式无效错误，尝试修复...")
 
     base_files_mk = Path("package/base-files/Makefile")
     if not base_files_mk.exists():
         print(f"⚠️ 找不到 {base_files_mk}，修复失败")
+        return False
+
+    fixed_any = False
+
+    try:
+        with open(base_files_mk, "r") as f:
+            mk_content = f.read()
+
+        new_content = mk_content
+
+        # 强制 PKG_RELEASE:=1
+        if "$(COMMITCOUNT)" in new_content:
+            new_content = new_content.replace("$(COMMITCOUNT)", "1")
+
+        # 核心修复：把 VERSION:= 行替换为合法的 VERSION:=1-r1
+        new_content = re.sub(
+            r"^VERSION:=.*$", "VERSION:=1-r1", new_content, flags=re.MULTILINE
+        )
+
+        # 替换 echo 版本写入行
+        new_content = re.sub(
+            r"^\s*echo\s+.*>.*base-files\.version",
+            "echo 1-r1 >$(STAGING_DIR)/base-files.version",
+            new_content,
+            flags=re.MULTILINE,
+        )
+
+        # 兜底：如果还残留 ~unknown 或 -unknown，暴力替换
+        new_content = new_content.replace("~unknown", "1-r1").replace(
+            "-unknown", "1-r1"
+        )
+
+        if new_content != mk_content:
+            with open(base_files_mk, "w") as f:
+                f.write(new_content)
+            print("✅ 已修复 package/base-files/Makefile 中的版本为 1-r1")
+            fixed_any = True
+
+        # 同时修复 include/version.mk
+        version_mk = Path("include/version.mk")
+        if version_mk.exists():
+            with open(version_mk, "r") as f2:
+                v_content = f2.read()
+            v_new = v_content.replace("~unknown", "1-r1").replace("-unknown", "1-r1")
+            if v_new != v_content:
+                with open(version_mk, "w") as f2:
+                    f2.write(v_new)
+                print("✅ 连带修复了 include/version.mk")
+                fixed_any = True
+
+        # 清理 staging_dir 中缓存的 base-files.version
+        for vf in glob.glob("staging_dir/target-*/base-files.version"):
+            try:
+                os.remove(vf)
+                print(f"✅ 删除缓存版本文件: {vf}")
+                fixed_any = True
+            except OSError:
+                pass
+
+        # 清理 base-files 的构建标记，强制重新打包
+        for sf in glob.glob("staging_dir/target-*/stamp/.base-files_installed"):
+            try:
+                os.remove(sf)
+                print(f"✅ 删除安装标记: {sf}")
+                fixed_any = True
+            except OSError:
+                pass
+
+        for bs in glob.glob("build_dir/target-*/linux-*/base-files/.built"):
+            try:
+                os.remove(bs)
+                print(f"✅ 删除构建标记: {bs}")
+                fixed_any = True
+            except OSError:
+                pass
+
+        # 全局暴力替换项目中所有 ~unknown / -unknown
+        try:
+            subprocess.run(
+                "sed -i 's/~unknown/1-r1/g' include/version.mk 2>/dev/null || true",
+                shell=True,
+            )
+            subprocess.run(
+                "sed -i 's/-unknown/1-r1/g' include/version.mk 2>/dev/null || true",
+                shell=True,
+            )
+            subprocess.run(
+                "sed -i 's/~unknown/1-r1/g' scripts/getver.sh 2>/dev/null || true",
+                shell=True,
+            )
+            subprocess.run(
+                "sed -i 's/-unknown/1-r1/g' scripts/getver.sh 2>/dev/null || true",
+                shell=True,
+            )
+            subprocess.run(
+                "sed -i 's/~unknown/1-r1/g' include/package.mk 2>/dev/null || true",
+                shell=True,
+            )
+            subprocess.run(
+                "sed -i 's/-unknown/1-r1/g' include/package.mk 2>/dev/null || true",
+                shell=True,
+            )
+            subprocess.run(
+                "sed -i 's/~unknown/1-r1/g' include/package-defaults.mk 2>/dev/null || true",
+                shell=True,
+            )
+            subprocess.run(
+                "sed -i 's/-unknown/1-r1/g' include/package-defaults.mk 2>/dev/null || true",
+                shell=True,
+            )
+            print("✅ 全局 ~unknown / -unknown 替换完成")
+        except Exception as shell_err:
+            print(f"⚠️ 全局替换脚本执行失败: {shell_err}")
+
+        return True
+
+    except Exception as e:
+        print(f"❌ 修复 base-files 版本时出错: {e}")
         return False
 
     fixed_any = False
