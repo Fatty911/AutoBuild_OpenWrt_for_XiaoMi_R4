@@ -95,3 +95,115 @@ config autoupdate 'config'
 EOF
 
 echo "自动更新插件配置完成"
+
+echo "修复 DTS nvmem-layout 兼容性..."
+python3 << 'PYEOF'
+"""Fix DTS nvmem-layout compatibility for Xiaomi R4 (MT7621).
+
+The upstream dtsi wraps nvmem cells inside a 'nvmem-layout' container,
+but older DTC versions cannot resolve phandle references to labels inside
+nvmem-layout. This script promotes those cells to be direct children of
+the factory partition, making them resolvable by any DTC version.
+"""
+import glob
+
+
+def fix_nvmem_layout(filepath):
+    """Remove nvmem-layout wrapper and promote its children to the parent level."""
+    try:
+        with open(filepath, "r") as f:
+            content = f.read()
+    except FileNotFoundError:
+        print(f"[{filepath}] 文件不存在，跳过")
+        return False
+
+    if "nvmem-layout" not in content:
+        print(f"[{filepath}] 未找到 nvmem-layout，跳过")
+        return False
+
+    lines = content.split("\n")
+    new_lines = []
+    i = 0
+    changed = False
+
+    while i < len(lines):
+        stripped = lines[i].strip()
+
+        # Detect nvmem-layout block opening (not a reference like &nvmem-layout)
+        if (
+            "nvmem-layout" in stripped
+            and "{" in stripped
+            and not stripped.startswith("&")
+            and "nvmem-cell-names" not in stripped
+        ):
+            # Found the start of nvmem-layout block
+            indent_unit = "\t" if lines[i][0] == "\t" else "    "
+
+            # Find matching closing brace by counting braces
+            brace_count = 0
+            end_i = None
+            for j in range(i, len(lines)):
+                for ch in lines[j]:
+                    if ch == "{":
+                        brace_count += 1
+                    elif ch == "}":
+                        brace_count -= 1
+                if brace_count == 0:
+                    end_i = j
+                    break
+
+            if end_i is None:
+                print(f"[{filepath}] 无法找到 nvmem-layout 结束位置，跳过")
+                new_lines.append(lines[i])
+                i += 1
+                continue
+
+            # Process inner lines: skip wrapper properties, dedent child nodes
+            inner_lines = lines[i + 1 : end_i]
+            for inner_line in inner_lines:
+                inner_stripped = inner_line.strip()
+                if not inner_stripped:
+                    new_lines.append("")
+                    continue
+                # Skip nvmem-layout wrapper properties
+                if inner_stripped.startswith("compatible =") or inner_stripped.startswith(
+                    "#address-cells"
+                ) or inner_stripped.startswith("#size-cells"):
+                    continue
+                # Dedent child node by one indent unit
+                if inner_line.startswith(indent_unit):
+                    new_lines.append(inner_line[len(indent_unit) :])
+                else:
+                    new_lines.append(inner_line)
+
+            changed = True
+            i = end_i + 1
+            continue
+
+        new_lines.append(lines[i])
+        i += 1
+
+    if changed:
+        with open(filepath, "w") as f:
+            f.write("\n".join(new_lines))
+        print(f"[{filepath}] 已将 nvmem-layout 替换为直接子节点格式")
+        return True
+    else:
+        print(f"[{filepath}] nvmem-layout 格式不匹配，跳过修复")
+        return False
+
+
+# Fix all matching dtsi/dts files
+fixed_any = False
+for pattern in [
+    "target/linux/ramips/dts/mt7621_xiaomi_nand_128m.dtsi",
+    "target/linux/ramips/dts/mt7621_xiaomi_*.dtsi",
+    "target/linux/ramips/dts/mt7621_xiaomi_*.dts",
+]:
+    for filepath in glob.glob(pattern):
+        if fix_nvmem_layout(filepath):
+            fixed_any = True
+
+if not fixed_any:
+    print("未找到需要修复的 nvmem-layout DTS 文件，可能上游已修复或文件不存在")
+PYEOF
