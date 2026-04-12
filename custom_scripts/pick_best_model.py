@@ -141,6 +141,8 @@ def pick_model():
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     xai_key = os.getenv("XAI_API_KEY", "").strip()
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    bailian_key = os.getenv("BAILIAN_API_KEY", "").strip()
+    moonshot_key = os.getenv("MOONSHOT_API_KEY", "").strip()
     siliconflow_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
     modelscope_key = os.getenv("MODELSCOPE_API_KEY", "").strip()
     atomgit_key = os.getenv("ATOMGIT_API_KEY", "").strip()
@@ -153,64 +155,87 @@ def pick_model():
             print(f"[pick_best_model] ZEN 免费模型: {zen_models}", file=sys.stderr)
             return f"opencode/{zen_models[0]}", f"opencode/{zen_models[-1]}"
         else:
-            print(
-                "[pick_best_model] ZEN 有 key 但无可用免费模型，降级", file=sys.stderr
-            )
+            print("[pick_best_model] ZEN 无可用免费模型，降级", file=sys.stderr)
 
-    # 2) Claude (anthropic 直连)
+    # 2) OpenRouter Qwen3.6-Plus Free (排行榜前十 + 0元)
+    if openrouter_key:
+        qwen_free = split_env(
+            "OPENROUTER_QWEN_FREE_MODEL_LIST", "qwen/qwen3.6-plus:free"
+        )
+        if qwen_free:
+            print(
+                f"[pick_best_model] OpenRouter Qwen Free: {qwen_free[0]}",
+                file=sys.stderr,
+            )
+            return f"openrouter/{qwen_free[0]}", f"openrouter/{qwen_free[-1]}"
+
+    # 3) Claude (anthropic 直连)
     if anthropic_key:
         claude_models = split_env(
             "CLAUDE_MODEL_LIST", "claude-sonnet-4.6,claude-opus-4.6"
         )
         print(
-            f"[pick_best_model] 使用 Anthropic Claude: {claude_models[0]}",
-            file=sys.stderr,
+            f"[pick_best_model] Anthropic Claude: {claude_models[0]}", file=sys.stderr
         )
         return f"anthropic/{claude_models[0]}", f"anthropic/{claude_models[-1]}"
 
-    # 3) OpenRouter (Claude/Gemini/GPT/GLM)
+    # 4) OpenRouter (Claude/Gemini/GPT)
     if openrouter_key:
         or_models = split_env(
             "OPENROUTER_MODEL_LIST",
-            "anthropic/claude-sonnet-4.6,google/gemini-3.1-pro,openai/gpt-5.4,z-ai/glm-5",
+            "anthropic/claude-sonnet-4.6,google/gemini-3.1-pro,openai/gpt-5.4",
         )
-        print(f"[pick_best_model] 使用 OpenRouter: {or_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] OpenRouter: {or_models[0]}", file=sys.stderr)
         return f"openrouter/{or_models[0]}", f"openrouter/{or_models[-1]}"
 
-    # 4) OpenAI 直连
+    # 5) 阿里云百炼 (Qwen3.6-Plus 等)
+    if bailian_key:
+        bl_models = split_env("BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max,qwen-plus")
+        print(f"[pick_best_model] 百炼: {bl_models[0]}", file=sys.stderr)
+        return f"bailian/{bl_models[0]}", f"bailian/{bl_models[-1]}"
+
+    # 6) OpenAI 直连
     if openai_key:
         oai_models = split_env("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3")
-        print(f"[pick_best_model] 使用 OpenAI: {oai_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] OpenAI: {oai_models[0]}", file=sys.stderr)
         return f"openai/{oai_models[0]}", f"openai/{oai_models[-1]}"
 
-    # 5) xAI Grok
+    # 7) xAI Grok
     if xai_key:
         grok_models = split_env("XAI_MODEL_LIST", "grok-4.2,grok-4.1")
-        print(f"[pick_best_model] 使用 xAI Grok: {grok_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] xAI Grok: {grok_models[0]}", file=sys.stderr)
         return f"xai/{grok_models[0]}", f"xai/{grok_models[-1]}"
 
-    # 6) DeepSeek
+    # 8) Moonshot (Kimi)
+    if moonshot_key:
+        ms_models = split_env(
+            "MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k"
+        )
+        print(f"[pick_best_model] Moonshot: {ms_models[0]}", file=sys.stderr)
+        return f"moonshot/{ms_models[0]}", f"moonshot/{ms_models[-1]}"
+
+    # 9) DeepSeek
     if deepseek_key:
         ds_models = split_env("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
-        print(f"[pick_best_model] 使用 DeepSeek: {ds_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] DeepSeek: {ds_models[0]}", file=sys.stderr)
         return f"deepseek/{ds_models[0]}", f"deepseek/{ds_models[-1]}"
 
-    # 7) GLM (siliconflow / modelscope / atomgit / 代理)
+    # 10) GLM (siliconflow / modelscope / atomgit / 代理)
     glm_models = split_env("GLM_MODEL_LIST", "glm-5,glm-5-turbo")
     if siliconflow_key:
         sf_models = split_env("SILICONFLOW_MODEL_LIST", glm_models[0])
-        print(f"[pick_best_model] 使用 SiliconFlow: {sf_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] SiliconFlow: {sf_models[0]}", file=sys.stderr)
         return f"siliconflow/{sf_models[0]}", f"siliconflow/{sf_models[-1]}"
     if modelscope_key:
         ms_models = split_env("MODELSCOPE_MODEL_LIST", glm_models[0])
-        print(f"[pick_best_model] 使用 ModelScope: {ms_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] ModelScope: {ms_models[0]}", file=sys.stderr)
         return f"modelscope/{ms_models[0]}", f"modelscope/{ms_models[-1]}"
     if atomgit_key:
         ag_models = split_env("ATOMGIT_MODEL_LIST", glm_models[0])
-        print(f"[pick_best_model] 使用 AtomGit: {ag_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] AtomGit: {ag_models[0]}", file=sys.stderr)
         return f"atomgit/{ag_models[0]}", f"atomgit/{ag_models[-1]}"
     if glm_proxy_url:
-        print(f"[pick_best_model] 使用 GLM 代理: {glm_models[0]}", file=sys.stderr)
+        print(f"[pick_best_model] GLM 代理: {glm_models[0]}", file=sys.stderr)
         return f"glm-proxy/{glm_models[0]}", f"glm-proxy/{glm_models[-1]}"
 
     print("[pick_best_model] 无可用 API key！", file=sys.stderr)

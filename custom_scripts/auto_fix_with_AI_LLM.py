@@ -71,20 +71,20 @@ def get_local_logs():
     """读取本地编译日志文件，按组件分割，只提取最后一个失败的组件日志"""
     import re
     import glob
-    
+
     # 首先检查是否有预提取的错误日志文件（由工作流中的 extract_last_error.py 生成）
     for prefix in ["", "./", "openwrt/", "../"]:
         last_error_path = prefix + "last_error.log"
         if os.path.exists(last_error_path):
             try:
-                with open(last_error_path, 'r', errors='ignore') as f:
+                with open(last_error_path, "r", errors="ignore") as f:
                     content = f.read()
                 if content and len(content) > 50:  # 有实质内容
                     print(f"使用预提取的错误日志: {last_error_path}")
                     return f"=== 预提取错误日志 (last_error.log) ===\n{content}"
             except Exception as e:
                 print(f"⚠️ 读取 {last_error_path} 失败: {e}")
-    
+
     log_files = [
         "tools.log",
         "toolchain.log",
@@ -94,7 +94,7 @@ def get_local_logs():
         "image.log",
         "batman-adv.log",
     ]
-    
+
     # 也检查带 run 次数的日志，例如 compile.log.run.1.log
     all_possible_logs = []
     for log_file in log_files:
@@ -102,17 +102,17 @@ def get_local_logs():
             base_path = f"{prefix}{log_file}"
             all_possible_logs.append(base_path)
             all_possible_logs.extend(glob.glob(f"{base_path}.run.*.log"))
-            
+
     # 按照文件修改时间排序，找最新的那个作为主错误日志
     existing_logs = [f for f in all_possible_logs if os.path.exists(f)]
     if not existing_logs:
         return ""
-        
+
     latest_log = max(existing_logs, key=os.path.getmtime)
-    
+
     components = []
     current_component = []
-    
+
     # 解析组件 (Entering directory ... time: ... or error)
     with open(latest_log, "r", errors="ignore") as f:
         for line in f:
@@ -122,17 +122,17 @@ def get_local_logs():
                 current_component = [line]
             else:
                 current_component.append(line)
-                
+
         if current_component:
-             components.append("".join(current_component))
-             
+            components.append("".join(current_component))
+
     # 我们只关心最新两个组件，并且喂给大模型时只将失败的（通常是最后一个）日志给它以节省token
     failed_log_content = components[-1] if components else ""
-    
+
     # 截断如果单组件还是太长
     if len(failed_log_content) > 10000:
-         failed_log_content = failed_log_content[-10000:]
-         
+        failed_log_content = failed_log_content[-10000:]
+
     return f"=== Failed Component from {latest_log} ===\n{failed_log_content}"
 
 
@@ -164,42 +164,56 @@ def call_api(proxy_url, api_key, model, prompt):
 
     try:
         resp = requests.post(url, headers=headers, json=data, timeout=180)
-        
+
         # 捕捉额度用尽/不再免费等特有错误，抛出特殊异常标记
         if resp.status_code in [401, 402, 403]:
             err_text = resp.text[:500].lower()
-            if "free promotion has ended" in err_text or "insufficient quota" in err_text or "balance" in err_text:
-                raise Exception(f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}")
-                
+            if (
+                "free promotion has ended" in err_text
+                or "insufficient quota" in err_text
+                or "balance" in err_text
+            ):
+                raise Exception(
+                    f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}"
+                )
+
         if resp.status_code != 200:
             err_text = resp.text[:500].lower()
-            if resp.status_code == 400 and ("context length" in err_text or "too many tokens" in err_text or "context window" in err_text or "maximum context" in err_text or "prompt is too long" in err_text):
-                raise Exception(f"HTTP {resp.status_code} [CONTEXT_LENGTH_EXCEEDED]: {resp.text[:500]}")
+            if resp.status_code == 400 and (
+                "context length" in err_text
+                or "too many tokens" in err_text
+                or "context window" in err_text
+                or "maximum context" in err_text
+                or "prompt is too long" in err_text
+            ):
+                raise Exception(
+                    f"HTTP {resp.status_code} [CONTEXT_LENGTH_EXCEEDED]: {resp.text[:500]}"
+                )
             raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
-        
+
         # 检查响应是否为空
         if not resp.text or not resp.text.strip():
             raise Exception(f"API返回空响应")
-        
+
         try:
             result = resp.json()
         except Exception as json_err:
             raise Exception(f"JSON解析失败: {json_err}, 响应内容: {resp.text[:500]}")
-        
+
         # 检查响应结构
         if "choices" not in result:
             raise Exception(f"响应缺少choices字段: {str(result)[:500]}")
         if not result["choices"] or "message" not in result["choices"][0]:
             raise Exception(f"响应choices结构无效: {str(result)[:500]}")
-            
+
         return result["choices"][0]["message"]["content"].strip()
     except Exception as e:
         raise Exception(f"请求失败: {e}")
 
 
-
 def get_resolved_models(name, proxy_url, api_key, requested_models):
     import os, json, time, requests
+
     cache_file = ".model_resolution_cache.json"
     cache_data = {}
     if os.path.exists(cache_file):
@@ -208,28 +222,32 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
                 cache_data = json.load(f)
         except Exception:
             pass
-            
+
     cache_key = f"{name}_{proxy_url}"
     cached_info = cache_data.get(cache_key, {})
-    
+
     # Simple strict matching function
     def match_model(req, fm):
         import re
+
         # 移除提供商前缀 (如 openai/gpt-5 -> gpt-5)
-        req_base = req.lower().split('/')[-1]
-        fm_base = fm.lower().split('/')[-1]
-        
+        req_base = req.lower().split("/")[-1]
+        fm_base = fm.lower().split("/")[-1]
+
         # 移除所有非字母数字的字符，这样 gpt-5.4 = gpt54, glm-5 = glm5
-        req_alpha = re.sub(r'[^a-z0-9]', '', req_base)
-        fm_alpha = re.sub(r'[^a-z0-9]', '', fm_base)
-        
+        req_alpha = re.sub(r"[^a-z0-9]", "", req_base)
+        fm_alpha = re.sub(r"[^a-z0-9]", "", fm_base)
+
         # 只要服务商实际模型名以我们请求的基础名称为开头，就认为匹配成功
         # 比如 req="glm-5", fm="z-ai/glm-5-FP8" -> req_alpha="glm5", fm_alpha="glm5fp8" -> True!
         if fm_alpha.startswith(req_alpha):
             return True
         return False
-    
-    if time.time() - cached_info.get("timestamp", 0) < 3 * 24 * 3600 and "models" in cached_info:
+
+    if (
+        time.time() - cached_info.get("timestamp", 0) < 3 * 24 * 3600
+        and "models" in cached_info
+    ):
         resolved = []
         for req in requested_models:
             found = False
@@ -242,16 +260,16 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
                 resolved.append(req)
         if resolved:
             return resolved, cache_data
-            
+
     print(f"[{name}] 正在向 {proxy_url} 请求最新模型列表并缓存...")
     base_url = proxy_url.replace("/chat/completions", "").rstrip("/")
     if not base_url.endswith("/v1"):
         if "/v1" in base_url:
             base_url = base_url.split("/v1")[0] + "/v1"
-            
+
     models_url = f"{base_url}/models"
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
-    
+
     fetched_models = []
     try:
         resp = requests.get(models_url, headers=headers, timeout=10)
@@ -261,44 +279,49 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
                 fetched_models = [m.get("id") for m in data["data"] if m.get("id")]
     except Exception as e:
         print(f"[{name}] 获取模型列表失败: {e}")
-        
+
     if not fetched_models:
         # 兜底方案：如果 API 没开 /models 或者无权限查询模型列表，
         # 我们按照各家常见的前缀规则强行构造几个常见变体，而不是原样发回去报错。
         resolved = []
         for req in requested_models:
-            req_base = req.lower().split('/')[-1]
+            req_base = req.lower().split("/")[-1]
             if name == "OPENROUTER" or name == "GLM-OR" or name == "GPT-OR":
-                if "gpt" in req_base: resolved.append(f"openai/{req_base}")
-                elif "claude" in req_base: resolved.append(f"anthropic/{req_base}")
-                elif "gemini" in req_base: resolved.append(f"google/{req_base}")
-                elif "glm" in req_base: resolved.append(f"zhipu/{req_base}")
-                elif "grok" in req_base: resolved.append(f"x-ai/{req_base}")
-                else: resolved.append(req)
+                if "gpt" in req_base:
+                    resolved.append(f"openai/{req_base}")
+                elif "claude" in req_base:
+                    resolved.append(f"anthropic/{req_base}")
+                elif "gemini" in req_base:
+                    resolved.append(f"google/{req_base}")
+                elif "glm" in req_base:
+                    resolved.append(f"zhipu/{req_base}")
+                elif "grok" in req_base:
+                    resolved.append(f"x-ai/{req_base}")
+                else:
+                    resolved.append(req)
             elif name == "SILICONFLOW":
-                if "glm" in req_base: 
+                if "glm" in req_base:
                     resolved.append(f"THUDM/{req_base}")
                     resolved.append(f"ZhipuAI/{req_base}")
                 if "deepseek" in req_base:
                     resolved.append(f"deepseek-ai/{req_base}")
                 resolved.append(req)
             elif name == "ATOMGIT" or name == "MODELSCOPE":
-                if "glm" in req_base: resolved.append(f"ZhipuAI/{req_base}")
+                if "glm" in req_base:
+                    resolved.append(f"ZhipuAI/{req_base}")
                 resolved.append(req)
             else:
                 resolved.append(req)
         return resolved, cache_data
-        
-    cache_data[cache_key] = {
-        "timestamp": time.time(),
-        "models": fetched_models
-    }
-    
+
+    cache_data[cache_key] = {"timestamp": time.time(), "models": fetched_models}
+
     try:
         with open(cache_file, "w") as f:
             json.dump(cache_data, f)
-    except: pass
-        
+    except:
+        pass
+
     resolved = []
     for req in requested_models:
         found = False
@@ -309,17 +332,21 @@ def get_resolved_models(name, proxy_url, api_key, requested_models):
                 found = True
         if not found and req not in resolved:
             resolved.append(req)
-            
+
     return resolved, cache_data
+
 
 def try_provider(name, proxy_url, api_key, model, prompt):
     """尝试调用单个提供商"""
     import json, os, subprocess
+
     requested_models = model if isinstance(model, list) else [model]
-    
+
     # 动态将用户配置的缩写（如 glm-5）解析为平台上真实的模型ID（如 zhipuai/glm-5）
-    resolved_models, cache_data = get_resolved_models(name, proxy_url, api_key, requested_models)
-    
+    resolved_models, cache_data = get_resolved_models(
+        name, proxy_url, api_key, requested_models
+    )
+
     for m in resolved_models:
         print(f"[{name}] 尝试模型: {m} ...")
         try:
@@ -329,10 +356,12 @@ def try_provider(name, proxy_url, api_key, model, prompt):
         except Exception as e:
             err_str = str(e).lower()
             if "[context_length_exceeded]" in err_str:
-                print(f"[{name}] 模型 {m} 失败: [上下文超出限制] 将跳过此模型，尝试下一个...")
+                print(
+                    f"[{name}] 模型 {m} 失败: [上下文超出限制] 将跳过此模型，尝试下一个..."
+                )
             else:
                 print(f"[{name}] 模型 {m} 失败: {e}")
-            
+
             # 如果是明确的额度耗尽/不再免费，从特定的 ZEN 缓存中剔除（老逻辑）
             if name == "OPENCODE-ZEN" and "[quota_exhausted]" in err_str:
                 zen_cache_file = ".zen_free_models_cache.json"
@@ -341,20 +370,42 @@ def try_provider(name, proxy_url, api_key, model, prompt):
                         with open(zen_cache_file, "r") as f:
                             zen_data = json.load(f)
                         if m in zen_data.get("valid_models", []):
-                            print(f"⚠️ ZEN 模型 {m} 已不再免费/额度耗尽，从缓存中永久移除。")
+                            print(
+                                f"⚠️ ZEN 模型 {m} 已不再免费/额度耗尽，从缓存中永久移除。"
+                            )
                             zen_data["valid_models"].remove(m)
                             with open(zen_cache_file, "w") as f:
                                 json.dump(zen_data, f)
                             try:
-                                subprocess.run(["git", "add", zen_cache_file], check=True)
-                                subprocess.run(["git", "commit", "-m", f"Auto-remove expired free model {m} from cache"], check=True)
+                                subprocess.run(
+                                    ["git", "add", zen_cache_file], check=True
+                                )
+                                subprocess.run(
+                                    [
+                                        "git",
+                                        "commit",
+                                        "-m",
+                                        f"Auto-remove expired free model {m} from cache",
+                                    ],
+                                    check=True,
+                                )
                                 subprocess.run(["git", "push"], check=False)
-                            except: pass
+                            except:
+                                pass
                     except Exception as cache_err:
                         print(f"更新 ZEN 缓存剔除失败: {cache_err}")
-                        
+
             # 对于所有提供商，如果是明确的无效模型/TOS/404，从全局动态解析缓存中移除
-            elif any(k in err_str for k in ["not a valid model", "not found", "does not exist", "violation of provider", "[quota_exhausted]"]):
+            elif any(
+                k in err_str
+                for k in [
+                    "not a valid model",
+                    "not found",
+                    "does not exist",
+                    "violation of provider",
+                    "[quota_exhausted]",
+                ]
+            ):
                 global_cache_file = ".model_resolution_cache.json"
                 cache_key = f"{name}_{proxy_url}"
                 if os.path.exists(global_cache_file):
@@ -363,21 +414,31 @@ def try_provider(name, proxy_url, api_key, model, prompt):
                             g_data = json.load(f)
                         if cache_key in g_data and "models" in g_data[cache_key]:
                             if m in g_data[cache_key]["models"]:
-                                print(f"⚠️ 检测到模型 {m} 在 {name} 已不可用，正在从动态缓存白名单中摘除。")
+                                print(
+                                    f"⚠️ 检测到模型 {m} 在 {name} 已不可用，正在从动态缓存白名单中摘除。"
+                                )
                                 g_data[cache_key]["models"].remove(m)
                                 with open(global_cache_file, "w") as f:
                                     json.dump(g_data, f)
                                 try:
-                                    subprocess.run(["git", "add", global_cache_file], check=True)
-                                    subprocess.run(["git", "commit", "-m", f"Auto-remove invalid model {m} from {name} resolution cache"], check=True)
+                                    subprocess.run(
+                                        ["git", "add", global_cache_file], check=True
+                                    )
+                                    subprocess.run(
+                                        [
+                                            "git",
+                                            "commit",
+                                            "-m",
+                                            f"Auto-remove invalid model {m} from {name} resolution cache",
+                                        ],
+                                        check=True,
+                                    )
                                     subprocess.run(["git", "push"], check=False)
-                                except: pass
+                                except:
+                                    pass
                     except Exception as cache_err:
                         print(f"全局缓存更新剔除失败: {cache_err}")
     return None
-
-
-
 
 
 def clean_yaml(content):
@@ -407,44 +468,70 @@ def validate_required_steps(workflow_file, yaml_content):
     """Prevent destructive AI rewrites that drop critical workflow steps."""
     try:
         import yaml
+
         data = yaml.safe_load(yaml_content)
-        
+
         # Check basic structure
-        if not data or 'jobs' not in data:
+        if not data or "jobs" not in data:
             print("YAML 验证失败: 缺少 jobs 块")
             return False
-            
+
         step_names = []
-        for job_name, job_data in data.get('jobs', {}).items():
-            for step in job_data.get('steps', []):
-                if 'name' in step:
-                    step_names.append(step['name'])
-                    
+        for job_name, job_data in data.get("jobs", {}).items():
+            for step in job_data.get("steps", []):
+                if "name" in step:
+                    step_names.append(step["name"])
+
         required_steps = {
-            ".github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml": ["Generate release tag", "Upload firmware to release"],
-            ".github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml": ["Generate release tag", "Upload firmware to release"],
-            ".github/workflows/Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware.yml": ["Generate release tag", "Upload firmware to release"],
-            ".github/workflows/Build_coolsnowwolf-LEDE-full_for_XIAOMI_R4.yml": ["Generate release tag", "Upload firmware to release"],
-            ".github/workflows/Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml": ["归档", "Upload to MEGA"],
-            ".github/workflows/Build_OpenWRT.org_1_for_XIAOMI_R4.yml": ["归档", "Upload to MEGA"],
-            ".github/workflows/Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml": ["归档", "Upload to MEGA"],
+            ".github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml": [
+                "Generate release tag",
+                "Upload firmware to release",
+            ],
+            ".github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml": [
+                "Generate release tag",
+                "Upload firmware to release",
+            ],
+            ".github/workflows/Build_coolsnowwolf-LEDE-2_for_XIAOMI_R4-packages-firmware.yml": [
+                "Generate release tag",
+                "Upload firmware to release",
+            ],
+            ".github/workflows/Build_coolsnowwolf-LEDE-full_for_XIAOMI_R4.yml": [
+                "Generate release tag",
+                "Upload firmware to release",
+            ],
+            ".github/workflows/Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml": [
+                "归档",
+                "Upload to MEGA",
+            ],
+            ".github/workflows/Build_OpenWRT.org_1_for_XIAOMI_R4.yml": [
+                "归档",
+                "Upload to MEGA",
+            ],
+            ".github/workflows/Build_coolsnowwolf-LEDE-1_for_XIAOMI_R4-toolchain_kernel.yml": [
+                "归档",
+                "Upload to MEGA",
+            ],
             ".github/workflows/Simple1.yml": ["归档", "Upload to MEGA"],
-            ".github/workflows/SimpleBuildOpenWRT_Official.yml": ["Generate release tag", "Upload firmware to release"],
+            ".github/workflows/SimpleBuildOpenWRT_Official.yml": [
+                "Generate release tag",
+                "Upload firmware to release",
+            ],
         }
-        
+
         # Normalize workflow_file to relative path from workspace root if it's absolute
         import os
+
         try:
             rel_path = os.path.relpath(workflow_file, os.getcwd())
         except ValueError:
             rel_path = workflow_file
-            
+
         expected = required_steps.get(rel_path, required_steps.get(workflow_file, []))
         missing = [s for s in expected if s not in step_names]
         if missing:
             print(f"AI 输出缺少关键步骤，拒绝覆盖文件: {missing}")
             return False
-            
+
         return True
     except Exception as e:
         print(f"YAML 解析失败，拒绝覆盖: {e}")
@@ -460,9 +547,24 @@ def build_error_focus(error_log, max_lines=80):
     focus = []
     # 优先提取 OpenWrt 常见错误关键词
     keywords = (
-        "error", "failed", "invalid", "apk", "version", "PKG_RELEASE", "base-files",
-        "mkpkg", "makefile", "missing", "step", "job", "compile", "package/",
-        "exit code", "not found", "refuse", "拒绝"
+        "error",
+        "failed",
+        "invalid",
+        "apk",
+        "version",
+        "PKG_RELEASE",
+        "base-files",
+        "mkpkg",
+        "makefile",
+        "missing",
+        "step",
+        "job",
+        "compile",
+        "package/",
+        "exit code",
+        "not found",
+        "refuse",
+        "拒绝",
     )
 
     for i, line in enumerate(lines):
@@ -519,29 +621,44 @@ def git_push(workflow_file, pat, repo, model_name, run_id="unknown"):
     msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
     subprocess.run(["git", "commit", "-m", msg], check=True)
     try:
-        result = subprocess.run(["git", "push", remote_url, "HEAD:main"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["git", "push", remote_url, "HEAD:main"], capture_output=True, text=True
+        )
         if result.returncode == 0:
             print("Fix committed and pushed successfully!")
             return True
         # Check if it's a workflow permission error
-        if "workflow" in result.stderr.lower() and ("permission" in result.stderr.lower() or "refusing" in result.stderr.lower()):
+        if "workflow" in result.stderr.lower() and (
+            "permission" in result.stderr.lower() or "refusing" in result.stderr.lower()
+        ):
             print("⚠️ GitHub App 没有 workflow 权限，无法直接推送 workflow 文件修改")
             print("将尝试创建 PR 来提交修复...")
             # We need to push to a new branch first before creating PR
             branch_name = f"auto-fix-{run_id}"
             subprocess.run(["git", "checkout", "-b", branch_name], check=True)
             subprocess.run(["git", "push", "-u", remote_url, branch_name], check=True)
-            
+
             # Create PR instead
             env = os.environ.copy()
             env["GH_TOKEN"] = pat
-            pr_result = subprocess.run([
-                "gh", "pr", "create",
-                "--title", f"Auto-fix: {os.path.basename(workflow_file)} by {model_name}",
-                "--body", f"Auto-fix applied by {model_name}. Please review and merge.",
-                "--base", "main",
-                "--head", branch_name
-            ], capture_output=True, text=True, env=env)
+            pr_result = subprocess.run(
+                [
+                    "gh",
+                    "pr",
+                    "create",
+                    "--title",
+                    f"Auto-fix: {os.path.basename(workflow_file)} by {model_name}",
+                    "--body",
+                    f"Auto-fix applied by {model_name}. Please review and merge.",
+                    "--base",
+                    "main",
+                    "--head",
+                    branch_name,
+                ],
+                capture_output=True,
+                text=True,
+                env=env,
+            )
             if pr_result.returncode == 0:
                 print(f"✅ PR 创建成功: {pr_result.stdout.strip()}")
                 return True
@@ -554,7 +671,9 @@ def git_push(workflow_file, pat, repo, model_name, run_id="unknown"):
         print("首次 push 失败，尝试 fetch + rebase 后再推送...")
         subprocess.run(["git", "fetch", remote_url, "main"], check=True)
         subprocess.run(["git", "rebase", "FETCH_HEAD"], check=True)
-        push_result = subprocess.run(["git", "push", remote_url, "HEAD:main"], capture_output=True, text=True)
+        push_result = subprocess.run(
+            ["git", "push", remote_url, "HEAD:main"], capture_output=True, text=True
+        )
         if push_result.returncode == 0:
             print("Rebase 后 push 成功。")
             return True
@@ -601,7 +720,7 @@ def main():
     local_logs = get_local_logs()
     remote_logs = get_run_logs(repo, run_id, pat) if run_id else ""
     error_log = "\n\n".join(filter(None, [local_logs, remote_logs]))
-    
+
     if not error_log or "No error found in logs" in error_log:
         print("⚠️ 未能在日志中找到明确的编译错误特征 (No error found in logs)。")
         print("这可能是由于网络问题、磁盘空间不足、或者编译在非常早期的阶段就已退出。")
@@ -658,26 +777,31 @@ def main():
         cache_file = ".zen_free_models_cache.json"
         cache_days = 3
         need_update = True
-        
+
         # 1. 检查持久化在仓库的缓存
         if os.path.exists(cache_file):
             try:
                 import json
                 import time
+
                 with open(cache_file, "r") as f:
                     cache_data = json.load(f)
                 last_updated = cache_data.get("timestamp", 0)
                 cached_models = cache_data.get("valid_models", [])
-                
+
                 days_since_update = (time.time() - last_updated) / (24 * 3600)
                 if cached_models and days_since_update < cache_days:
-                    print(f"[ZEN] 发现距今 {days_since_update:.1f} 天的缓存模型，跳过爬虫直接使用: {cached_models}")
+                    print(
+                        f"[ZEN] 发现距今 {days_since_update:.1f} 天的缓存模型，跳过爬虫直接使用: {cached_models}"
+                    )
                     zen_valid_free_models = cached_models
                     need_update = False
                 elif not cached_models:
                     print("[ZEN] 缓存的模型列表为空，将重新爬取...")
                 else:
-                    print(f"[ZEN] 缓存距今已达 {days_since_update:.1f} 天，需要更新验证...")
+                    print(
+                        f"[ZEN] 缓存距今已达 {days_since_update:.1f} 天，需要更新验证..."
+                    )
             except Exception as e:
                 print(f"[ZEN] 读取缓存失败: {e}")
 
@@ -689,23 +813,40 @@ def main():
                 from bs4 import BeautifulSoup
                 import json
                 import time
-                
+
                 # a. 获取排行榜前 15 名
                 ranking_url = "https://artificialanalysis.ai/leaderboards/models"
                 headers = {"User-Agent": "Mozilla/5.0"}
                 # 设置一个硬编码的保底前15名单，防止目标网站反爬或改版导致崩溃
                 top_15_names = [
-                    "gpt-4o", "claude-3.5-sonnet", "gemini-1.5-pro", "gemini-2.0-pro", "o1", "o3-mini",
-                    "qwen-max", "qwen-3.6-plus", "qwen-3.6-max", "deepseek-v3", "deepseek-r1",
-                    "claude-3-opus", "gpt-4-turbo", "llama-3.1-405b", "grok-2", "grok-3", "grok-4"
+                    "gpt-4o",
+                    "claude-3.5-sonnet",
+                    "gemini-1.5-pro",
+                    "gemini-2.0-pro",
+                    "o1",
+                    "o3-mini",
+                    "qwen-max",
+                    "qwen-3.6-plus",
+                    "qwen-3.6-max",
+                    "deepseek-v3",
+                    "deepseek-r1",
+                    "claude-3-opus",
+                    "gpt-4-turbo",
+                    "llama-3.1-405b",
+                    "grok-2",
+                    "grok-3",
+                    "grok-4",
                 ]
-                
+
                 try:
                     resp = requests.get(ranking_url, headers=headers, timeout=10)
                     if resp.status_code == 200:
                         # 从新版 Next.js 数据流中提取真实实时的模型名字/slug
                         import re
-                        matches = re.findall(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', resp.text)
+
+                        matches = re.findall(
+                            r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', resp.text
+                        )
                         live_models = []
                         for block in matches:
                             block = block.replace('\\"', '"')
@@ -713,26 +854,35 @@ def main():
                             slugs = re.findall(r'"slug":"([a-z0-9\-.]+)"', block)
                             names = re.findall(r'"name":"([A-Za-z0-9\-.+ ]+?)"', block)
                             live_models.extend(slugs)
-                            live_models.extend([n.lower().replace(" ", "-") for n in names])
-                            
+                            live_models.extend(
+                                [n.lower().replace(" ", "-") for n in names]
+                            )
+
                         if live_models:
                             # 去重并加入排行榜列表（维持出现顺序，最早出现的一般排名更高或最活跃）
-                            seen = set(top_15_names) # 保底名单依然优先
+                            seen = set(top_15_names)  # 保底名单依然优先
                             for m in live_models:
-                                if len(m) > 2 and not m.isdigit() and "{" not in m and m not in seen:
+                                if (
+                                    len(m) > 2
+                                    and not m.isdigit()
+                                    and "{" not in m
+                                    and m not in seen
+                                ):
                                     seen.add(m)
                                     top_15_names.append(m)
-                            print(f"动态成功抓取到 {len(live_models)} 个实时模型，已加入白名单。")
+                            print(
+                                f"动态成功抓取到 {len(live_models)} 个实时模型，已加入白名单。"
+                            )
                 except Exception as scrape_err:
                     print(f"动态爬取排行榜失败，降级使用硬编码保底名单: {scrape_err}")
-                
+
                 # b. 获取 ZEN 的模型列表
                 zen_url = "https://opencode.ai/zen/v1/models"
                 z_headers = {"Authorization": f"Bearer {zen_api_key}"}
                 z_resp = requests.get(zen_url, headers=z_headers, timeout=10)
                 z_resp.raise_for_status()
                 zen_models = z_resp.json().get("data", [])
-                
+
                 # c. 筛选并比对
                 valid_models = []
                 for m in zen_models:
@@ -740,53 +890,106 @@ def main():
                     if "free" in model_id:
                         # 从 model_id 中提取基础名字进行模糊匹配
                         # 比如 mimo-v2-pro-free -> mimo v2 pro
-                        base_name = model_id.replace("-free", "").replace("_free", "").replace("-", " ").replace("_", " ")
-                        
+                        base_name = (
+                            model_id.replace("-free", "")
+                            .replace("_free", "")
+                            .replace("-", " ")
+                            .replace("_", " ")
+                        )
+
                         is_top_15 = False
                         for top_name in top_15_names:
-                            clean_top = top_name.replace("-", " ").replace("_", " ").replace(".", "")
+                            clean_top = (
+                                top_name.replace("-", " ")
+                                .replace("_", " ")
+                                .replace(".", "")
+                            )
                             clean_base = base_name.replace(".", "")
                             # 提取纯名字部分，忽略 provider (如 qwen/qwen 36 plus -> qwen 36 plus)
-                            core_base = clean_base.split('/')[-1] if '/' in clean_base else clean_base
-                            
-                            if core_base in clean_top or clean_top in core_base or all(part in clean_top for part in core_base.split()):
+                            core_base = (
+                                clean_base.split("/")[-1]
+                                if "/" in clean_base
+                                else clean_base
+                            )
+
+                            if (
+                                core_base in clean_top
+                                or clean_top in core_base
+                                or all(part in clean_top for part in core_base.split())
+                            ):
                                 is_top_15 = True
                                 break
-                        
+
                         if is_top_15:
                             print(f"[ZEN] 发现排名前 15 的免费模型: {m.get('id')}")
                             valid_models.append(m.get("id"))
-                
+
                 zen_valid_free_models = valid_models
-                
+
                 # d. 写入缓存
                 with open(cache_file, "w") as f:
-                    json.dump({
-                        "timestamp": time.time(),
-                        "valid_models": zen_valid_free_models
-                    }, f)
-                # 尝试将新的模型缓存推送到仓库持久化
+                    json.dump(
+                        {
+                            "timestamp": time.time(),
+                            "valid_models": zen_valid_free_models,
+                        },
+                        f,
+                    )
+                    # 尝试将新的模型缓存推送到仓库持久化
                     try:
-                        subprocess.run(["git", "config", "--local", "--unset-all", "http.https://github.com/.extraheader"], check=False)
-                        subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
-                        subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+                        subprocess.run(
+                            [
+                                "git",
+                                "config",
+                                "--local",
+                                "--unset-all",
+                                "http.https://github.com/.extraheader",
+                            ],
+                            check=False,
+                        )
+                        subprocess.run(
+                            [
+                                "git",
+                                "config",
+                                "user.email",
+                                "github-actions[bot]@users.noreply.github.com",
+                            ],
+                            check=True,
+                        )
+                        subprocess.run(
+                            ["git", "config", "user.name", "github-actions[bot]"],
+                            check=True,
+                        )
                         remote_url = f"https://{pat}@github.com/{repo}.git"
-                        subprocess.run(["git", "remote", "set-url", "origin", remote_url], check=True)
+                        subprocess.run(
+                            ["git", "remote", "set-url", "origin", remote_url],
+                            check=True,
+                        )
                         subprocess.run(["git", "add", cache_file], check=True)
                         diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
                         if diff.returncode != 0:
-                            subprocess.run(["git", "commit", "-m", "Update ZEN free models cache"], check=True)
-                            subprocess.run(["git", "push", remote_url, "HEAD:main"], check=False)
+                            subprocess.run(
+                                ["git", "commit", "-m", "Update ZEN free models cache"],
+                                check=True,
+                            )
+                            subprocess.run(
+                                ["git", "push", remote_url, "HEAD:main"], check=False
+                            )
                     except Exception as git_err:
                         print(f"自动持久化模型缓存到 git 失败 (非致命): {git_err}")
-                    
+
             except Exception as e:
                 print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
 
-    
-    claude_models = split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-opus-4.6")
-    gemini_models = split_models("GEMINI_MODEL_LIST", "google/gemini-3.1-pro,google/gemini-3.1-pro-preview")
-    gpt_models = split_models("OPENAI_MODEL_LIST", "openai/gpt-5.4,openai/gpt-5.3,openai/gpt-5.2")
+    claude_models = split_models(
+        "CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-opus-4.6"
+    )
+    gemini_models = split_models(
+        "GEMINI_MODEL_LIST", "google/gemini-3.1-pro,google/gemini-3.1-pro-preview"
+    )
+    gpt_models = split_models(
+        "OPENAI_MODEL_LIST", "openai/gpt-5.4,openai/gpt-5.3,openai/gpt-5.2"
+    )
     grok_models = split_models("GROK_MODEL_LIST", "x-ai/grok-4.2,x-ai/grok-4.1")
     glm_models_or = split_models("GLM_MODEL_LIST", "z-ai/glm-5-turbo,z-ai/glm-5")
     glm_models_cn = split_models("GLM_MODEL_LIST", "glm-5-turbo,glm-5")
@@ -859,7 +1062,62 @@ def main():
             }
         )
 
-    # 6) GLM（优先 OpenRouter；其次 atomgit/modelscope/siliconflow）
+    # 6) Qwen3.6-Plus Free via OpenRouter (排行榜前十 + 免费)
+    if openrouter_api_key:
+        qwen_free_models = split_models(
+            "OPENROUTER_QWEN_FREE_MODEL_LIST", "qwen/qwen3.6-plus:free"
+        )
+        providers.append(
+            {
+                "name": "QWEN-FREE-OR",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": qwen_free_models,
+            }
+        )
+
+    # 7) 阿里云百炼 (Qwen3.6-Plus 等国产模型)
+    bailian_api_key = os.getenv("BAILIAN_API_KEY", "").strip()
+    if bailian_api_key:
+        bailian_models = split_models(
+            "BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max,qwen-plus"
+        )
+        providers.append(
+            {
+                "name": "BAILIAN",
+                "proxy_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                "api_key": bailian_api_key,
+                "models": bailian_models,
+            }
+        )
+
+    # 8) Moonshot (Kimi)
+    moonshot_api_key = os.getenv("MOONSHOT_API_KEY", "").strip()
+    if moonshot_api_key:
+        moonshot_models = split_models("MOONSHOT_MODEL_LIST", "moonshot-v1-auto")
+        providers.append(
+            {
+                "name": "MOONSHOT",
+                "proxy_url": "https://api.moonshot.cn/v1",
+                "api_key": moonshot_api_key,
+                "models": moonshot_models,
+            }
+        )
+
+    # 9) DeepSeek
+    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if deepseek_api_key:
+        deepseek_models = split_models("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
+        providers.append(
+            {
+                "name": "DEEPSEEK",
+                "proxy_url": "https://api.deepseek.com/v1",
+                "api_key": deepseek_api_key,
+                "models": deepseek_models,
+            }
+        )
+
+    # 10) GLM（优先 OpenRouter；其次 atomgit/modelscope/siliconflow）
     if openrouter_api_key:
         providers.append(
             {
@@ -923,7 +1181,9 @@ def main():
     try:
         if not git_push(workflow_file, pat, repo, used_provider, run_id):
             print("Git push function returned False (e.g. PR failed or push rejected).")
-            print("Auto-fix 已完成文件写入，但自动提交推送失败。退出 1 以便 Track 3 接管。")
+            print(
+                "Auto-fix 已完成文件写入，但自动提交推送失败。退出 1 以便 Track 3 接管。"
+            )
             sys.exit(1)
     except subprocess.CalledProcessError as e:
         print(f"Git push failed after retry: {e}")
