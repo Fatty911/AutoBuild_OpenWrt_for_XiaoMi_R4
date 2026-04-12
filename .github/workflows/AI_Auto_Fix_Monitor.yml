@@ -113,6 +113,19 @@ jobs:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
+          CLAUDE_MODEL_LIST: ${{ secrets.CLAUDE_PROXY_MODEL_LIST }}
+          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
+          OPENAI_MODEL_LIST: ${{ secrets.OPENAI_MODEL_LIST }}
+          XAI_MODEL_LIST: ${{ secrets.XAI_MODEL_LIST }}
+          DEEPSEEK_MODEL_LIST: ${{ secrets.DEEPSEEK_MODEL_LIST }}
+          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
+          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
+          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
+          GLM_MODEL_LIST: ${{ secrets.GLM_MODEL_LIST }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
           GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
         run: |
@@ -128,22 +141,22 @@ jobs:
             gh run download ${{ github.event.workflow_run.id }} -n error-log || echo "日志下载彻底失败，将由大模型自行探索"
           fi
 
+          BEST_MODEL=$(python custom_scripts/pick_best_model.py)
+          SMALL_MODEL=$(python custom_scripts/pick_best_model.py --small)
+          echo "Track 3 选定模型: $BEST_MODEL (轻量: $SMALL_MODEL)"
+          
+          if [ "$BEST_MODEL" = "NO_MODEL_AVAILABLE" ]; then
+            echo "无可用模型，Track 3 终止"
+            exit 1
+          fi
+          
           printf '%s' '{
             "$schema":"https://opencode.ai/config.json",
-            "model":"opencode/mimo-v2-pro-free",
-            "small_model":"opencode/qwen-3.6-plus-free",
-            "provider":{
-              "anthropic":{"options":{"apiKey":"'"$ANTHROPIC_API_KEY"'"}},
-              "openrouter":{"options":{"apiKey":"'"$OPENROUTER_API_KEY"'"}},
-              "xai":{"options":{"apiKey":"'"$XAI_API_KEY"'"}}
-            },
-            "agent":{
-              "sisyphus":{"model":"opencode/mimo-v2-pro-free"},
-              "oracle":{"model":"anthropic/claude-sonnet-4.6"}
-            }
+            "model":"'"$BEST_MODEL"'",
+            "small_model":"'"$SMALL_MODEL"'"
           }' > opencode.json
           
-          oh-my-opencode run "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" || opencode run --agent general "分析 last_error.log 中的报错信息。搜索源码找到根本原因并修复。不要修改 yml 工作流文件。修复后退出。"
+          oh-my-opencode run --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" || opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。搜索源码找到根本原因并修复。不要修改 yml 工作流文件。修复后退出。"
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
