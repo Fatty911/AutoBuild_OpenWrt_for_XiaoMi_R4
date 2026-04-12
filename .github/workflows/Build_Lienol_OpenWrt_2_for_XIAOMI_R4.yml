@@ -280,6 +280,7 @@ jobs:
         # Clone lede-source for base-files
         git clone https://github.com/coolsnowwolf/lede lede-source
         cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
+        cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_nand_128m.dtsi target/linux/ramips/dts/ 2>/dev/null || true
         cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ 2>/dev/null || true
         rm -rf lede-source
         # 上游已内置正确的分区表和 IMAGE_SIZE=124416k，无需 sed 修改
