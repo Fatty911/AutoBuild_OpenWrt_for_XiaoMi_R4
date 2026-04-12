@@ -107,13 +107,12 @@ jobs:
       - name: Run OpenCode Agent
         if: steps.track2.outcome == 'failure'
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
-          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
           GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
         run: |
@@ -130,29 +129,17 @@ jobs:
           fi
 
           printf '%s' '{
-            "$schema":"https://opencode.ai/config.schema.json",
-            "providers":{
-              "zen":{"type":"openai-compatible","baseURL":"https://opencode.ai/zen/v1","apiKey":"'"$ZEN_API_KEY"'"},
-              "claude-proxy":{"type":"anthropic","baseURL":"'"$CLAUDE_PROXY_URL"'","apiKey":"'"$ANTHROPIC_API_KEY"'"},
-              "openrouter":{"type":"openai-compatible","baseURL":"https://openrouter.ai/api/v1","apiKey":"'"$OPENROUTER_API_KEY"'"},
-              "xai":{"type":"openai-compatible","baseURL":"https://api.x.ai/v1","apiKey":"'"$XAI_API_KEY"'"},
-              "deepseek":{"type":"openai-compatible","baseURL":"https://api.deepseek.com/v1","apiKey":"'"$DEEPSEEK_API_KEY"'"},
-              "siliconflow":{"type":"openai-compatible","baseURL":"https://api.siliconflow.cn/v1","apiKey":"'"$SILICONFLOW_API_KEY"'"}
+            "$schema":"https://opencode.ai/config.json",
+            "model":"opencode/mimo-v2-pro-free",
+            "small_model":"opencode/qwen-3.6-plus-free",
+            "provider":{
+              "anthropic":{"options":{"apiKey":"'"$ANTHROPIC_API_KEY"'"}},
+              "openrouter":{"options":{"apiKey":"'"$OPENROUTER_API_KEY"'"}},
+              "xai":{"options":{"apiKey":"'"$XAI_API_KEY"'"}}
             },
-            "agents":{
-              "sisyphus":{
-                "model":"zen/mimo-v2-pro-free",
-                "fallbackModels":[
-                  "zen/qwen-3.6-plus-free",
-                  "claude-proxy/claude-sonnet-4.6",
-                  "openrouter/anthropic/claude-sonnet-4.6",
-                  "openrouter/google/gemini-3.1-pro",
-                  "openrouter/openai/gpt-5.4",
-                  "xai/grok-4.2",
-                  "deepseek/deepseek-r1",
-                  "siliconflow/glm-5"
-                ]
-              }
+            "agent":{
+              "sisyphus":{"model":"opencode/mimo-v2-pro-free"},
+              "oracle":{"model":"anthropic/claude-sonnet-4.6"}
             }
           }' > opencode.json
           

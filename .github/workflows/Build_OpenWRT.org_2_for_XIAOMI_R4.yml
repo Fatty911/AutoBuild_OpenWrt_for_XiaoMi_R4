@@ -229,15 +229,13 @@ jobs:
           make defconfig
 
           echo "=== 修复 base-files 版本 (APK 兼容性) ==="
-          # 根因：base-files Makefile 中 VERSION:=$(PKG_RELEASE)~$(lastword $(subst -, ,$(REVISION)))
-          # 在非 git 环境 REVISION=unknown → 版本变 1~unknown 或 1-unknown，apk 均拒绝
-          # 修复：直接把 VERSION 行和 echo 行的版本模式改成合法的 $(PKG_RELEASE)-r1
+          # VERSION:= 在 define 块内有缩进，不能用 ^ 锚点
 
           # 1) 强制 PKG_RELEASE:=1
           sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || echo 'PKG_RELEASE:=1' >> package/base-files/Makefile
 
-          # 2) 替换 VERSION 行：去掉 ~$(lastword...) 引用，直接用 -r1
-          sed -i '/^VERSION:=/s/=.*/=1-r1/' package/base-files/Makefile
+          # 2) 替换 VERSION:= 行（无论缩进），直接改成 1-r1
+          sed -i 's/VERSION:=.*/VERSION:=1-r1/' package/base-files/Makefile
 
           # 3) 替换 echo 版本写入行
           sed -i '/echo.*>.*base-files.version/s/echo .*/echo 1-r1/' package/base-files/Makefile

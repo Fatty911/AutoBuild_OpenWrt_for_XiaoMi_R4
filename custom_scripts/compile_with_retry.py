@@ -336,10 +336,8 @@ def fix_base_files_version(log_content):
         if "$(COMMITCOUNT)" in new_content:
             new_content = new_content.replace("$(COMMITCOUNT)", "1")
 
-        # 核心修复：把 VERSION:= 行替换为合法的 VERSION:=1-r1
-        new_content = re.sub(
-            r"^VERSION:=.*$", "VERSION:=1-r1", new_content, flags=re.MULTILINE
-        )
+        # 核心修复：把 VERSION:= 行替换为合法的 VERSION:=1-r1（不锚定行首，因为有缩进）
+        new_content = re.sub(r"VERSION:=.*", "VERSION:=1-r1", new_content)
 
         # 替换 echo 版本写入行
         new_content = re.sub(
