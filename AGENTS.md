@@ -12,6 +12,7 @@
 - 生产代码只放 `custom_scripts/` 目录下，根目录不得出现 `.py` 文件。
 - 本地 commit 可以随时做，但只有用户明确说"推送"或"push"时才 push 到远端。
 - 单次解决报错的改动可自动 push，但多次循环尝试时注意 push 间隔时间。
+- **每次修改完代码后必须进行严格的语法校验**（YAML 用 LSP/`actionlint`，Python 用 `python3 -c "import ast; ast.parse(open(...).read())"` 或 `ruff`，Shell 用 `shellcheck`）。
 
 ## 文档同步
 - 每次执行完任务后，必须检查 README.md 和 AGENTS.md 是否需要更新（新增/删除/重命名了文件、功能、配置项，或新增了全局规则等）。
