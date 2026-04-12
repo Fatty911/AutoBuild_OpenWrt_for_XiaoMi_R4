@@ -162,6 +162,8 @@ jobs:
             "small_model":"'"$SMALL_MODEL"'"
           }' > opencode.json
           
+          cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
+          
           oh-my-opencode run --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" || opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。搜索源码找到根本原因并修复。不要修改 yml 工作流文件。修复后退出。"
           
           git config user.name "github-actions[bot]"
