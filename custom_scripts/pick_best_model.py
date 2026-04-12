@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """根据可用的 API key 动态选出最佳 opencode 模型。
 
-核心原则：不硬编码模型列表，运行时实时抓取排行榜。
-排行榜抓取失败时不过滤（允许所有模型通过），而不是用硬编码保底。
+模型列表策略：运行时实时抓取排行榜 → 成功则写回 .leaderboard_cache.json 供下次兜底。
+缓存超过 14 天未更新时打印警告但仍使用，确保网络不通时也能工作。
 
 免费渠道优先级：
 1. AtomGit（免费无限量）→ GLM-5, Qwen3.5-398B 等
@@ -19,33 +19,82 @@ import json
 import time
 import re
 
+LEADERBOARD_CACHE = ".leaderboard_cache.json"
+LEADERBOARD_STALE_DAYS = 14
+
 
 def split_env(name, default=""):
     raw = os.getenv(name, "").strip()
     return [m.strip() for m in (raw or default).split(",") if m.strip()]
 
 
+def load_cached_top20():
+    """从缓存文件读取上次抓取的排行榜，返回 (set, timestamp)。不存在返回 (None, 0)。"""
+    if not os.path.exists(LEADERBOARD_CACHE):
+        return None, 0
+    try:
+        with open(LEADERBOARD_CACHE, "r") as f:
+            data = json.load(f)
+        slugs = set(data.get("top20", []))
+        ts = data.get("timestamp", 0)
+        return slugs if slugs else None, ts
+    except Exception:
+        return None, 0
+
+
+def save_cached_top20(top20_set):
+    """把排行榜结果写回缓存文件，供下次抓取失败时兜底。"""
+    try:
+        with open(LEADERBOARD_CACHE, "w") as f:
+            json.dump(
+                {"timestamp": time.time(), "top20": sorted(top20_set)}, f, indent=2
+            )
+    except Exception:
+        pass
+
+
 def fetch_leaderboard_top20():
     """实时从 Artificial Analysis 抓取排行榜前 20 模型 slug。
-    返回 set of lowercase slug，失败时返回 None（调用方应不过滤）。"""
+    成功 → 写回缓存 + 返回 set；失败 → 读缓存兜底（超14天警告）+ 返回 set 或 None。"""
     try:
         import requests
 
         url = "https://artificialanalysis.ai/leaderboards/models"
         resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        if resp.status_code != 200:
-            return None
-
-        slugs = set()
-        matches = re.findall(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', resp.text)
-        for block in matches:
-            block = block.replace('\\"', '"')
-            slugs.update(re.findall(r'"slug":"([a-z0-9\-.]+)"', block))
-
-        return set(list(slugs)[:20]) if len(slugs) > 20 else slugs if slugs else None
+        if resp.status_code == 200:
+            slugs = set()
+            matches = re.findall(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', resp.text)
+            for block in matches:
+                block = block.replace('\\"', '"')
+                slugs.update(re.findall(r'"slug":"([a-z0-9\-.]+)"', block))
+            if slugs:
+                top20 = set(list(slugs)[:20]) if len(slugs) > 20 else slugs
+                save_cached_top20(top20)
+                print(
+                    f"[pick_best_model] 实时排行榜抓取成功({len(top20)}个)，已更新缓存",
+                    file=sys.stderr,
+                )
+                return top20
     except Exception as e:
-        print(f"[pick_best_model] 排行榜抓取失败: {e}", file=sys.stderr)
-        return None
+        print(f"[pick_best_model] 排行榜实时抓取失败: {e}", file=sys.stderr)
+
+    cached, ts = load_cached_top20()
+    if cached:
+        days_old = (time.time() - ts) / 86400
+        if days_old > LEADERBOARD_STALE_DAYS:
+            print(
+                f"[pick_best_model] ⚠️ 排行榜缓存已 {days_old:.0f} 天未更新，可能包含过时模型，请尽快手动更新",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[pick_best_model] 排行榜实时抓取失败，使用{days_old:.1f}天前的缓存兜底",
+                file=sys.stderr,
+            )
+        return cached
+
+    print("[pick_best_model] 排行榜实时抓取失败且无缓存，不过滤模型", file=sys.stderr)
+    return None
 
 
 def is_top20_match(model_id_lower, top20_set):

@@ -886,15 +886,15 @@ def main():
                 import json
                 import time
 
-                # a. 获取排行榜前 20 名（不硬编码，实时抓取）
+                # a. 获取排行榜前 20 名（实时抓取 + 缓存兜底）
                 ranking_url = "https://artificialanalysis.ai/leaderboards/models"
                 headers = {"User-Agent": "Mozilla/5.0"}
                 top_15_names = []
+                lb_cache_file = ".leaderboard_cache.json"
 
                 try:
                     resp = requests.get(ranking_url, headers=headers, timeout=10)
                     if resp.status_code == 200:
-                        # 从新版 Next.js 数据流中提取真实实时的模型名字/slug
                         import re
 
                         matches = re.findall(
@@ -903,7 +903,6 @@ def main():
                         live_models = []
                         for block in matches:
                             block = block.replace('\\"', '"')
-                            # 提取 slug ("slug":"gpt-4o") 或 name ("name":"GPT-4o")
                             slugs = re.findall(r'"slug":"([a-z0-9\-.]+)"', block)
                             names = re.findall(r'"name":"([A-Za-z0-9\-.+ ]+?)"', block)
                             live_models.extend(slugs)
@@ -912,8 +911,7 @@ def main():
                             )
 
                         if live_models:
-                            # 去重并加入排行榜列表（维持出现顺序，最早出现的一般排名更高或最活跃）
-                            seen = set(top_15_names)  # 保底名单依然优先
+                            seen = set()
                             for m in live_models:
                                 if (
                                     len(m) > 2
@@ -923,13 +921,44 @@ def main():
                                 ):
                                     seen.add(m)
                                     top_15_names.append(m)
+                            # 抓取成功，写回排行榜缓存供下次兜底
+                            try:
+                                with open(lb_cache_file, "w") as f:
+                                    json.dump(
+                                        {
+                                            "timestamp": time.time(),
+                                            "top20": top_15_names[:20],
+                                        },
+                                        f,
+                                    )
+                            except Exception:
+                                pass
                             print(
-                                f"动态成功抓取到 {len(live_models)} 个实时模型，已加入白名单。"
+                                f"动态成功抓取到 {len(live_models)} 个实时模型，已加入白名单并更新缓存。"
                             )
                 except Exception as scrape_err:
-                    print(
-                        f"动态爬取排行榜失败，排行榜白名单为空将放行所有模型: {scrape_err}"
-                    )
+                    print(f"动态爬取排行榜失败: {scrape_err}")
+
+                # 排行榜抓取失败时读缓存兜底
+                if not top_15_names and os.path.exists(lb_cache_file):
+                    try:
+                        with open(lb_cache_file, "r") as f:
+                            lb_data = json.load(f)
+                        cached_top20 = lb_data.get("top20", [])
+                        lb_ts = lb_data.get("timestamp", 0)
+                        days_old = (time.time() - lb_ts) / 86400
+                        if cached_top20:
+                            top_15_names = cached_top20
+                            if days_old > 14:
+                                print(
+                                    f"⚠️ 排行榜缓存已 {days_old:.0f} 天未更新，可能包含过时模型，请尽快手动更新"
+                                )
+                            else:
+                                print(
+                                    f"排行榜实时抓取失败，使用{days_old:.1f}天前的缓存兜底({len(cached_top20)}个模型)"
+                                )
+                    except Exception:
+                        pass
 
                 # b. 获取 ZEN 的模型列表
                 zen_url = "https://opencode.ai/zen/v1/models"
