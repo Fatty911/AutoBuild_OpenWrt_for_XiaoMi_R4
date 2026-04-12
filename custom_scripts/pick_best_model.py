@@ -283,7 +283,14 @@ def pick_model():
         print(f"[pick_best_model] Moonshot: {ms_models[0]}", file=sys.stderr)
         return f"moonshot/{ms_models[0]}", f"moonshot/{ms_models[-1]}"
 
-    # ── 14) GLM 代理 ──
+    # ── 14) MiniMax Coding Plan 2.7（非 highspeed）──
+    minimax_key = os.getenv("MINIMAX_API_KEY", "").strip()
+    if minimax_key:
+        mm_models = split_env("MINIMAX_MODEL_LIST", "MiniMax-M2.7")
+        print(f"[pick_best_model] MiniMax: {mm_models[0]}", file=sys.stderr)
+        return f"minimax/{mm_models[0]}", f"minimax/{mm_models[-1]}"
+
+    # ── 15) GLM 代理 ──
     if glm_proxy_url:
         glm_models = split_env("GLM_MODEL_LIST", "GLM-5,GLM-5.1")
         print(f"[pick_best_model] GLM 代理: {glm_models[0]}", file=sys.stderr)

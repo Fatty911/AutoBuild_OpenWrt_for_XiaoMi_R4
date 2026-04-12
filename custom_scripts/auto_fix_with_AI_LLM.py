@@ -18,8 +18,6 @@
   GEMINI_MODEL_LIST      - Gemini 模型列表（默认 gemini-3.1-pro,gemini-3.1-pro-preview）
   GROK_MODEL_LIST        - Grok 模型列表（默认 grok-4.2）
   GLM_MODEL_LIST         - GLM 模型列表（默认 glm-5）
-  MINIMAX_API_KEY        - MiniMax API key（可选）
-  MINIMAX_MODEL_LIST     - MiniMax 模型名称（可选，默认 MiniMax-M2.7）
   AUTO_FIX_AUTO_MERGE    - 创建 PR 后是否自动 merge（默认 false）
 """
 
