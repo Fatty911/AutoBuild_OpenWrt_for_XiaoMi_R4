@@ -13,6 +13,9 @@
 - 本地 commit 可以随时做，但只有用户明确说"推送"或"push"时才 push 到远端。
 - 单次解决报错的改动可自动 push，但多次循环尝试时注意 push 间隔时间。
 
+## 文档同步
+- 每次执行完任务后，必须检查 README.md 是否需要更新（新增/删除/重命名了文件、功能、配置项等）。
+
 ## 工作流保护
 - **绝对禁止**修改、删除以下关键步骤：`Generate release tag`、`Upload firmware to release`、`Auto fix with AI on failure`、`Delete workflow runs`。
 - 必须使用集中式 `AI_Auto_Fix_Monitor.yml` + `custom_scripts/auto_fix_with_AI_LLM.py`，不允许在每个单独编译工作流里重复复制 AI 逻辑。
