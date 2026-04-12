@@ -792,7 +792,7 @@ def main():
             "⚠️ 检测到非 YAML 类型报错（如 DTS/Makefile/编译错误），Track 2 不适合处理。"
         )
         print(
-            "这类报错应该由 Track 3 (oh-my-opencode) 深度修复，因为需要修改源码而非工作流。"
+            "这类报错应该由 Track 3 (oh-my-openagent) 深度修复，因为需要修改源码而非工作流。"
         )
         print("请等待 Track 3 接管...")
         sys.exit(1)

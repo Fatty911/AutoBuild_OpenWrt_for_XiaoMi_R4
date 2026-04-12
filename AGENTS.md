@@ -38,5 +38,5 @@
 
 ## opencode 配置
 - opencode.json 必须使用合法 schema：`provider`（单数）和 `agent`（单数），不能用复数形式。
-- 必须安装 opencode 本体和 oh-my-opencode 插件。
-- oh-my-opencode 的多 agent 协同效果更好，优先使用。
+- 必须安装 opencode 本体和 oh-my-openagent 插件（npm 包名 `oh-my-openagent`，CLI 命令名仍为 `oh-my-opencode`）。
+- oh-my-openagent 的多 agent 协同效果更好，优先使用。
