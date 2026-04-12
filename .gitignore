@@ -1,0 +1,18 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 工具缓存
+.ruff_cache/
+.crush/
+.sisyphus/
+
+# 运行时生成
+.zen_free_models_cache.json
+
+# 调试临时文件
+fix_*.py
+test_*.py
+patch_*.py
+*.tar.gz

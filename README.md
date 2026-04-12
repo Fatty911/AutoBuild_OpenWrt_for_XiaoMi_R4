@@ -69,11 +69,7 @@
 - Trojan-plus兼容性补丁
 - Netifd强制链接libnl-tiny补丁
 
-### 8. 文档
-- `MiR4_optimization_guide.md` - 小米路由器4详细优化指南
-- `SSR-Plus_vs_OpenClash_comparison.md` - 代理插件对比分析
-
-### 9. GitHub Actions 工作流
+### 8. GitHub Actions 工作流
 - **分离式构建**：工具链/内核构建 + 软件包/固件构建，支持缓存加速
 - **更新检查器**：定时检查上游源码更新
 - **自动更新检查器**：检查GitHub Release新版本
@@ -491,7 +487,7 @@ python3 download_from_MEGA.py user@example.com mypassword Lienol ./download
 1. **使用SSR-Plus代替OpenClash**
    - SSR-Plus内存占用：20-30MB
    - OpenClash内存占用：50-100MB
-   - 详见 `SSR-Plus_vs_OpenClash_comparison.md`
+   - SSR-Plus 更轻量，推荐在128MB内存设备上使用
 
 2. **启用zram-swap**（已在配置中启用）
    - 压缩部分内存作为交换空间
@@ -531,7 +527,7 @@ cat /proc/meminfo
 | Web界面卡顿 | 内存紧张 | 重启路由器或减少服务 |
 | 无法访问网络 | 代理插件崩溃 | 更换轻量级代理或减少节点 |
 
-详见 `MiR4_optimization_guide.md`。
+详见上方使用建议。
 
 ---
 
