@@ -3,7 +3,7 @@
   "model":"minimax/MiniMax-M2.7",
   "small_model":"openrouter/qwen/qwen3.6-plus:free",
   "provider": {
-    "minimax": {
+    "minimaxi": {
       "whitelist": ["MiniMax-M2.7"]
     }
   }
