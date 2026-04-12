@@ -1,0 +1,25 @@
+{
+  "timestamp": 1776021391.8089006,
+  "top20": [
+    "azure",
+    "bytedance",
+    "cohere",
+    "ernie-4-5-300b-a47b",
+    "gemini-1-0-pro",
+    "glm-4-5v-reasoning",
+    "glm-5v-turbo",
+    "gpt-4",
+    "gpt-4-1",
+    "kokoro",
+    "llama-4-scout",
+    "mercury-2",
+    "nova-2-0-omni",
+    "openai-gpt",
+    "pruna",
+    "qwen3-14b-instruct-reasoning",
+    "qwen3-235b-a22b-instruct-2507",
+    "qwen3-5-397b-a17b-non-reasoning",
+    "qwen3-5-9b",
+    "qwen3-6-plus"
+  ]
+}
