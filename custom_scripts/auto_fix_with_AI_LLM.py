@@ -727,6 +727,78 @@ def main():
         print("为了防止大模型在没有上下文时产生幻觉破坏文件，已中止自动修复流程。")
         sys.exit(1)
 
+    # ── 报错类型判断：如果是非 yml 问题则跳过 Track 2 ──
+    yaml_error_patterns = [
+        "yaml:",
+        "YAML:",
+        "mapping",
+        "sequence",
+        "scalar",
+        "github actions",
+        "workflow",
+        "job",
+        "step",
+        "action",
+        "uses:",
+        "with:",
+        "env:",
+        "invalid action",
+        "unknown action",
+        "line ",
+        "column ",
+        "syntax error",
+        "unexpected key",
+        "missing key",
+        "expected",
+        "parsing error",
+    ]
+
+    non_yaml_error_patterns = [
+        "DTC",
+        "dtc",
+        "dts",
+        "dtsi",
+        ".dts",
+        "phandle",
+        "ERROR (phandle_references)",
+        "Reference to non-existent node",
+        "make:",
+        "Makefile:",
+        ".mk",
+        "APK",
+        "apk",
+        "version invalid",
+        "PKG_VERSION",
+        "PKG_RELEASE",
+        "base-files",
+        "package/",
+        "compile error",
+        "compilation failed",
+        "undefined reference",
+        "linker error",
+        "permission denied",
+        "cannot find",
+        "not found:",
+        "OOM",
+        "memory",
+        "killed",
+    ]
+
+    is_yaml_error = any(p.lower() in error_log.lower() for p in yaml_error_patterns)
+    is_non_yaml_error = any(
+        p.lower() in error_log.lower() for p in non_yaml_error_patterns
+    )
+
+    if is_non_yaml_error and not is_yaml_error:
+        print(
+            "⚠️ 检测到非 YAML 类型报错（如 DTS/Makefile/编译错误），Track 2 不适合处理。"
+        )
+        print(
+            "这类报错应该由 Track 3 (oh-my-opencode) 深度修复，因为需要修改源码而非工作流。"
+        )
+        print("请等待 Track 3 接管...")
+        sys.exit(1)
+
     with open(workflow_file, "r") as f:
         workflow_content = f.read()
 

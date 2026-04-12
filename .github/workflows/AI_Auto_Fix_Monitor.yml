@@ -156,6 +156,13 @@ jobs:
             exit 1
           fi
           
+          # ── 提取 transplant 步骤上下文（用于 DTS/phandle 报错）──
+          TRANSPLANT_CONTEXT=""
+          WORKFLOW_YML="${{ github.workspace }}/${{ github.event.workflow_run.path }}"
+          if [ -f "$WORKFLOW_YML" ]; then
+            TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
+          fi
+          
           printf '%s' '{
             "$schema":"https://opencode.ai/config.json",
             "model":"'"$BEST_MODEL"'",
@@ -164,7 +171,16 @@ jobs:
           
           cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
           
-          oh-my-opencode run --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件等）。请不要修改 GitHub Actions 的 yml 工作流文件本身。修复完成后请退出。" || opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。搜索源码找到根本原因并修复。不要修改 yml 工作流文件。修复后退出。"
+          # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
+          if grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
+            echo "分析 last_error.log 中的 DTS/phandle 报错信息。这类报错通常是因为工作流的 transplant 步骤复制了 DTS 文件但没有复制配套的 dtsi 文件。请检查 transplant 步骤是否需要同时复制 mt7621_xiaomi_nand_128m.dtsi 等配套文件。修复方式：修改工作流的 transplant 步骤（添加 cp dtsi 的命令）。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
+            oh-my-opencode run --model "$BEST_MODEL" "$(cat prompt.txt)" || \
+              opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 的 DTS/phandle 报错。检查工作流 transplant 步骤是否缺少复制 dtsi 文件。修改工作流添加必要的 cp 命令。不要删除关键步骤。退出。"
+            rm -f prompt.txt
+          else
+            oh-my-opencode run --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。修复完成后请退出。" || \
+              opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 报错。搜索源码找到根本原因并修复。不要删除关键步骤。退出。"
+          fi
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
