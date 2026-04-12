@@ -1,16 +1,28 @@
 #!/usr/bin/env python3
 """根据可用的 API key 动态选出最佳 opencode 模型。
 
-优先级与 auto_fix_with_AI_LLM.py 一致：
-1. ZEN 免费模型（排行榜前十 + 免费）→ opencode/<model>
-2. Claude → anthropic/claude-sonnet-4.6
-3. Gemini → openrouter/google/gemini-3.1-pro
-4. GPT → openrouter/openai/gpt-5.4
-5. Grok → xai/grok-4.2
-6. DeepSeek → deepseek/deepseek-r1
-7. GLM → siliconflow/glm-5 (或其他国内代理)
+2026-04-12 重构：只保留当前排行榜前 20 的模型
+免费渠道优先，付费渠道兜底
 
-输出格式：opencode 的 provider/model 字符串
+免费渠道（按优先级）：
+1. AtomGit（免费无限量）→ zai-org/GLM-5, Qwen/Qwen3.5-397B-A17B
+   端点: https://api-ai.gitcode.com/v1 | 500次/分
+2. OpenRouter Free → qwen/qwen3.6-plus:free, qwen/qwen3.6-plus-preview:free
+   端点: https://openrouter.ai/api/v1 | 1M ctx, 429频发
+3. ZEN 免费模型 → opencode/<model>
+   端点: https://opencode.ai/zen/v1
+4. 智谱官方免费 → GLM-4-Flash (永久免费, 并发30)
+   端点: https://open.bigmodel.cn/api/paas/v4/
+
+付费渠道（按性价比排序）：
+5. 百炼 (Qwen3.6-Plus) → bailian/qwen3.6-plus
+6. SiliconFlow (GLM-5) → siliconflow/zai-org/GLM-5
+7. Claude → anthropic/claude-sonnet-4.6
+8. OpenRouter 付费 → openrouter/...
+9. OpenAI → openai/gpt-5.4
+10. xAI Grok → xai/grok-4.2
+11. DeepSeek → deepseek/deepseek-r1
+12. Moonshot → moonshot/moonshot-v1-auto
 """
 
 import os
@@ -24,13 +36,46 @@ def split_env(name, default=""):
     return [m.strip() for m in (raw or default).split(",") if m.strip()]
 
 
+TOP_20_SLUGS = [
+    "qwen3.6-plus",
+    "qwen-3.6-plus",
+    "glm-5",
+    "glm-5.1",
+    "glm-5-turbo",
+    "glm-5v-turbo",
+    "claude-opus-4-6",
+    "claude-sonnet-4-6",
+    "gpt-5-4",
+    "gpt-4-1",
+    "gemini-3-1-pro",
+    "grok-4-2",
+    "grok-4",
+    "deepseek-r1",
+    "deepseek-v3-2",
+    "qwen3-235b",
+    "qwen3-coder-480b",
+    "qwen3-max",
+    "qwen3-5-397b",
+    "minimax-m2-5",
+]
+
+
+def match_top20(model_id_lower):
+    base = model_id_lower.replace("-free", "").replace("_free", "")
+    core = base.split("/")[-1] if "/" in base else base
+    for slug in TOP_20_SLUGS:
+        slug_clean = slug.replace("-", "").replace(".", "")
+        core_clean = core.replace("-", "").replace(".", "")
+        if slug_clean in core_clean or core_clean in slug_clean:
+            return True
+    return False
+
+
 def get_zen_free_models():
-    """尝试从 ZEN API 获取当前可用的免费模型（与 auto_fix_with_AI_LLM.py 共用逻辑）"""
     zen_key = os.getenv("ZEN_API_KEY", "").strip()
     if not zen_key:
         return []
 
-    # 先查本地缓存
     cache_file = ".zen_free_models_cache.json"
     cache_days = 3
     if os.path.exists(cache_file):
@@ -44,7 +89,6 @@ def get_zen_free_models():
         except Exception:
             pass
 
-    # 缓存过期或不存在，实时获取
     try:
         import requests
 
@@ -54,27 +98,8 @@ def get_zen_free_models():
         resp.raise_for_status()
         zen_models = resp.json().get("data", [])
 
-        # 保底排行榜名单
-        top_names = [
-            "gpt-4o",
-            "claude-3.5-sonnet",
-            "gemini-2.0-pro",
-            "o1",
-            "o3-mini",
-            "qwen-max",
-            "qwen-3.6-plus",
-            "qwen-3.6-max",
-            "deepseek-v3",
-            "deepseek-r1",
-            "claude-3-opus",
-            "gpt-4-turbo",
-            "llama-3.1-405b",
-            "grok-2",
-            "grok-3",
-            "grok-4",
-        ]
+        top_names = list(TOP_20_SLUGS)
 
-        # 尝试从排行榜页面抓取实时数据
         try:
             ranking_url = "https://artificialanalysis.ai/leaderboards/models"
             headers_ua = {"User-Agent": "Mozilla/5.0"}
@@ -96,31 +121,12 @@ def get_zen_free_models():
 
         valid = []
         for m in zen_models:
-            model_id = m.get("id", "").lower()
-            if "free" not in model_id:
+            model_id = m.get("id", "")
+            if "free" not in model_id.lower():
                 continue
-            base_name = (
-                model_id.replace("-free", "")
-                .replace("_free", "")
-                .replace("-", " ")
-                .replace("_", " ")
-            )
-            for top_name in top_names:
-                clean_top = top_name.replace("-", " ").replace(".", "")
-                core_base = (
-                    base_name.replace(".", "").split("/")[-1]
-                    if "/" in base_name
-                    else base_name.replace(".", "")
-                )
-                if (
-                    core_base in clean_top
-                    or clean_top in core_base
-                    or all(p in clean_top for p in core_base.split())
-                ):
-                    valid.append(m.get("id"))
-                    break
+            if match_top20(model_id.lower()):
+                valid.append(model_id)
 
-        # 更新缓存
         try:
             with open(cache_file, "w") as f:
                 json.dump({"timestamp": time.time(), "valid_models": valid}, f)
@@ -134,7 +140,6 @@ def get_zen_free_models():
 
 
 def pick_model():
-    """按优先级选出最佳 opencode 模型，返回 (model_id, small_model_id)"""
     zen_key = os.getenv("ZEN_API_KEY", "").strip()
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -147,29 +152,57 @@ def pick_model():
     modelscope_key = os.getenv("MODELSCOPE_API_KEY", "").strip()
     atomgit_key = os.getenv("ATOMGIT_API_KEY", "").strip()
     glm_proxy_url = os.getenv("GLM_PROXY_URL", "").strip()
+    zhipu_key = os.getenv("ZHIPU_API_KEY", "").strip()
 
-    # 1) ZEN 免费模型
-    if zen_key:
-        zen_models = get_zen_free_models()
-        if zen_models:
-            print(f"[pick_best_model] ZEN 免费模型: {zen_models}", file=sys.stderr)
-            return f"opencode/{zen_models[0]}", f"opencode/{zen_models[-1]}"
-        else:
-            print("[pick_best_model] ZEN 无可用免费模型，降级", file=sys.stderr)
+    # ── 1) AtomGit（免费无限量 GLM-5 + Qwen3.5-398B）──
+    if atomgit_key:
+        ag_models = split_env(
+            "ATOMGIT_MODEL_LIST", "zai-org/GLM-5,Qwen/Qwen3.5-397B-A17B"
+        )
+        print(f"[pick_best_model] AtomGit 免费: {ag_models[0]}", file=sys.stderr)
+        return f"atomgit/{ag_models[0]}", f"atomgit/{ag_models[-1]}"
 
-    # 2) OpenRouter Qwen3.6-Plus Free (排行榜前十 + 0元)
+    # ── 2) OpenRouter Qwen3.6-Plus Free ──
     if openrouter_key:
         qwen_free = split_env(
-            "OPENROUTER_QWEN_FREE_MODEL_LIST", "qwen/qwen3.6-plus:free"
+            "OPENROUTER_QWEN_FREE_MODEL_LIST",
+            "qwen/qwen3.6-plus:free,qwen/qwen3.6-plus-preview:free",
         )
         if qwen_free:
             print(
-                f"[pick_best_model] OpenRouter Qwen Free: {qwen_free[0]}",
+                f"[pick_best_model] OpenRouter Free: {qwen_free[0]}",
                 file=sys.stderr,
             )
             return f"openrouter/{qwen_free[0]}", f"openrouter/{qwen_free[-1]}"
 
-    # 3) Claude (anthropic 直连)
+    # ── 3) ZEN 免费模型（仅排行榜前 20）──
+    if zen_key:
+        zen_models = get_zen_free_models()
+        if zen_models:
+            print(f"[pick_best_model] ZEN 免费: {zen_models}", file=sys.stderr)
+            return f"opencode/{zen_models[0]}", f"opencode/{zen_models[-1]}"
+        else:
+            print("[pick_best_model] ZEN 无排行榜前 20 免费模型，降级", file=sys.stderr)
+
+    # ── 4) 智谱官方（GLM-4-Flash 永久免费，保底）──
+    if zhipu_key:
+        zhipu_models = split_env("ZHIPU_MODEL_LIST", "GLM-4-Flash,GLM-4.6")
+        print(f"[pick_best_model] 智谱: {zhipu_models[0]}", file=sys.stderr)
+        return f"zhipu/{zhipu_models[0]}", f"zhipu/{zhipu_models[-1]}"
+
+    # ── 5) 百炼 (Qwen3.6-Plus) ──
+    if bailian_key:
+        bl_models = split_env("BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max")
+        print(f"[pick_best_model] 百炼: {bl_models[0]}", file=sys.stderr)
+        return f"bailian/{bl_models[0]}", f"bailian/{bl_models[-1]}"
+
+    # ── 6) SiliconFlow (GLM-5 / GLM-5.1) ──
+    if siliconflow_key:
+        sf_models = split_env("SILICONFLOW_MODEL_LIST", "zai-org/GLM-5,zai-org/GLM-5.1")
+        print(f"[pick_best_model] SiliconFlow: {sf_models[0]}", file=sys.stderr)
+        return f"siliconflow/{sf_models[0]}", f"siliconflow/{sf_models[-1]}"
+
+    # ── 7) Claude ──
     if anthropic_key:
         claude_models = split_env(
             "CLAUDE_MODEL_LIST", "claude-sonnet-4.6,claude-opus-4.6"
@@ -179,7 +212,7 @@ def pick_model():
         )
         return f"anthropic/{claude_models[0]}", f"anthropic/{claude_models[-1]}"
 
-    # 4) OpenRouter (Claude/Gemini/GPT)
+    # ── 8) OpenRouter 付费 ──
     if openrouter_key:
         or_models = split_env(
             "OPENROUTER_MODEL_LIST",
@@ -188,25 +221,31 @@ def pick_model():
         print(f"[pick_best_model] OpenRouter: {or_models[0]}", file=sys.stderr)
         return f"openrouter/{or_models[0]}", f"openrouter/{or_models[-1]}"
 
-    # 5) 阿里云百炼 (Qwen3.6-Plus 等)
-    if bailian_key:
-        bl_models = split_env("BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max,qwen-plus")
-        print(f"[pick_best_model] 百炼: {bl_models[0]}", file=sys.stderr)
-        return f"bailian/{bl_models[0]}", f"bailian/{bl_models[-1]}"
-
-    # 6) OpenAI 直连
+    # ── 9) OpenAI ──
     if openai_key:
-        oai_models = split_env("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3")
+        oai_models = split_env("OPENAI_MODEL_LIST", "gpt-5.4,gpt-4.1")
         print(f"[pick_best_model] OpenAI: {oai_models[0]}", file=sys.stderr)
         return f"openai/{oai_models[0]}", f"openai/{oai_models[-1]}"
 
-    # 7) xAI Grok
+    # ── 10) xAI Grok ──
     if xai_key:
         grok_models = split_env("XAI_MODEL_LIST", "grok-4.2,grok-4.1")
         print(f"[pick_best_model] xAI Grok: {grok_models[0]}", file=sys.stderr)
         return f"xai/{grok_models[0]}", f"xai/{grok_models[-1]}"
 
-    # 8) Moonshot (Kimi)
+    # ── 11) DeepSeek ──
+    if deepseek_key:
+        ds_models = split_env("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
+        print(f"[pick_best_model] DeepSeek: {ds_models[0]}", file=sys.stderr)
+        return f"deepseek/{ds_models[0]}", f"deepseek/{ds_models[-1]}"
+
+    # ── 12) ModelScope (GLM-4.6 等) ──
+    if modelscope_key:
+        ms_models = split_env("MODELSCOPE_MODEL_LIST", "ZhipuAI/GLM-4.6")
+        print(f"[pick_best_model] ModelScope: {ms_models[0]}", file=sys.stderr)
+        return f"modelscope/{ms_models[0]}", f"modelscope/{ms_models[-1]}"
+
+    # ── 13) Moonshot (Kimi) ──
     if moonshot_key:
         ms_models = split_env(
             "MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k"
@@ -214,27 +253,9 @@ def pick_model():
         print(f"[pick_best_model] Moonshot: {ms_models[0]}", file=sys.stderr)
         return f"moonshot/{ms_models[0]}", f"moonshot/{ms_models[-1]}"
 
-    # 9) DeepSeek
-    if deepseek_key:
-        ds_models = split_env("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
-        print(f"[pick_best_model] DeepSeek: {ds_models[0]}", file=sys.stderr)
-        return f"deepseek/{ds_models[0]}", f"deepseek/{ds_models[-1]}"
-
-    # 10) GLM (siliconflow / modelscope / atomgit / 代理)
-    glm_models = split_env("GLM_MODEL_LIST", "glm-5,glm-5-turbo")
-    if siliconflow_key:
-        sf_models = split_env("SILICONFLOW_MODEL_LIST", glm_models[0])
-        print(f"[pick_best_model] SiliconFlow: {sf_models[0]}", file=sys.stderr)
-        return f"siliconflow/{sf_models[0]}", f"siliconflow/{sf_models[-1]}"
-    if modelscope_key:
-        ms_models = split_env("MODELSCOPE_MODEL_LIST", glm_models[0])
-        print(f"[pick_best_model] ModelScope: {ms_models[0]}", file=sys.stderr)
-        return f"modelscope/{ms_models[0]}", f"modelscope/{ms_models[-1]}"
-    if atomgit_key:
-        ag_models = split_env("ATOMGIT_MODEL_LIST", glm_models[0])
-        print(f"[pick_best_model] AtomGit: {ag_models[0]}", file=sys.stderr)
-        return f"atomgit/{ag_models[0]}", f"atomgit/{ag_models[-1]}"
+    # ── 14) GLM 代理 ──
     if glm_proxy_url:
+        glm_models = split_env("GLM_MODEL_LIST", "GLM-5,GLM-5.1")
         print(f"[pick_best_model] GLM 代理: {glm_models[0]}", file=sys.stderr)
         return f"glm-proxy/{glm_models[0]}", f"glm-proxy/{glm_models[-1]}"
 
