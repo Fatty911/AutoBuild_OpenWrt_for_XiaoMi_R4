@@ -183,42 +183,10 @@ jobs:
         run: |
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
+          echo "openwrt.org 主线已内置 Mi Router 4 支持 (IMAGE_SIZE=124416k), 无需修改"
           git clone https://github.com/coolsnowwolf/lede lede-source
-          cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-          cp ../target/linux/ramips/image/mt7621.mk target/linux/ramips/image/mt7621.mk || echo "Warning: mt7621.mk copy failed"
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ || echo "Warning: base-files copy failed"
           rm -rf lede-source
-          sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
-          sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
-          sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
-            echo "分区未定义, 修复中..."
-            sed -i '/partitions {/a\
-              compatible = "fixed-partitions";\
-              #address-cells = <1>;\
-              #size-cells = <1>;\
-            partition@0 {\
-              label = "u-boot";\
-              reg = <0x0 0x30000>;\
-              read-only;\
-            };\
-            partition@30000 {\
-              label = "u-boot-env";\
-              reg = <0x30000 0x10000>;\
-              read-only;\
-            };\
-            factory: partition@40000 {\
-              label = "factory";\
-              reg = <0x40000 0x10000>;\
-              read-only;\
-            };\
-            partition@50000 {\
-              label = "firmware";\
-              reg = <0x50000 0x6e00000>;\
-            };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          fi
-          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
           echo "isFixed=true" >> $GITHUB_OUTPUT
           echo "::notice::Transplant completed successfully"
 
@@ -438,42 +406,10 @@ jobs:
           
           cd openwrt
           echo "Performing manual porting for Xiaomi Mi Router 4..."
+          echo "openwrt.org 主线已内置 Mi Router 4 支持 (IMAGE_SIZE=124416k), 无需修改"
           git clone https://github.com/coolsnowwolf/lede lede-source
-          cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-          cp ../target/linux/ramips/image/mt7621.mk target/linux/ramips/image/mt7621.mk || echo "Warning: mt7621.mk copy failed"
           cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ || echo "Warning: base-files copy failed"
           rm -rf lede-source
-          sed -i 's/IMAGE_SIZE := 124416k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
-          sed -i 's/IMAGE_SIZE := 16064k/IMAGE_SIZE := 111279k/g' target/linux/ramips/image/mt7621.mk
-          sed -i 's/reg = <0x50000 0xfb0000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          sed -i 's/reg = <0x50000 0x1000000>/reg = <0x50000 0x6e00000>/g' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          if ! grep -q 'partition@0' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts; then
-            echo "分区未定义, 修复中..."
-            sed -i '/partitions {/a\
-              compatible = "fixed-partitions";\
-              #address-cells = <1>;\
-              #size-cells = <1>;\
-            partition@0 {\
-              label = "u-boot";\
-              reg = <0x0 0x30000>;\
-              read-only;\
-            };\
-            partition@30000 {\
-              label = "u-boot-env";\
-              reg = <0x30000 0x10000>;\
-              read-only;\
-            };\
-            factory: partition@40000 {\
-              label = "factory";\
-              reg = <0x40000 0x10000>;\
-              read-only;\
-            };\
-            partition@50000 {\
-              label = "firmware";\
-              reg = <0x50000 0x6e00000>;\
-            };' target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts
-          fi
-          sed -i 's|ROOTFS_PARTSIZE=$(shell echo \$\$(( $(CONFIG_TARGET_ROOTFS_PARTSIZE) \* 1024 \* 1024 )))|ROOTFS_PARTSIZE=$(shell echo \$\$(( ${CONFIG_TARGET_ROOTFS_PARTSIZE:-110} * 1024 * 1024 )))|' include/image.mk
           echo "isFixed=true" >> $GITHUB_OUTPUT
           echo "::notice::Transplant completed successfully"
 
