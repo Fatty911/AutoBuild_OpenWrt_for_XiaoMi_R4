@@ -1,7 +1,7 @@
 local m, s, o
 
 m = Map("autoupdate", _("Auto Firmware Update"),
-    _("Automatically check and update firmware from GitHub Release."))
+	_("Automatically check and update firmware from GitHub Release."))
 
 s = m:section(TypedSection, "autoupdate", _("Settings"))
 s.anonymous = true
@@ -16,24 +16,28 @@ o.placeholder = "Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4"
 o.rmempty = false
 
 o = s:option(Value, "workflow_name", _("Workflow Name"))
-o.placeholder = "Build_OpenWRT.org_2_for_XIAOMI_R4"
+	o.placeholder = "OpenWRT.org"
 o.rmempty = false
 
+o = s:option(Value, "github_token", _("GitHub Token"))
+o.description = _("Personal access token to avoid API rate limits (optional)")
+o.password = true
+o.rmempty = true
+
 o = s:option(Value, "subscription_url", _("Proxy Subscription URL"))
-o.description = _("SSR-Plus/helloworld subscription URL for accessing GitHub")
+o.description = _("SSR-Plus subscription URL for accessing GitHub via proxy")
 o.placeholder = "https://example.com/subscribe/xxxxx"
 o.rmempty = true
 
 o = s:option(Value, "proxy_port", _("Local SOCKS5 Port"))
-o.description = _("Local proxy port for SSR-Plus")
 o.placeholder = "1080"
 o.default = "1080"
 o.rmempty = true
 
 o = s:option(ListValue, "check_interval", _("Check Interval"))
+o:value("hourly", _("Every 6 Hours"))
 o:value("daily", _("Daily"))
 o:value("weekly", _("Weekly"))
-o:value("monthly", _("Monthly"))
 o.default = "daily"
 
 o = s:option(Value, "current_version", _("Current Version"))
@@ -50,7 +54,7 @@ o.inputtitle = _("Check")
 o.description = _("Check for firmware updates immediately")
 
 function o.write(self, section)
-    luci.http.redirect(luci.dispatcher.build_url("admin", "system", "autoupdate", "check"))
+	luci.http.redirect(luci.dispatcher.build_url("admin", "system", "autoupdate", "check"))
 end
 
 o = s:option(Button, "test_proxy", _("Test Proxy"))
@@ -58,7 +62,7 @@ o.inputtitle = _("Test")
 o.description = _("Test proxy connection to GitHub")
 
 function o.write(self, section)
-    luci.http.redirect(luci.dispatcher.build_url("admin", "system", "autoupdate", "test"))
+	luci.http.redirect(luci.dispatcher.build_url("admin", "system", "autoupdate", "proxy_test"))
 end
 
 return m
