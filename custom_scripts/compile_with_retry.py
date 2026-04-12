@@ -109,6 +109,13 @@ def get_error_signature(log_content):
     ):
         return "root_ramips_missing_dir"
 
+    # DTC/DTS phandle reference errors (e.g., missing "factory" label)
+    if "ERROR (phandle_references)" in log_content and "Reference to non-existent" in log_content:
+        # Extract device name if possible
+        dts_match = re.search(r"(mt7621_[a-zA-Z0-9_-]+)\.dts", log_content)
+        device_name = dts_match.group(1) if dts_match else "unknown"
+        return f"dts_phandle_missing:{device_name}"
+
     # Filesystem Conflicts
     if "mkdir: cannot create directory" in log_content and "File exists" in log_content:
         return "directory_conflict"
@@ -303,6 +310,58 @@ def fix_root_ramips_missing_dir():
     if fixed_any:
         print("✅ root-ramips 目录修复完成")
     return fixed_any
+
+
+def fix_dts_phandle_missing(log_content):
+    """修复 Device Tree phandle 引用错误（如缺失 "factory" 标签）
+
+    根因：DTS 文件引用了未定义的标签，导致 DTC 编译失败。
+    解决方案：从配置中移除对应的设备配置，临时绕过编译。
+    """
+    import re
+
+    print("🔧 检测到 Device Tree phandle 引用错误，尝试修复...")
+
+    # 提取出错的设备名
+    match = re.search(r"(mt7621_[a-zA-Z0-9_-]+)\.dts.*Reference to non-existent", log_content)
+    if not match:
+        print("⚠️ 无法从日志中提取设备名，跳过修复")
+        return False
+
+    device_name = match.group(1)
+    print(f"ℹ️ 识别到设备: {device_name}")
+
+    # 搜索 .config 文件
+    config_files = list(Path(".").glob(".config")) + list(Path(".").glob("*.config"))
+    if not config_files:
+        print("⚠️ 未找到 .config 文件，跳过修复")
+        return False
+
+    config_path = config_files[0]
+    print(f"ℹ️ 配置文件: {config_path}")
+
+    try:
+        with open(config_path, "r") as f:
+            config_content = f.read()
+
+        # 检查是否配置了该设备
+        target_line = f"CONFIG_TARGET_ramips_mt7621_DEVICE_{device_name}=y"
+        if target_line not in config_content:
+            print(f"⚠️ 配置文件中未发现 {device_name}，可能已被禁用或不存在")
+            return False
+
+        # 注释掉该配置行
+        new_config = config_content.replace(target_line, f"# {target_line} # DISABLED_DTS_ERROR")
+
+        with open(config_path, "w") as f:
+            f.write(new_config)
+
+        print(f"✅ 已禁用 {device_name} 设备配置，尝试重新编译")
+        return True
+
+    except Exception as e:
+        print(f"❌ 修改配置文件失败: {e}")
+        return False
 
 
 def fix_base_files_version(log_content):
@@ -3082,6 +3141,8 @@ def main():
             fix_attempted = fix_symbolic_link_conflict(log_content_global)
         elif current_error_signature == "root_ramips_missing_dir":
             fix_attempted = fix_root_ramips_missing_dir()
+        elif current_error_signature.startswith("dts_phandle_missing"):
+            fix_attempted = fix_dts_phandle_missing(log_content_global)
         elif current_error_signature == "toolchain_provides_syntax":
             fix_attempted = fix_toolchain_provides_syntax(log_content_global)
         elif current_error_signature == "luci_lib_taskd_depends":
