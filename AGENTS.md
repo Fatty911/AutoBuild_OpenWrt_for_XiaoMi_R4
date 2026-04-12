@@ -26,6 +26,7 @@
 - opencode Zen 对 mimo-v2-pro 已不再免费，不要优先选择它。
 - 动态模型解析逻辑必须实时抓取 Artificial Analysis 排行榜数据，不能长期依赖硬编码列表。
 - **只使用当前排行榜前 20 的模型**（如 GLM-5、GLM-5.1、Qwen3.6-Plus、Qwen3.5-398B、Claude Opus 4.6、GPT-5.4、DeepSeek-R1 等），绝对不要使用已落榜的旧模型（如 GLM-4、Qwen2、GPT-4o、Claude 3.5 等）。保底模型也必须满足此要求。
+- **模型列表不得硬编码**，必须运行时实时从 Artificial Analysis 排行榜抓取。排行榜抓取失败时不过滤（放行所有模型），而不是退回硬编码列表。硬编码的模型列表一两个月就会过时。
 - 优先选择排行榜前 20 且有免费资源的模型。当前已知免费渠道：
   - AtomGit：`zai-org/GLM-5`、`Qwen/Qwen3.5-397B-A17B`（无限量，500次/分，端点 `https://api-ai.gitcode.com/v1`）
   - OpenRouter：`qwen/qwen3.6-plus:free`、`qwen/qwen3.6-plus-preview:free`（1M context，429 频发）

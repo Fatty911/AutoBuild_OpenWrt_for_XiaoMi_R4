@@ -886,29 +886,10 @@ def main():
                 import json
                 import time
 
-                # a. 获取排行榜前 15 名
+                # a. 获取排行榜前 20 名（不硬编码，实时抓取）
                 ranking_url = "https://artificialanalysis.ai/leaderboards/models"
                 headers = {"User-Agent": "Mozilla/5.0"}
-                # 设置一个硬编码的保底前15名单，防止目标网站反爬或改版导致崩溃
-                top_15_names = [
-                    "gpt-4o",
-                    "claude-3.5-sonnet",
-                    "gemini-1.5-pro",
-                    "gemini-2.0-pro",
-                    "o1",
-                    "o3-mini",
-                    "qwen-max",
-                    "qwen-3.6-plus",
-                    "qwen-3.6-max",
-                    "deepseek-v3",
-                    "deepseek-r1",
-                    "claude-3-opus",
-                    "gpt-4-turbo",
-                    "llama-3.1-405b",
-                    "grok-2",
-                    "grok-3",
-                    "grok-4",
-                ]
+                top_15_names = []
 
                 try:
                     resp = requests.get(ranking_url, headers=headers, timeout=10)
@@ -946,7 +927,9 @@ def main():
                                 f"动态成功抓取到 {len(live_models)} 个实时模型，已加入白名单。"
                             )
                 except Exception as scrape_err:
-                    print(f"动态爬取排行榜失败，降级使用硬编码保底名单: {scrape_err}")
+                    print(
+                        f"动态爬取排行榜失败，排行榜白名单为空将放行所有模型: {scrape_err}"
+                    )
 
                 # b. 获取 ZEN 的模型列表
                 zen_url = "https://opencode.ai/zen/v1/models"
