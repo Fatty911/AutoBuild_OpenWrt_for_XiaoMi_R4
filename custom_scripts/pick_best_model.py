@@ -22,6 +22,15 @@ import re
 LEADERBOARD_CACHE = ".leaderboard_cache.json"
 LEADERBOARD_STALE_DAYS = 14
 
+# MiniMax 白名单：只允许 Coding Plan 2.7 非 highspeed 版本
+MINIMAX_ALLOWED_PATTERNS = [
+    "minimax-ccp-2.7",
+    "minimax-ccp2.7",
+    "minimax-m2.7",
+    "minimax-m2.7-pro",
+]
+MINIMAX_BLOCKED_PATTERNS = ["highspeed", "m2.5", "m1.5", "m1.0", "abab"]
+
 
 def split_env(name, default=""):
     raw = os.getenv(name, "").strip()
@@ -191,6 +200,20 @@ def is_top20_match(model_id_lower, top20_set):
     return False
 
 
+def is_minimax_allowed(model_id_lower):
+    """检查 MiniMax 模型是否在白名单内（只允许 Coding Plan 2.7 非 highspeed）。"""
+    mid = model_id_lower
+    if "minimax" not in mid:
+        return True  # 非 MiniMax 模型不受限
+    for blocked in MINIMAX_BLOCKED_PATTERNS:
+        if blocked in mid:
+            return False
+    for allowed in MINIMAX_ALLOWED_PATTERNS:
+        if allowed in mid:
+            return True
+    return False  # 不在白名单的 MiniMax 模型一律拒绝
+
+
 def get_zen_free_models(top20_set):
     """从 ZEN API 获取免费模型，仅保留排行榜前 20 匹配的。"""
     zen_key = os.getenv("ZEN_API_KEY", "").strip()
@@ -228,6 +251,8 @@ def get_zen_free_models(top20_set):
         for m in zen_models:
             mid = m.get("id", "")
             if "free" not in mid.lower():
+                continue
+            if not is_minimax_allowed(mid.lower()):
                 continue
             if is_top20_match(mid.lower(), top20_set):
                 valid.append(mid)
@@ -386,9 +411,12 @@ if __name__ == "__main__":
         if not model:
             print("NO_MODEL_AVAILABLE")
             sys.exit(1)
+        # OpenCode/oh-my-openagent 要求 provider 为 record 类型
+        # 格式: {"provider_name": {}}，不能是字符串
+        provider_obj = {provider: {}}
         config = {
             "$schema": "https://opencode.ai/config.json",
-            "provider": provider,
+            "provider": provider_obj,
             "model": model,
             "small_model": small,
         }
