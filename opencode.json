@@ -1,5 +1,8 @@
 {
-  "$schema":"https://opencode.ai/config.json",
-  "model":"atomgit/zai-org/GLM-5",
-  "small_model":"atomgit/zai-org/GLM-5"
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "atomgit": {}
+  },
+  "model": "zai-org/GLM-5",
+  "small_model": "zai-org/GLM-5"
 }
