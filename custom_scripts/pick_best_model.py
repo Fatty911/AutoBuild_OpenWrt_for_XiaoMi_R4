@@ -6,11 +6,11 @@
 
 免费渠道优先级：
 1. AtomGit（免费无限量）→ GLM-5, Qwen3.5-398B 等
-2. OpenRouter Free → qwen3.6-plus:free 等
+2. OpenRouter Free → qwen3.6-plus:free, gemma-4-31b-it:free 等
 3. ZEN 免费模型（仅保留排行榜匹配的）
-4. 智谱官方免费 → GLM-4-Flash（保底，并发30）
+4. 智谱官方 → GLM-5.1（付费，排行榜前列）→ GLM-4-Flash（保底，并发30）
 
-端点：AtomGit https://api-ai.gitcode.com/v1 | OpenRouter https://openrouter.ai/api/v1 | 智谱 https://open.bigmodel.cn/api/paas/v4/
+端点：AtomGit https://api-ai.gitcode.com/v1 | OpenRouter https://openrouter.ai/api/v1 | 智谱 https://open.bigmodel.cn/api/paas/v4/ | Gemma4 free via OpenRouter
 """
 
 import os
@@ -297,11 +297,11 @@ def pick_model():
         print(f"[pick_best_model] AtomGit 免费: {ag_models[0]}", file=sys.stderr)
         return "atomgit", ag_models[0], ag_models[-1]
 
-    # ── 2) OpenRouter Free（Qwen3.6-Plus 等）──
+    # ── 2) OpenRouter Free（Qwen3.6-Plus、Gemma 4 31B 等）──
     if openrouter_key:
         qwen_free = split_env(
             "OPENROUTER_QWEN_FREE_MODEL_LIST",
-            "qwen/qwen3.6-plus:free,qwen/qwen3.6-plus-preview:free",
+            "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,qwen/qwen3.6-plus-preview:free",
         )
         if qwen_free:
             print(
@@ -319,10 +319,10 @@ def pick_model():
         else:
             print("[pick_best_model] ZEN 无排行榜前 20 免费模型，降级", file=sys.stderr)
 
-    # ── 4) 智谱官方（GLM-4-Flash 永久免费保底）──
+    # ── 4) 智谱官方（GLM-5.1 付费优先，GLM-4-Flash 免费保底）──
     if zhipu_key:
-        zhipu_models = split_env("ZHIPU_MODEL_LIST", "GLM-4-Flash")
-        print(f"[pick_best_model] 智谱保底: {zhipu_models[0]}", file=sys.stderr)
+        zhipu_models = split_env("ZHIPU_MODEL_LIST", "GLM-5.1,GLM-4-Flash")
+        print(f"[pick_best_model] 智谱: {zhipu_models[0]}", file=sys.stderr)
         return "zhipu", zhipu_models[0], zhipu_models[-1]
 
     # ── 5) 百炼 (Qwen3.6-Plus) ──

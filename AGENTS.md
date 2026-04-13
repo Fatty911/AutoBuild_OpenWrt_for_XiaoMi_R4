@@ -30,9 +30,9 @@
 - **允许缓存兜底**：实时抓取成功后必须把结果写回缓存文件（如 `.leaderboard_cache.json`），供下次抓取失败时兜底。缓存超过 14 天未更新时必须打印警告但仍可使用。无论是本地还是 GitHub Action 中，只要有自动回退机制，就可以用缓存兜底，但必须保证每一两周至少爬一次排行榜更新缓存，不能长期不更新。
 - 优先选择排行榜前 20 且有免费资源的模型。当前已知免费渠道：
   - AtomGit：`zai-org/GLM-5`、`Qwen/Qwen3.5-397B-A17B`（无限量，500次/分，端点 `https://api-ai.gitcode.com/v1`）
-  - OpenRouter：`qwen/qwen3.6-plus:free`、`qwen/qwen3.6-plus-preview:free`（1M context，429 频发）
+  - OpenRouter：`qwen/qwen3.6-plus:free`、`qwen/qwen3.6-plus-preview:free`（1M context，429 频发）、`google/gemma-4-31b-it:free`（262K context，~27 tok/s）
   - ZEN：排行榜前 20 的免费模型
-  - 智谱官方：`GLM-4-Flash`（永久免费保底，并发 30）
+  - 智谱官方：`GLM-4-Flash`（永久免费保底，并发 30）、`GLM-5.1`（付费，排行榜前列）
 - 当日志过长导致超出当前模型上下文时，必须清晰打印提示信息并优雅降级到下一个模型/提供商。
 - **MiniMax 白名单**：只允许 MiniMax Coding Plan 2.7（非 highspeed 版本），其他 MiniMax 模型（如 m2.5-free、m1.5、abab 系列等）一律屏蔽。
 - 所有 secrets 环境变量（包括 BAILIAN_API_KEY、MOONSHOT_API_KEY、ATOMGIT_API_KEY、ZHIPU_API_KEY 等）必须在 AI Fix workflow 中完整暴露。
