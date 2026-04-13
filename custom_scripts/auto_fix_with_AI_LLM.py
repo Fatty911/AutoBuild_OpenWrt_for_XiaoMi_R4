@@ -1186,6 +1186,19 @@ def main():
             }
         )
 
+    # 8.5) NVIDIA NIM (Kimi K2.5 免费)
+    nvidia_nim_api_key = os.getenv("NVIDIA_NIM_API_KEY", "").strip()
+    if nvidia_nim_api_key:
+        nim_models = split_models("NVIDIA_NIM_MODEL_LIST", "moonshotai/kimi-k2.5")
+        providers.append(
+            {
+                "name": "NVIDIA-NIM",
+                "proxy_url": "https://integrate.api.nvidia.com/v1",
+                "api_key": nvidia_nim_api_key,
+                "models": nim_models,
+            }
+        )
+
     # 9) DeepSeek
     deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
     if deepseek_api_key:

@@ -120,6 +120,7 @@
 | `ZEN_API_KEY` | OpenCode Zen API Key（免费模型） |
 | `ATOMGIT_API_KEY` | AtomGit API Key（GLM-5、Qwen3.5-397B 等免费模型） |
 | `ZHIPU_API_KEY` | 智谱官方 API Key（GLM-5.1 付费优先，GLM-4-Flash 免费保底） |
+| `NVIDIA_NIM_API_KEY` | NVIDIA NIM API Key（Kimi K2.5 免费，262K context，强推理） |
 | `ANTHROPIC_API_KEY` | Anthropic Claude API Key（可选） |
 | `OPENAI_API_KEY` | OpenAI API Key（可选） |
 | `BAILIAN_API_KEY` | 阿里云百炼 API Key（Qwen3.6-Plus 等国产模型，可选） |

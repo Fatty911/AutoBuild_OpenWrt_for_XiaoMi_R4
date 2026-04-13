@@ -32,10 +32,11 @@
   - AtomGit：`zai-org/GLM-5`、`Qwen/Qwen3.5-397B-A17B`（无限量，500次/分，端点 `https://api-ai.gitcode.com/v1`）
   - OpenRouter：`qwen/qwen3.6-plus:free`、`qwen/qwen3.6-plus-preview:free`（1M context，429 频发）、`google/gemma-4-31b-it:free`（262K context，~27 tok/s）
   - ZEN：排行榜前 20 的免费模型
+  - NVIDIA NIM：`moonshotai/kimi-k2.5`（免费，262K context，1T MoE 32B active，Intelligence Index 46.8，强推理，端点 `https://integrate.api.nvidia.com/v1`）
   - 智谱官方：`GLM-4-Flash`（永久免费保底，并发 30）、`GLM-5.1`（付费，排行榜前列）
 - 当日志过长导致超出当前模型上下文时，必须清晰打印提示信息并优雅降级到下一个模型/提供商。
 - **MiniMax 白名单**：只允许 MiniMax Coding Plan 2.7（非 highspeed 版本），其他 MiniMax 模型（如 m2.5-free、m1.5、abab 系列等）一律屏蔽。
-- 所有 secrets 环境变量（包括 BAILIAN_API_KEY、MOONSHOT_API_KEY、ATOMGIT_API_KEY、ZHIPU_API_KEY 等）必须在 AI Fix workflow 中完整暴露。
+- 所有 secrets 环境变量（包括 BAILIAN_API_KEY、MOONSHOT_API_KEY、ATOMGIT_API_KEY、ZHIPU_API_KEY、NVIDIA_NIM_API_KEY 等）必须在 AI Fix workflow 中完整暴露。
 
 ## opencode 配置
 - opencode.json 必须使用合法 schema：`provider` 必须为 record 对象（如 `{"atomgit": {}}`），不能是字符串；`provider`（单数）和 `agent`（单数），不能用复数形式。
