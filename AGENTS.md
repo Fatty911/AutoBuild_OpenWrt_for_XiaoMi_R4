@@ -34,9 +34,10 @@
   - ZEN：排行榜前 20 的免费模型
   - 智谱官方：`GLM-4-Flash`（永久免费保底，并发 30）
 - 当日志过长导致超出当前模型上下文时，必须清晰打印提示信息并优雅降级到下一个模型/提供商。
+- **MiniMax 白名单**：只允许 MiniMax Coding Plan 2.7（非 highspeed 版本），其他 MiniMax 模型（如 m2.5-free、m1.5、abab 系列等）一律屏蔽。
 - 所有 secrets 环境变量（包括 BAILIAN_API_KEY、MOONSHOT_API_KEY、ATOMGIT_API_KEY、ZHIPU_API_KEY 等）必须在 AI Fix workflow 中完整暴露。
 
 ## opencode 配置
-- opencode.json 必须使用合法 schema：`provider`（单数）和 `agent`（单数），不能用复数形式。
+- opencode.json 必须使用合法 schema：`provider` 必须为 record 对象（如 `{"atomgit": {}}`），不能是字符串；`provider`（单数）和 `agent`（单数），不能用复数形式。
 - 必须安装 opencode 本体和 oh-my-openagent 插件（npm 包名 `oh-my-openagent`，CLI 命令名仍为 `oh-my-opencode`）。
 - oh-my-openagent 的多 agent 协同效果更好，优先使用。

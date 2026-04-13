@@ -39,7 +39,7 @@
 
 ### 3. AI 自动修复系统
 - 编译失败时自动提取关键报错日志（避免全量日志超上下文限制）
-- 动态抓取 Artificial Analysis 排行榜，优先选择前十免费模型（如 Qwen3.6-Plus:free）
+- 动态抓取 Artificial Analysis 排行榜，优先选择前20免费模型（如 Qwen3.6-Plus:free、GLM-5 等）
 - 上下文超限时自动降级到下一个模型/提供商
 - 支持多 API 提供商轮询：ZEN → OpenRouter → Claude → Gemini → GPT → Qwen3.6-Plus:free → 百炼 → Moonshot → DeepSeek → GLM
 - 集中式架构：`AI_Auto_Fix_Monitor.yml` + `custom_scripts/auto_fix_with_AI_LLM.py`
@@ -118,6 +118,8 @@
 |------------|------|
 | `OPENROUTER_API_KEY` | OpenRouter API Key（Qwen3.6-Plus:free 等免费模型） |
 | `ZEN_API_KEY` | OpenCode Zen API Key（免费模型） |
+| `ATOMGIT_API_KEY` | AtomGit API Key（GLM-5、Qwen3.5-397B 等免费模型） |
+| `ZHIPU_API_KEY` | 智谱官方 API Key（GLM-4-Flash 永久免费保底） |
 | `ANTHROPIC_API_KEY` | Anthropic Claude API Key（可选） |
 | `OPENAI_API_KEY` | OpenAI API Key（可选） |
 | `BAILIAN_API_KEY` | 阿里云百炼 API Key（Qwen3.6-Plus 等国产模型，可选） |
