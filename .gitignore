@@ -11,8 +11,8 @@ __pycache__/
 # 运行时生成
 .zen_free_models_cache.json
 
-# 调试临时文件
-fix_*.py
-test_*.py
-patch_*.py
+# 调试临时文件（仅根目录，custom_scripts/ 下的生产脚本不受影响）
+/fix_*.py
+/test_*.py
+/patch_*.py
 *.tar.gz

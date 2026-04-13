@@ -55,23 +55,103 @@ def save_cached_top20(top20_set):
 
 def fetch_leaderboard_top20():
     """实时从 Artificial Analysis 抓取排行榜前 20 模型 slug。
-    成功 → 写回缓存 + 返回 set；失败 → 读缓存兜底（超14天警告）+ 返回 set 或 None。"""
+    成功 → 写回缓存 + 返回 set；失败 → 读缓存兜底（超14天警告）+ 返回 set 或 None。
+
+    注意：Artificial Analysis 的 Next.js 页面中 slug 是按出现顺序排列的，
+    但 slug 的出现顺序不一定等于排行榜顺序。我们需要从 JSON 数据中
+    提取带有评分的模型列表并按评分排序，才能得到真正的前 20。
+    """
     try:
         import requests
 
         url = "https://artificialanalysis.ai/leaderboards/models"
         resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         if resp.status_code == 200:
-            slugs = set()
+            # 尝试从 Next.js __NEXT_DATA__ 或 RSC payload 中提取模型数据
+            models_with_scores = []
+
+            # 方法1: 从 RSC payload 提取（带分数）
             matches = re.findall(r'self\.__next_f\.push\(\[1,"(.*?)"\]\)', resp.text)
             for block in matches:
                 block = block.replace('\\"', '"')
-                slugs.update(re.findall(r'"slug":"([a-z0-9\-.]+)"', block))
-            if slugs:
-                top20 = set(list(slugs)[:20]) if len(slugs) > 20 else slugs
+                # 尝试匹配 "slug":"xxx" 和附近的质量分数
+                # 格式: "slug":"model-name" ... "quality_score":95.7
+                slug_matches = re.finditer(r'"slug":"([a-z0-9\-.]+)"', block)
+                for m in slug_matches:
+                    slug = m.group(1)
+                    # 尝试在同一 block 中找到该 slug 的分数
+                    # 查找 slug 附近的数字（分数通常紧跟在 slug 后面）
+                    after_slug = block[m.end() : m.end() + 200]
+                    score_match = re.search(
+                        r'"quality_score"\s*:\s*([0-9.]+)', after_slug
+                    )
+                    score = float(score_match.group(1)) if score_match else 0.0
+                    models_with_scores.append((slug, score))
+
+            # 去重（保留最高分数）
+            slug_best_score = {}
+            for slug, score in models_with_scores:
+                if slug not in slug_best_score or score > slug_best_score[slug]:
+                    slug_best_score[slug] = score
+
+            if slug_best_score:
+                # 按分数降序排列，取前 20
+                sorted_models = sorted(
+                    slug_best_score.items(), key=lambda x: x[1], reverse=True
+                )
+                top20 = set(slug for slug, _ in sorted_models[:20])
                 save_cached_top20(top20)
                 print(
-                    f"[pick_best_model] 实时排行榜抓取成功({len(top20)}个)，已更新缓存",
+                    f"[pick_best_model] 实时排行榜抓取成功({len(top20)}个，按分数排序)，已更新缓存",
+                    file=sys.stderr,
+                )
+                return top20
+
+            # 方法2 fallback: 如果没有分数，至少过滤掉明显过时的模型
+            slugs = set()
+            for block in matches:
+                block = block.replace('\\"', '"')
+                slugs.update(re.findall(r'"slug":"([a-z0-9\-.]+)"', block))
+
+            if slugs:
+                # 过滤掉明显过时的 slug（包含年份标识的旧版本）
+                stale_patterns = [
+                    r"2023",
+                    r"2022",
+                    r"2021",  # 旧年份
+                    r"-da-vinci-",
+                    r"-curie-",
+                    r"-babbage-",  # 旧 OpenAI
+                    r"text-davinci",
+                    r"text-curie",  # 旧 OpenAI 补全
+                    r"gpt-3\.",
+                    r"gpt-3-",  # GPT-3 系列
+                    r"gpt-4-[^5]",
+                    r"gpt-4o-2024",
+                    r"gpt-4-turbo-2024",  # GPT-4 旧变体
+                    r"llama-2-",
+                    r"llama-3-1-",  # 旧 Llama
+                    r"claude-2-",
+                    r"claude-instant",  # 旧 Claude
+                    r"palm-2",  # 旧 Google
+                    r"qwen2\.",  # Qwen 2.x（已过时）
+                ]
+                filtered = set()
+                for s in slugs:
+                    if len(s) < 3 or s.isdigit() or "{" in s:
+                        continue
+                    is_stale = False
+                    for pat in stale_patterns:
+                        if re.search(pat, s):
+                            is_stale = True
+                            break
+                    if not is_stale:
+                        filtered.add(s)
+
+                top20 = set(list(filtered)[:20]) if len(filtered) > 20 else filtered
+                save_cached_top20(top20)
+                print(
+                    f"[pick_best_model] 实时排行榜抓取成功({len(top20)}个，已过滤旧模型)，已更新缓存",
                     file=sys.stderr,
                 )
                 return top20
@@ -190,7 +270,7 @@ def pick_model():
             "ATOMGIT_MODEL_LIST", "zai-org/GLM-5,Qwen/Qwen3.5-397B-A17B"
         )
         print(f"[pick_best_model] AtomGit 免费: {ag_models[0]}", file=sys.stderr)
-        return f"atomgit/{ag_models[0]}", f"atomgit/{ag_models[-1]}"
+        return "atomgit", ag_models[0], ag_models[-1]
 
     # ── 2) OpenRouter Free（Qwen3.6-Plus 等）──
     if openrouter_key:
@@ -203,14 +283,14 @@ def pick_model():
                 f"[pick_best_model] OpenRouter Free: {qwen_free[0]}",
                 file=sys.stderr,
             )
-            return f"openrouter/{qwen_free[0]}", f"openrouter/{qwen_free[-1]}"
+            return "openrouter", qwen_free[0], qwen_free[-1]
 
     # ── 3) ZEN 免费模型（仅排行榜前 20）──
     if zen_key:
         zen_models = get_zen_free_models(top20)
         if zen_models:
             print(f"[pick_best_model] ZEN 免费: {zen_models}", file=sys.stderr)
-            return f"opencode/{zen_models[0]}", f"opencode/{zen_models[-1]}"
+            return "opencode", zen_models[0], zen_models[-1]
         else:
             print("[pick_best_model] ZEN 无排行榜前 20 免费模型，降级", file=sys.stderr)
 
@@ -218,19 +298,19 @@ def pick_model():
     if zhipu_key:
         zhipu_models = split_env("ZHIPU_MODEL_LIST", "GLM-4-Flash")
         print(f"[pick_best_model] 智谱保底: {zhipu_models[0]}", file=sys.stderr)
-        return f"zhipu/{zhipu_models[0]}", f"zhipu/{zhipu_models[-1]}"
+        return "zhipu", zhipu_models[0], zhipu_models[-1]
 
     # ── 5) 百炼 (Qwen3.6-Plus) ──
     if bailian_key:
         bl_models = split_env("BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max")
         print(f"[pick_best_model] 百炼: {bl_models[0]}", file=sys.stderr)
-        return f"bailian/{bl_models[0]}", f"bailian/{bl_models[-1]}"
+        return "bailian", bl_models[0], bl_models[-1]
 
     # ── 6) SiliconFlow (GLM-5 / GLM-5.1) ──
     if siliconflow_key:
         sf_models = split_env("SILICONFLOW_MODEL_LIST", "zai-org/GLM-5,zai-org/GLM-5.1")
         print(f"[pick_best_model] SiliconFlow: {sf_models[0]}", file=sys.stderr)
-        return f"siliconflow/{sf_models[0]}", f"siliconflow/{sf_models[-1]}"
+        return "siliconflow", sf_models[0], sf_models[-1]
 
     # ── 7) Claude ──
     if anthropic_key:
@@ -240,7 +320,7 @@ def pick_model():
         print(
             f"[pick_best_model] Anthropic Claude: {claude_models[0]}", file=sys.stderr
         )
-        return f"anthropic/{claude_models[0]}", f"anthropic/{claude_models[-1]}"
+        return "anthropic", claude_models[0], claude_models[-1]
 
     # ── 8) OpenRouter 付费 ──
     if openrouter_key:
@@ -249,31 +329,31 @@ def pick_model():
             "anthropic/claude-sonnet-4.6,google/gemini-3.1-pro,openai/gpt-5.4",
         )
         print(f"[pick_best_model] OpenRouter: {or_models[0]}", file=sys.stderr)
-        return f"openrouter/{or_models[0]}", f"openrouter/{or_models[-1]}"
+        return "openrouter", or_models[0], or_models[-1]
 
     # ── 9) OpenAI ──
     if openai_key:
         oai_models = split_env("OPENAI_MODEL_LIST", "gpt-5.4,gpt-4.1")
         print(f"[pick_best_model] OpenAI: {oai_models[0]}", file=sys.stderr)
-        return f"openai/{oai_models[0]}", f"openai/{oai_models[-1]}"
+        return "openai", oai_models[0], oai_models[-1]
 
     # ── 10) xAI Grok ──
     if xai_key:
         grok_models = split_env("XAI_MODEL_LIST", "grok-4.2,grok-4.1")
         print(f"[pick_best_model] xAI Grok: {grok_models[0]}", file=sys.stderr)
-        return f"xai/{grok_models[0]}", f"xai/{grok_models[-1]}"
+        return "xai", grok_models[0], grok_models[-1]
 
     # ── 11) DeepSeek ──
     if deepseek_key:
         ds_models = split_env("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
         print(f"[pick_best_model] DeepSeek: {ds_models[0]}", file=sys.stderr)
-        return f"deepseek/{ds_models[0]}", f"deepseek/{ds_models[-1]}"
+        return "deepseek", ds_models[0], ds_models[-1]
 
     # ── 12) ModelScope ──
     if modelscope_key:
         ms_models = split_env("MODELSCOPE_MODEL_LIST", "ZhipuAI/GLM-4.6")
         print(f"[pick_best_model] ModelScope: {ms_models[0]}", file=sys.stderr)
-        return f"modelscope/{ms_models[0]}", f"modelscope/{ms_models[-1]}"
+        return "modelscope", ms_models[0], ms_models[-1]
 
     # ── 13) Moonshot ──
     if moonshot_key:
@@ -281,31 +361,44 @@ def pick_model():
             "MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k"
         )
         print(f"[pick_best_model] Moonshot: {ms_models[0]}", file=sys.stderr)
-        return f"moonshot/{ms_models[0]}", f"moonshot/{ms_models[-1]}"
+        return "moonshot", ms_models[0], ms_models[-1]
 
     # ── 14) MiniMax Coding Plan 2.7（非 highspeed）──
     minimax_key = os.getenv("MINIMAX_API_KEY", "").strip()
     if minimax_key:
         mm_models = split_env("MINIMAX_MODEL_LIST", "MiniMax-M2.7")
         print(f"[pick_best_model] MiniMax: {mm_models[0]}", file=sys.stderr)
-        return f"minimax/{mm_models[0]}", f"minimax/{mm_models[-1]}"
+        return "minimax", mm_models[0], mm_models[-1]
 
     # ── 15) GLM 代理 ──
     if glm_proxy_url:
         glm_models = split_env("GLM_MODEL_LIST", "GLM-5,GLM-5.1")
         print(f"[pick_best_model] GLM 代理: {glm_models[0]}", file=sys.stderr)
-        return f"glm-proxy/{glm_models[0]}", f"glm-proxy/{glm_models[-1]}"
+        return "glm-proxy", glm_models[0], glm_models[-1]
 
     print("[pick_best_model] 无可用 API key！", file=sys.stderr)
-    return "", ""
+    return "", "", ""
 
 
 if __name__ == "__main__":
-    model, small = pick_model()
-    if not model:
-        print("NO_MODEL_AVAILABLE")
-        sys.exit(1)
-    if "--small" in sys.argv:
-        print(small)
+    if "--opencode-config" in sys.argv:
+        provider, model, small = pick_model()
+        if not model:
+            print("NO_MODEL_AVAILABLE")
+            sys.exit(1)
+        config = {
+            "$schema": "https://opencode.ai/config.json",
+            "provider": provider,
+            "model": model,
+            "small_model": small,
+        }
+        print(json.dumps(config, indent=2))
     else:
-        print(model)
+        provider, model, small = pick_model()
+        if not model:
+            print("NO_MODEL_AVAILABLE")
+            sys.exit(1)
+        if "--small" in sys.argv:
+            print(small)
+        else:
+            print(model)

@@ -107,6 +107,7 @@ jobs:
           npm install -g opencode-ai oh-my-openagent
 
       - name: Run OpenCode Agent
+        id: track3
         if: steps.track2.outcome == 'failure'
         env:
            ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
@@ -120,6 +121,7 @@ jobs:
            SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
            MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
            ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
            GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
            CLAUDE_MODEL_LIST: ${{ secrets.CLAUDE_PROXY_MODEL_LIST }}
            OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
@@ -135,6 +137,7 @@ jobs:
            ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
            GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
         run: |
+          set -euo pipefail
           git config --local --unset-all http.https://github.com/.extraheader || true
           
           git fetch origin main
@@ -152,7 +155,7 @@ jobs:
           echo "Track 3 选定模型: $BEST_MODEL (轻量: $SMALL_MODEL)"
           
           if [ "$BEST_MODEL" = "NO_MODEL_AVAILABLE" ]; then
-            echo "无可用模型，Track 3 终止"
+            echo "::error::无可用模型，Track 3 终止"
             exit 1
           fi
           
@@ -163,30 +166,51 @@ jobs:
             TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
           fi
           
-          printf '%s' '{
-            "$schema":"https://opencode.ai/config.json",
-            "model":"'"$BEST_MODEL"'",
-            "small_model":"'"$SMALL_MODEL"'"
-          }' > opencode.json
+          # ── 生成 opencode.json（使用 pick_best_model 返回的 provider/model 格式）──
+          python custom_scripts/pick_best_model.py --opencode-config > opencode.json
+          echo "生成的 opencode.json:"
+          cat opencode.json
           
           cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
           
           # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
+          FIX_SUCCEEDED=false
           if grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
             echo "分析 last_error.log 中的 DTS/phandle 报错信息。这类报错通常是因为工作流的 transplant 步骤复制了 DTS 文件但没有复制配套的 dtsi 文件。请检查 transplant 步骤是否需要同时复制 mt7621_xiaomi_nand_128m.dtsi 等配套文件。修复方式：修改工作流的 transplant 步骤（添加 cp dtsi 的命令）。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
-            oh-my-opencode run --model "$BEST_MODEL" "$(cat prompt.txt)" || \
-              opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 的 DTS/phandle 报错。检查工作流 transplant 步骤是否缺少复制 dtsi 文件。修改工作流添加必要的 cp 命令。不要删除关键步骤。退出。"
+            if oh-my-opencode run --model "$BEST_MODEL" "$(cat prompt.txt)"; then
+              FIX_SUCCEEDED=true
+            elif opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 的 DTS/phandle 报错。检查工作流 transplant 步骤是否缺少复制 dtsi 文件。修改工作流添加必要的 cp 命令。不要删除关键步骤。退出。"; then
+              FIX_SUCCEEDED=true
+            else
+              echo "::error::oh-my-opencode 和 opencode 均失败，DTS/phandle 修复未成功"
+            fi
             rm -f prompt.txt
           else
-            oh-my-opencode run --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。修复完成后请退出。" || \
-              opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 报错。搜索源码找到根本原因并修复。不要删除关键步骤。退出。"
+            if oh-my-opencode run --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。修复完成后请退出。"; then
+              FIX_SUCCEEDED=true
+            elif opencode run --agent general --model "$BEST_MODEL" "分析 last_error.log 报错。搜索源码找到根本原因并修复。不要删除关键步骤。退出。"; then
+              FIX_SUCCEEDED=true
+            else
+              echo "::error::oh-my-opencode 和 opencode 均失败，修复未成功"
+            fi
+          fi
+          
+          # ── 仅在 AI 修复成功后才提交和推送 ──
+          if [ "$FIX_SUCCEEDED" != "true" ]; then
+            echo "::error::Track 3 AI 修复失败，不提交任何更改"
+            exit 1
           fi
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          rm -f last_error.log
+          rm -f last_error.log prompt.txt 2>/dev/null || true
           git add .
-          git commit -m "Auto-fix build error with OpenCode Deep Repair" || { echo "No changes to commit, considering fix failed"; exit 1; }
+          if git diff --cached --quiet; then
+            echo "::error::AI 运行完成但未产生任何代码更改，修复可能无效"
+            exit 1
+          fi
+          git commit -m "Auto-fix build error with OpenCode Deep Repair"
           git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git
-          git push origin HEAD:main || { echo "Push failed"; exit 1; }
+          git push origin HEAD:main || { echo "::error::Push failed"; exit 1; }
+          echo "Track 3 修复成功并已推送"
 

@@ -277,15 +277,15 @@ jobs:
       run: |
         cd openwrt
         echo "Performing manual porting for Xiaomi Mi Router 4..."
-        # Clone lede-source for base-files
         git clone https://github.com/coolsnowwolf/lede lede-source
         cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
         cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_nand_128m.dtsi target/linux/ramips/dts/ 2>/dev/null || true
         cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ 2>/dev/null || true
         rm -rf lede-source
-        # 上游已内置正确的分区表和 IMAGE_SIZE=124416k，无需 sed 修改
 
-        # 修复 base-files APK 版本问题（Lienol2 专用）
+        echo "修复 DTS nvmem-layout 兼容性..."
+        python3 $GITHUB_WORKSPACE/custom_scripts/fix_dts_nvmem_layout.py .
+
         echo "=== Lienol2: 修复 base-files 版本 ==="
         if [ -f "package/base-files/Makefile" ]; then
           sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || echo 'PKG_RELEASE:=1' >> package/base-files/Makefile
