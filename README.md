@@ -83,6 +83,7 @@
 │   ├── auto_fix_with_AI_LLM.py # AI 自动修复核心逻辑
 │   ├── compile_with_retry.py   # 智能编译重试
 │   ├── extract_last_error.py   # 提取关键报错日志
+│   ├── fix_dts_nvmem_layout.py # 修复 DTS nvmem-layout 兼容性
 │   ├── pick_best_model.py      # 动态选择最佳 AI 模型
 │   ├── diy-part1.sh            # DIY 脚本1（feeds 更新前）
 │   ├── diy-part2.sh            # DIY 脚本2（feeds 更新后）
@@ -160,6 +161,7 @@
 | `auto_fix_with_AI_LLM.py` | AI 自动修复：提取报错 → 多模型轮询 → 验证关键步骤 → 自动提交 |
 | `compile_with_retry.py` | 智能编译重试：OOM清理、APK版本修复、base-files修复 |
 | `extract_last_error.py` | 从编译日志中提取关键报错（支持 `--max-chars` 限制长度） |
+| `fix_dts_nvmem_layout.py` | 修复 DTS nvmem-layout 兼容性（将 nvmem cells 提升为分区直接子节点） |
 | `pick_best_model.py` | 动态选择最佳模型：ZEN免费 → OpenRouter Qwen:free → Claude → ... |
 | `select_kernel.py` | 根据源码可用性自动选择内核版本 |
 | `validate_build_output.py` | 验证编译产物完整性 |
@@ -312,6 +314,7 @@ All scripts are in `custom_scripts/`:
 | `auto_fix_with_AI_LLM.py` | AI-powered build error fixing with multi-model fallback |
 | `compile_with_retry.py` | Smart build with auto-retry |
 | `extract_last_error.py` | Extract key errors from build logs |
+| `fix_dts_nvmem_layout.py` | Fix DTS nvmem-layout compatibility |
 | `pick_best_model.py` | Dynamically select best AI model |
 | `select_kernel.py` | Dynamically select kernel version |
 
