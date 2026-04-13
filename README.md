@@ -116,10 +116,10 @@
 
 | Secret名称 | 说明 |
 |------------|------|
-| `OPENROUTER_API_KEY` | OpenRouter API Key（Qwen3.6-Plus:free 等免费模型） |
+| `OPENROUTER_API_KEY` | OpenRouter API Key（Qwen3.6-Plus:free、Gemma 4 31B:free 等免费模型） |
 | `ZEN_API_KEY` | OpenCode Zen API Key（免费模型） |
 | `ATOMGIT_API_KEY` | AtomGit API Key（GLM-5、Qwen3.5-397B 等免费模型） |
-| `ZHIPU_API_KEY` | 智谱官方 API Key（GLM-4-Flash 永久免费保底） |
+| `ZHIPU_API_KEY` | 智谱官方 API Key（GLM-5.1 付费优先，GLM-4-Flash 免费保底） |
 | `ANTHROPIC_API_KEY` | Anthropic Claude API Key（可选） |
 | `OPENAI_API_KEY` | OpenAI API Key（可选） |
 | `BAILIAN_API_KEY` | 阿里云百炼 API Key（Qwen3.6-Plus 等国产模型，可选） |
