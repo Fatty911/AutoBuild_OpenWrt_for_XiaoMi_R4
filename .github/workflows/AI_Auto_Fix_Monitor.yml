@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-22.04
     permissions:
       contents: write
-      actions: read
+      actions: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@main
@@ -220,4 +220,10 @@ jobs:
           git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git
           git push origin HEAD:main || { echo "::error::Push failed"; exit 1; }
           echo "Track 3 修复成功并已推送"
+          
+          # ── 重触发原来失败的工作流 ──
+          FAILED_WORKFLOW="${{ github.event.workflow_run.name }}"
+          FAILED_RUN_ID="${{ github.event.workflow_run.id }}"
+          echo "重触发工作流: $FAILED_WORKFLOW (Run ID: $FAILED_RUN_ID)"
+          gh run rerun $FAILED_RUN_ID || echo "重触发失败，可手动触发"
 

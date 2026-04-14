@@ -966,45 +966,59 @@ def main():
                 zen_models = z_resp.json().get("data", [])
 
                 # c. 筛选并比对
+                MINIMAX_ALLOWED = [
+                    "minimax-ccp-2.7",
+                    "minimax-ccp2.7",
+                    "minimax-m2.7",
+                    "minimax-m2.7-pro",
+                ]
+                MINIMAX_BLOCKED = ["highspeed", "m2.5", "m1.5", "m1.0", "abab"]
                 valid_models = []
                 for m in zen_models:
                     model_id = m.get("id", "").lower()
-                    if "free" in model_id:
-                        # 从 model_id 中提取基础名字进行模糊匹配
-                        # 比如 mimo-v2-pro-free -> mimo v2 pro
-                        base_name = (
-                            model_id.replace("-free", "")
-                            .replace("_free", "")
-                            .replace("-", " ")
+                    if "free" not in model_id:
+                        continue
+                    # MiniMax 白名单过滤
+                    if "minimax" in model_id:
+                        blocked = any(b in model_id for b in MINIMAX_BLOCKED)
+                        allowed = any(a in model_id for a in MINIMAX_ALLOWED)
+                        if blocked or not allowed:
+                            print(f"[ZEN] 屏蔽 MiniMax 模型: {m.get('id')}")
+                            continue
+                    # 从 model_id 中提取基础名字进行模糊匹配
+                    # 比如 mimo-v2-pro-free -> mimo v2 pro
+                    base_name = (
+                        model_id.replace("-free", "")
+                        .replace("_free", "")
+                        .replace("-", " ")
+                        .replace("_", " ")
+                    )
+
+                    is_top_15 = False
+                    for top_name in top_15_names:
+                        clean_top = (
+                            top_name.replace("-", " ")
                             .replace("_", " ")
+                            .replace(".", "")
+                        )
+                        clean_base = base_name.replace(".", "")
+                        core_base = (
+                            clean_base.split("/")[-1]
+                            if "/" in clean_base
+                            else clean_base
                         )
 
-                        is_top_15 = False
-                        for top_name in top_15_names:
-                            clean_top = (
-                                top_name.replace("-", " ")
-                                .replace("_", " ")
-                                .replace(".", "")
-                            )
-                            clean_base = base_name.replace(".", "")
-                            # 提取纯名字部分，忽略 provider (如 qwen/qwen 36 plus -> qwen 36 plus)
-                            core_base = (
-                                clean_base.split("/")[-1]
-                                if "/" in clean_base
-                                else clean_base
-                            )
+                        if (
+                            core_base in clean_top
+                            or clean_top in core_base
+                            or all(part in clean_top for part in core_base.split())
+                        ):
+                            is_top_15 = True
+                            break
 
-                            if (
-                                core_base in clean_top
-                                or clean_top in core_base
-                                or all(part in clean_top for part in core_base.split())
-                            ):
-                                is_top_15 = True
-                                break
-
-                        if is_top_15:
-                            print(f"[ZEN] 发现排名前 15 的免费模型: {m.get('id')}")
-                            valid_models.append(m.get("id"))
+                    if is_top_15:
+                        print(f"[ZEN] 发现排名前 15 的免费模型: {m.get('id')}")
+                        valid_models.append(m.get("id"))
 
                 zen_valid_free_models = valid_models
 

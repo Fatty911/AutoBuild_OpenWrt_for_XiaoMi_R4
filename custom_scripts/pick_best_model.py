@@ -419,8 +419,23 @@ if __name__ == "__main__":
         if not model:
             print("NO_MODEL_AVAILABLE")
             sys.exit(1)
-        # OpenCode/oh-my-openagent 要求 provider 为 record 类型
-        # 格式: {"provider_name": {}}，不能是字符串
+        # OpenCode 把 model 中的 "/" 当作 provider/model 分隔符
+        # atomgit/zhipu/nvidia-nim 等 provider 不能用 org/model 格式
+        # 需要去掉 org 前缀：zai-org/GLM-5 → GLM-5
+        providers_need_strip = {
+            "atomgit",
+            "zhipu",
+            "nvidia-nim",
+            "bailian",
+            "moonshot",
+            "deepseek",
+            "minimax",
+        }
+        if provider in providers_need_strip:
+            if "/" in model:
+                model = model.split("/", 1)[1]
+            if "/" in small:
+                small = small.split("/", 1)[1]
         provider_obj = {provider: {}}
         config = {
             "$schema": "https://opencode.ai/config.json",
