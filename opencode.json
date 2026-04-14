@@ -3,6 +3,6 @@
   "provider": {
     "atomgit": {}
   },
-  "model": "zai-org/GLM-5",
-  "small_model": "zai-org/GLM-5"
+  "model": "GLM-5",
+  "small_model": "GLM-5"
 }
