@@ -91,6 +91,8 @@ jobs:
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           NVIDIA_NIM_MODEL_LIST: ${{ secrets.NVIDIA_NIM_MODEL_LIST }}
+          QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
+          QINIU_MODEL_LIST: ${{ secrets.QINIU_MODEL_LIST }}
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
           WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path }}
@@ -127,6 +129,7 @@ jobs:
           ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
           NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           CLAUDE_MODEL_LIST: ${{ secrets.CLAUDE_PROXY_MODEL_LIST }}
           OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
@@ -140,6 +143,7 @@ jobs:
           ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
           ZHIPU_MODEL_LIST: ${{ secrets.ZHIPU_MODEL_LIST }}
           NVIDIA_NIM_MODEL_LIST: ${{ secrets.NVIDIA_NIM_MODEL_LIST }}
+          QINIU_MODEL_LIST: ${{ secrets.QINIU_MODEL_LIST }}
           GLM_MODEL_LIST: ${{ secrets.GLM_MODEL_LIST }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
           GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}

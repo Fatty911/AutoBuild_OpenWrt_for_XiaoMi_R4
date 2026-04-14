@@ -1213,6 +1213,21 @@ def main():
             }
         )
 
+    # 8.6) 七牛云 (Nemotron 3 Super 免费)
+    qiniu_api_key = os.getenv("QINIU_API_KEY", "").strip()
+    if qiniu_api_key:
+        qiniu_models = split_models(
+            "QINIU_MODEL_LIST", "nvidia/nemotron-3-super-120b-a12b-free"
+        )
+        providers.append(
+            {
+                "name": "QINIU",
+                "proxy_url": "https://api.qnaigc.com/v1",
+                "api_key": qiniu_api_key,
+                "models": qiniu_models,
+            }
+        )
+
     # 9) DeepSeek
     deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
     if deepseek_api_key:
