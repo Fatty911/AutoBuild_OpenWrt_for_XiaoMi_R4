@@ -10,7 +10,7 @@
 3. ZEN 免费模型（仅保留排行榜匹配的）
 4. NVIDIA NIM → Kimi K2.5（免费，262K context，强推理）
 5. 七牛云 → Nemotron 3 Super（免费，1M context，120B MoE 强推理）
-6. 智谱官方 → GLM-5.1（付费，排行榜前列）→ GLM-4-Flash（保底，并发30）
+6. 智谱官方 → GLM-5.1（付费，排行榜 #13）
 
 端点：AtomGit https://api-ai.gitcode.com/v1 | OpenRouter https://openrouter.ai/api/v1 | NVIDIA NIM https://integrate.api.nvidia.com/v1 | 七牛云 https://api.qnaigc.com/v1 | 智谱 https://open.bigmodel.cn/api/paas/v4/
 """
@@ -337,9 +337,9 @@ def pick_model():
         print(f"[pick_best_model] 七牛云: {qiniu_models[0]}", file=sys.stderr)
         return "qiniu", qiniu_models[0], qiniu_models[-1]
 
-    # ── 6) 智谱官方（GLM-5.1 付费优先，GLM-4-Flash 免费保底）──
+    # ── 6) 智谱官方（GLM-5.1，排行榜 #13）──
     if zhipu_key:
-        zhipu_models = split_env("ZHIPU_MODEL_LIST", "GLM-5.1,GLM-4-Flash")
+        zhipu_models = split_env("ZHIPU_MODEL_LIST", "GLM-5.1")
         print(f"[pick_best_model] 智谱: {zhipu_models[0]}", file=sys.stderr)
         return "zhipu", zhipu_models[0], zhipu_models[-1]
 
@@ -369,7 +369,7 @@ def pick_model():
     if openrouter_key:
         or_models = split_env(
             "OPENROUTER_MODEL_LIST",
-            "anthropic/claude-sonnet-4.6,google/gemini-3.1-pro,openai/gpt-5.4",
+            "zai-org/glm-5.1,moonshotai/kimi-k2.5-thinking,google/gemma-4-31b-it",
         )
         print(f"[pick_best_model] OpenRouter: {or_models[0]}", file=sys.stderr)
         return "openrouter", or_models[0], or_models[-1]
@@ -388,13 +388,15 @@ def pick_model():
 
     # ── 13) DeepSeek ──
     if deepseek_key:
-        ds_models = split_env("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
+        ds_models = split_env(
+            "DEEPSEEK_MODEL_LIST", "deepseek-v3.2-exp-thinking,deepseek-v3.2"
+        )
         print(f"[pick_best_model] DeepSeek: {ds_models[0]}", file=sys.stderr)
         return "deepseek", ds_models[0], ds_models[-1]
 
     # ── 14) ModelScope ──
     if modelscope_key:
-        ms_models = split_env("MODELSCOPE_MODEL_LIST", "ZhipuAI/GLM-4.6")
+        ms_models = split_env("MODELSCOPE_MODEL_LIST", "ZhipuAI/GLM-4.7")
         print(f"[pick_best_model] ModelScope: {ms_models[0]}", file=sys.stderr)
         return "modelscope", ms_models[0], ms_models[-1]
 

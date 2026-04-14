@@ -25,7 +25,7 @@
 - opencode 用什么模型必须根据用户提供的 secrets 环境变量读取 key，可选 `_proxy_url` 和 `_model_list`，此要求全局生效。
 - opencode Zen 对 mimo-v2-pro 已不再免费，不要优先选择它。
 - 动态模型解析逻辑必须实时抓取 Artificial Analysis 排行榜数据，不能长期依赖硬编码列表。
-- **只使用当前排行榜前 20 的模型**（如 GLM-5、GLM-5.1、Qwen3.6-Plus、Qwen3.5-398B、Claude Opus 4.6、GPT-5.4、DeepSeek-R1 等），绝对不要使用已落榜的旧模型（如 GLM-4、Qwen2、GPT-4o、Claude 3.5 等）。保底模型也必须满足此要求。
+- **只使用当前排行榜前 20 的模型**（如 GLM-5.1、GLM-5、Kimi K2.5、Gemma 4 31B、Qwen3.5-398B、DeepSeek-V3.2 等），绝对不要使用已落榜的旧模型（如 GLM-4、Qwen2、GPT-4o、Claude 3.5 等）。保底模型也必须满足此要求。
 - **模型列表不得硬编码**，必须运行时实时从 Artificial Analysis 排行榜抓取。排行榜抓取失败时不过滤（放行所有模型），而不是退回硬编码列表。硬编码的模型列表一两个月就会过时。
 - **允许缓存兜底**：实时抓取成功后必须把结果写回缓存文件（如 `.leaderboard_cache.json`），供下次抓取失败时兜底。缓存超过 14 天未更新时必须打印警告但仍可使用。无论是本地还是 GitHub Action 中，只要有自动回退机制，就可以用缓存兜底，但必须保证每一两周至少爬一次排行榜更新缓存，不能长期不更新。
 - 优先选择排行榜前 20 且有免费资源的模型。当前已知免费渠道：
@@ -34,7 +34,7 @@
   - ZEN：排行榜前 20 的免费模型
   - NVIDIA NIM：`moonshotai/kimi-k2.5`（免费，262K context，1T MoE 32B active，Intelligence Index 46.8，强推理，端点 `https://integrate.api.nvidia.com/v1`）
   - 七牛云：`nvidia/nemotron-3-super-120b-a12b-free`（免费，1M context，120B MoE 12B active，强推理，端点 `https://api.qnaigc.com/v1`）
-  - 智谱官方：`GLM-4-Flash`（永久免费保底，并发 30）、`GLM-5.1`（付费，排行榜前列）
+  - 智谱官方：`GLM-5.1`（付费，排行榜 #13）
 - 当日志过长导致超出当前模型上下文时，必须清晰打印提示信息并优雅降级到下一个模型/提供商。
 - **MiniMax 白名单**：只允许 MiniMax Coding Plan 2.7（非 highspeed 版本），其他 MiniMax 模型（如 m2.5-free、m1.5、abab 系列等）一律屏蔽。
 - 所有 secrets 环境变量（包括 BAILIAN_API_KEY、MOONSHOT_API_KEY、ATOMGIT_API_KEY、ZHIPU_API_KEY、NVIDIA_NIM_API_KEY、QINIU_API_KEY 等）必须在 AI Fix workflow 中完整暴露。

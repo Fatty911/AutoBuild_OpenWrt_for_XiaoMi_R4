@@ -119,7 +119,7 @@
 | `OPENROUTER_API_KEY` | OpenRouter API Key（Qwen3.6-Plus:free、Gemma 4 31B:free、Nemotron 3 Super:free 等免费模型） |
 | `ZEN_API_KEY` | OpenCode Zen API Key（免费模型） |
 | `ATOMGIT_API_KEY` | AtomGit API Key（GLM-5、Qwen3.5-397B 等免费模型） |
-| `ZHIPU_API_KEY` | 智谱官方 API Key（GLM-5.1 付费优先，GLM-4-Flash 免费保底） |
+| `ZHIPU_API_KEY` | 智谱官方 API Key（GLM-5.1 付费，排行榜 #13） |
 | `NVIDIA_NIM_API_KEY` | NVIDIA NIM API Key（Kimi K2.5 免费，262K context，强推理） |
 | `QINIU_API_KEY` | 七牛云 API Key（Nemotron 3 Super 免费，1M context，120B MoE 强推理） |
 | `ANTHROPIC_API_KEY` | Anthropic Claude API Key（可选） |
