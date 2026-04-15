@@ -110,7 +110,10 @@ def get_error_signature(log_content):
         return "root_ramips_missing_dir"
 
     # DTC/DTS phandle reference errors (e.g., missing "factory" label)
-    if "ERROR (phandle_references)" in log_content and "Reference to non-existent" in log_content:
+    if (
+        "ERROR (phandle_references)" in log_content
+        and "Reference to non-existent" in log_content
+    ):
         # Extract device name if possible
         dts_match = re.search(r"(mt7621_[a-zA-Z0-9_-]+)\.dts", log_content)
         device_name = dts_match.group(1) if dts_match else "unknown"
@@ -323,7 +326,9 @@ def fix_dts_phandle_missing(log_content):
     print("🔧 检测到 Device Tree phandle 引用错误，尝试修复...")
 
     # 提取出错的设备名
-    match = re.search(r"(mt7621_[a-zA-Z0-9_-]+)\.dts.*Reference to non-existent", log_content)
+    match = re.search(
+        r"(mt7621_[a-zA-Z0-9_-]+)\.dts.*Reference to non-existent", log_content
+    )
     if not match:
         print("⚠️ 无法从日志中提取设备名，跳过修复")
         return False
@@ -351,7 +356,9 @@ def fix_dts_phandle_missing(log_content):
             return False
 
         # 注释掉该配置行
-        new_config = config_content.replace(target_line, f"# {target_line} # DISABLED_DTS_ERROR")
+        new_config = config_content.replace(
+            target_line, f"# {target_line} # DISABLED_DTS_ERROR"
+        )
 
         with open(config_path, "w") as f:
             f.write(new_config)
@@ -454,6 +461,20 @@ def fix_base_files_version(log_content):
                 fixed_any = True
             except OSError:
                 pass
+
+        if fixed_any:
+            print(
+                "⏳ 由于清除了 base-files 缓存，强制重新编译 base-files 以生成 version 文件..."
+            )
+            try:
+                subprocess.run(
+                    "make package/base-files/compile V=s || make package/base-files/install V=s",
+                    shell=True,
+                    check=False,
+                )
+                print("✅ 强制重新编译 base-files 完成")
+            except Exception as e:
+                print(f"❌ 重新编译 base-files 时出错: {e}")
 
         # 全局暴力替换项目中所有 ~unknown / -unknown
         try:
@@ -576,6 +597,20 @@ def fix_base_files_version(log_content):
                 fixed_any = True
             except OSError:
                 pass
+
+        if fixed_any:
+            print(
+                "⏳ 由于清除了 base-files 缓存，强制重新编译 base-files 以生成 version 文件..."
+            )
+            try:
+                subprocess.run(
+                    "make package/base-files/compile V=s || make package/base-files/install V=s",
+                    shell=True,
+                    check=False,
+                )
+                print("✅ 强制重新编译 base-files 完成")
+            except Exception as e:
+                print(f"❌ 重新编译 base-files 时出错: {e}")
 
         # 全量暴力替换项目中所有 ~unknown
         try:
