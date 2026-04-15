@@ -107,6 +107,54 @@ def main():
             if fix_nvmem_layout(filepath):
                 fixed_any = True
 
+    # 额外的硬编码修复：部分上游 dts 未同步新版 mt7621.dtsi 的 label
+    # 如 xiaomi_mi-router-3g 缺少 macaddr_factory_e006 等
+    for pattern in [
+        os.path.join(dts_dir, "mt7621_xiaomi_*.dts"),
+        os.path.join(dts_dir, "mt7621_xiaomi_*.dtsi"),
+    ]:
+        for filepath in glob.glob(pattern):
+            try:
+                with open(filepath, "r") as f:
+                    content = f.read()
+
+                orig_content = content
+                # 为缺少 label 的节点补充 label
+                content = content.replace(
+                    "macaddr@e000", "macaddr_factory_e000: macaddr@e000"
+                )
+                content = content.replace(
+                    "macaddr@e006", "macaddr_factory_e006: macaddr@e006"
+                )
+                content = content.replace("eeprom@0", "eeprom_factory_0: eeprom@0")
+                content = content.replace(
+                    "eeprom@8000", "eeprom_factory_8000: eeprom@8000"
+                )
+
+                # 防止重复添加
+                content = content.replace(
+                    "macaddr_factory_e000: macaddr_factory_e000:",
+                    "macaddr_factory_e000:",
+                )
+                content = content.replace(
+                    "macaddr_factory_e006: macaddr_factory_e006:",
+                    "macaddr_factory_e006:",
+                )
+                content = content.replace(
+                    "eeprom_factory_0: eeprom_factory_0:", "eeprom_factory_0:"
+                )
+                content = content.replace(
+                    "eeprom_factory_8000: eeprom_factory_8000:", "eeprom_factory_8000:"
+                )
+
+                if content != orig_content:
+                    with open(filepath, "w") as f:
+                        f.write(content)
+                    print(f"[{filepath}] 已补充缺失的 label (macaddr/eeprom)")
+                    fixed_any = True
+            except Exception as e:
+                print(f"Failed to patch labels in {filepath}: {e}")
+
     if not fixed_any:
         print("未找到需要修复的 nvmem-layout DTS 文件，可能上游已修复或文件不存在")
 
