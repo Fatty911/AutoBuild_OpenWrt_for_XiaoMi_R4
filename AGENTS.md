@@ -11,8 +11,8 @@
 ## 代码修改与提交
 - 调试过程中产生的临时文件（如 `fix_*.py`、`test_*.py`、`patch_*.py`），在验证完成后必须删除，不得留在仓库根目录中。
 - 生产代码只放 `custom_scripts/` 目录下，根目录不得出现 `.py` 文件。
-- 本地 commit 可以随时做，但只有用户明确说"推送"或"push"时才 push 到远端。
-- 单次解决报错的改动可自动 push，但多次循环尝试时注意 push 间隔时间。
+- **涉及修改代码的任务，必须在每次完成所有 TODO 后统一进行语法格式校验，然后做一次统一的 commit，绝对不要在中间多次零散提交**。改完代码后必须自动更新 `AGENTS.md` 和 `README.md`，并在最后一次统一 commit 中一并提交推送。
+- 本地 commit 可以随时做，但只有用户明确说"推送"或"push"时（或者在单次解决报错的自动修复场景下）才 push 到远端。
 - **每次修改完代码后必须进行严格的语法校验**（YAML 用 LSP/`actionlint`，Python 用 `python3 -c "import ast; ast.parse(open(...).read())"` 或 `ruff`，Shell 用 `shellcheck`）。
 
 ## 文档同步
