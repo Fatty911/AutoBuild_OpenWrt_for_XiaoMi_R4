@@ -130,6 +130,17 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
           NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
+          ATOMGIT_BASE_URL: "https://api-ai.gitcode.com/v1"
+          ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
+          NVIDIA_NIM_BASE_URL: "https://integrate.api.nvidia.com/v1"
+          QINIU_BASE_URL: "https://api.qnaigc.com/v1"
+          BAILIAN_BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+          MOONSHOT_BASE_URL: "https://api.moonshot.cn/v1"
+          DEEPSEEK_BASE_URL: "https://api.deepseek.com/v1"
+          MINIMAX_BASE_URL: "https://api.minimax.chat/v1"
+          MODELSCOPE_BASE_URL: "https://api.modelscope.cn/v1"
+          SILICONFLOW_BASE_URL: "https://api.siliconflow.cn/v1"
+          GLM_PROXY_BASE_URL: ${{ secrets.GLM_PROXY_URL }}
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           CLAUDE_MODEL_LIST: ${{ secrets.CLAUDE_PROXY_MODEL_LIST }}
           OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
