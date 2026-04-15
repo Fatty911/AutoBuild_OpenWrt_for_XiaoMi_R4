@@ -429,32 +429,13 @@ if __name__ == "__main__":
     provider, model, small = pick_model()
 
     if not model:
-        if "--opencode-config" in sys.argv:
-            print("NO_MODEL_AVAILABLE")
-        else:
-            print("NO_MODEL_AVAILABLE")
+        print("NO_MODEL_AVAILABLE")
         sys.exit(1)
 
-    # OpenCode 把 model 中的 "/" 当作 provider/model 分隔符
-    # atomgit/zhipu/nvidia-nim 等 provider 不能用 org/model 格式
-    # 需要去掉 org 前缀：zai-org/GLM-5 → GLM-5
-    providers_need_strip = {
-        "atomgit",
-        "zhipu",
-        "nvidia-nim",
-        "qiniu",
-        "bailian",
-        "moonshot",
-        "deepseek",
-        "minimax",
-    }
-    if provider in providers_need_strip:
-        if "/" in model:
-            model = model.split("/", 1)[1]
-        if "/" in small:
-            small = small.split("/", 1)[1]
-
     if "--opencode-config" in sys.argv:
+        # 在 opencode.json 中：明确指定了 provider 块，所以 model 可以包含原生的 /，
+        # 例如 ZhipuAI/GLM-4.7, nvidia/nemotron-3-super-120b-a12b-free
+        # OpenCode 会原样发送给配置的 provider。
         provider_obj = {provider: {}}
         config = {
             "$schema": "https://opencode.ai/config.json",
@@ -464,7 +445,13 @@ if __name__ == "__main__":
         }
         print(json.dumps(config, indent=2))
     else:
-        if "--small" in sys.argv:
-            print(small)
+        # 在命令行使用 --model 参数时：
+        # 如果只传 zai-org/GLM-5，OpenCode 会把斜杠前的 zai-org 当作提供商，导致找不到报错。
+        # 必须加上提供商前缀（如 atomgit/zai-org/GLM-5），让 OpenCode 明确知道使用哪个提供商。
+        target_model = small if "--small" in sys.argv else model
+
+        # opencode provider 内部有特殊映射，不需要加前缀
+        if provider == "opencode":
+            print(target_model)
         else:
-            print(model)
+            print(f"{provider}/{target_model}")
