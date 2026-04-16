@@ -41,6 +41,8 @@
 - 所有 secrets 环境变量（包括 BAILIAN_API_KEY、MOONSHOT_API_KEY、ATOMGIT_API_KEY、ZHIPU_API_KEY、NVIDIA_NIM_API_KEY、QINIU_API_KEY 等）必须在 AI Fix workflow 中完整暴露。
 
 ## opencode 配置
-- opencode.json 必须使用合法 schema：`provider` 必须为 record 对象（如 `{"atomgit": {}}`），不能是字符串；`provider`（单数）和 `agent`（单数），不能用复数形式。
+- opencode.json 必须使用合法 schema：`provider` 必须为 record 对象，不能用字符串或复数形式。
+- **自定义 provider（atomgit、zhipu、nvidia-nim、qiniu 等）必须包含 `npm`、`options`（含 `baseURL` + `apiKey`）、`models` 三个字段**，否则 opencode 会报 `ProviderModelNotFoundError`。内置 provider（anthropic、openai、openrouter 等）只需 `models` 字段。
+- `oh-my-opencode run` 必须指定 `--agent build`，否则默认使用不存在的 "Sisyphus - Ultraworker" agent 导致报错。`opencode run` 不需要 `--agent` 参数（使用默认 primary agent）。
 - 必须安装 opencode 本体和 oh-my-openagent 插件（npm 包名 `oh-my-openagent`，CLI 命令名仍为 `oh-my-opencode`）。
 - oh-my-openagent 的多 agent 协同效果更好，优先使用。
