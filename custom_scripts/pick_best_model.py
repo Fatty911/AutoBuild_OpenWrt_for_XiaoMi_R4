@@ -483,6 +483,7 @@ if __name__ == "__main__":
 
         config = {
             "$schema": "https://opencode.ai/config.json",
+            "plugin": ["oh-my-openagent"],
             "provider": {provider: provider_config} if provider_config else {},
             "model": f"{provider}/{model}",
             "small_model": f"{provider}/{small}",
