@@ -204,8 +204,8 @@ jobs:
       - name: Compile the firmware
         id: compile
         run: |
-          cd openwrt && cp .custom_scripts/compile_with_retry.py .
-          make -j2 V=s || python custom_scripts/compile_with_retry.py "make -j2 V=s" "compile.log" || python custom_scripts/compile_with_retry.py "make -j1 V=s" "compile.log"
+          cd openwrt
+          make -j2 V=s || python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py "make -j2 V=s" "compile.log" || python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py "make -j1 V=s" "compile.log"
           echo "status=success" >> $GITHUB_OUTPUT
           grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
           [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
