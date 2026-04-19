@@ -195,8 +195,22 @@ jobs:
           fi
           
           # ── 获取可用的所有提供商及模型 ──
-          python custom_scripts/pick_best_model.py --all-models > models_to_try.txt
-          echo "将要尝试的模型列表:"
+          echo "==== 收集 DMXAPI 实时可用的高阶免费模型 ===="
+          python custom_scripts/dmxapi_meta_router.py --list > dmxapi_models.txt 2>/dev/null || true
+          
+          echo "==== 收集备用/旧版 Provider 的兜底模型 ===="
+          # 如果 pick_best_model.py 未报错则提取一个 fallback_model
+          BEST_FALLBACK=$(python custom_scripts/pick_best_model.py 2>/dev/null)
+          if [ "$BEST_FALLBACK" != "NO_MODEL_AVAILABLE" ] && [ -n "$BEST_FALLBACK" ]; then
+            # 因为旧脚本输出格式可能是 provider/model，直接追加
+            echo "$BEST_FALLBACK" > fallback_models.txt
+          else
+            touch fallback_models.txt
+          fi
+          
+          cat dmxapi_models.txt fallback_models.txt | awk '!x[$0]++' > models_to_try.txt
+          
+          echo "将要尝试的模型优先级列表:"
           cat models_to_try.txt
           
           cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
@@ -213,12 +227,32 @@ jobs:
             echo "🔥 当前尝试使用提供商/模型: $FULL_MODEL"
             echo "=========================================================="
             
-            # 生成本次尝试所用的 opencode.json (基础配置)
-            python custom_scripts/pick_best_model.py --opencode-config-for "$PROVIDER" "$MODEL_NAME" > opencode.json
-            
-            # 生成 oh-my-opencode.json (高级动态角色分配，如 DMXAPI 专属优化)
-            mkdir -p ~/.config/opencode
-            python custom_scripts/pick_best_model.py --omo-config-for "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-opencode.json
+            # 生成本次尝试所用的配置
+            if [ "$PROVIDER" = "dmxapi" ]; then
+               # DMXAPI 走专用的 Meta-Agent 脚本，能做动态多模型分配
+               python custom_scripts/dmxapi_meta_router.py --config-opencode "$PROVIDER" "$MODEL_NAME" > opencode.json
+               mkdir -p ~/.config/opencode
+               python custom_scripts/dmxapi_meta_router.py --config-omo > ~/.config/opencode/oh-my-opencode.json
+            else
+               # 其它 Provider 走通用单模型配置
+               # 此处使用 pick_best_model 原有生成配置逻辑
+               python custom_scripts/pick_best_model.py --opencode-config > opencode.json
+               mkdir -p ~/.config/opencode
+               cat << EOF > ~/.config/opencode/oh-my-opencode.json
+{
+  "agents": {
+    "sisyphus": {"model": "$FULL_MODEL"},
+    "oracle": {"model": "$FULL_MODEL"},
+    "explore": {"model": "$FULL_MODEL"},
+    "librarian": {"model": "$FULL_MODEL"}
+  },
+  "categories": {
+    "quick": {"model": "$FULL_MODEL"},
+    "deep": {"model": "$FULL_MODEL"}
+  }
+}
+EOF
+            fi
             
             # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
             if grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
