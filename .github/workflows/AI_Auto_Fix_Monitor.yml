@@ -236,22 +236,9 @@ jobs:
             else
                # 其它 Provider 走通用单模型配置
                # 此处使用 pick_best_model 原有生成配置逻辑
-               python custom_scripts/pick_best_model.py --opencode-config > opencode.json
+               python custom_scripts/pick_best_model.py --opencode-config-for "$PROVIDER" "$MODEL_NAME" > opencode.json
                mkdir -p ~/.config/opencode
-               cat << EOF > ~/.config/opencode/oh-my-opencode.json
-{
-  "agents": {
-    "sisyphus": {"model": "$FULL_MODEL"},
-    "oracle": {"model": "$FULL_MODEL"},
-    "explore": {"model": "$FULL_MODEL"},
-    "librarian": {"model": "$FULL_MODEL"}
-  },
-  "categories": {
-    "quick": {"model": "$FULL_MODEL"},
-    "deep": {"model": "$FULL_MODEL"}
-  }
-}
-EOF
+               python custom_scripts/dmxapi_meta_router.py --config-omo-generic "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-opencode.json
             fi
             
             # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──

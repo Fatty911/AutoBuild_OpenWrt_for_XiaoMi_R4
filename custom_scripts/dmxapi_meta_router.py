@@ -193,6 +193,26 @@ if __name__ == "__main__":
         if len(sys.argv) >= 4:
             print_opencode_json(sys.argv[2], sys.argv[3], "DMXAPI_API_KEY", DMXAPI_BASE_URL)
             
+    elif cmd == "--config-omo-generic":
+        # 打印一个让所有角色都使用同一个主模型的通用 omo 配置
+        # 用法: --config-omo-generic <provider> <model>
+        if len(sys.argv) >= 4:
+            prov = sys.argv[2]
+            mod = sys.argv[3]
+            config = {
+                "agents": {
+                    "sisyphus": {"model": f"{prov}/{mod}"},
+                    "oracle": {"model": f"{prov}/{mod}"},
+                    "explore": {"model": f"{prov}/{mod}"},
+                    "librarian": {"model": f"{prov}/{mod}"}
+                },
+                "categories": {
+                    "quick": {"model": f"{prov}/{mod}"},
+                    "deep": {"model": f"{prov}/{mod}"}
+                }
+            }
+            print(json.dumps(config, indent=2))
+            
     elif cmd == "--config-omo":
         # 生成动态的 role 分析
         models = scrape_free_models()
