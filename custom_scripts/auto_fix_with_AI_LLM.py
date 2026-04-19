@@ -156,7 +156,8 @@ def call_api(proxy_url, api_key, model, prompt):
     data = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 8192,
+        # 很多国产/免费 Provider（如 AtomGit/GLM）不支持 8192 或对 max_tokens 敏感
+        # 移除强制的 max_tokens，让提供商使用模型默认的最大输出长度
         "temperature": 0.3,
     }
 
