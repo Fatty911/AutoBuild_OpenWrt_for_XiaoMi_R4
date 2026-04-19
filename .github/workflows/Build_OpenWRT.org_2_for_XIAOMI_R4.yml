@@ -1,4 +1,5 @@
 name: Build OpenWRT.org 2 fix and transplant for XIAOMI_R4 
+run-name: "Org2 triggered by ${{ github.event.workflow_run.name || github.event_name }}"
 
 on:
   workflow_run:

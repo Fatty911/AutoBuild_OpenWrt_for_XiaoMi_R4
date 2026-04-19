@@ -9,6 +9,7 @@
 #
 
 name: Build Lienol 2 packages and fixes for XIAOMI_R4
+run-name: "Lienol2 triggered by ${{ github.event.workflow_run.name || github.event_name }}"
 
 on:
   workflow_run:
@@ -159,25 +160,6 @@ jobs:
         cd openwrt
         make defconfig
         echo "=== defconfig 完成 ==="
-
-    - name: List main packages
-      run: |
-        cd openwrt
-        find package/ -type d -name src -prune -o -type f -name Makefile -not -path 'package/feeds/*' -exec dirname {} \; > main_packages.txt
-        echo "Main packages to compile:"
-        cat main_packages.txt
-
-    - name: Compile main packages
-      id: main_packages
-      run: |
-        cd openwrt
-        while read -r pkg; do
-          echo "编译 $pkg at $(date)"
-          { make $pkg/compile -j2 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || { make $pkg/compile -j1 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || {
-            echo "编译 $pkg 失败，查看编译此包时的日志"
-            cat "$pkg.log"
-            }
-        done < main_packages.txt
 
     - name: Compile Remaining packages
       id: compile_remaining
