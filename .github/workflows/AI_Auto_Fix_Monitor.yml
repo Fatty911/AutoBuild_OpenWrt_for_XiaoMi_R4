@@ -194,60 +194,97 @@ jobs:
             TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
           fi
           
-          # ── 生成 opencode.json（使用 pick_best_model 返回的 provider/model 格式）──
-          python custom_scripts/pick_best_model.py --opencode-config > opencode.json
-          echo "生成的 opencode.json:"
-          cat opencode.json
+          # ── 获取可用的所有提供商及模型 ──
+          python custom_scripts/pick_best_model.py --all-models > models_to_try.txt
+          echo "将要尝试的模型列表:"
+          cat models_to_try.txt
           
           cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
           
-          # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
+          # ── 循环尝试每个 Provider 的模型，遇到兼容问题（如参数错误）则继续下一个 ──
           FIX_SUCCEEDED=false
-          if grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
-            echo "分析 last_error.log 中的 DTS/phandle 报错信息。这类报错通常是因为工作流的 transplant 步骤复制了 DTS 文件但没有复制配套的 dtsi 文件。请检查 transplant 步骤是否需要同时复制 mt7621_xiaomi_nand_128m.dtsi 等配套文件。修复方式：修改工作流的 transplant 步骤（添加 cp dtsi 的命令）。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
+          while read -r FULL_MODEL; do
+            [ -z "$FULL_MODEL" ] && continue
             
-            echo "尝试 oh-my-opencode..."
-            oh-my-opencode run --model "$BEST_MODEL" "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || true
-            if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
-              echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback"
-            else
-              FIX_SUCCEEDED=true
-            fi
+            PROVIDER=$(echo "$FULL_MODEL" | cut -d '/' -f 1)
+            MODEL_NAME=$(echo "$FULL_MODEL" | cut -d '/' -f 2-)
             
-            if [ "$FIX_SUCCEEDED" = "false" ]; then
-              echo "尝试 opencode run..."
-              opencode run --model "$BEST_MODEL" "分析 last_error.log 的 DTS/phandle 报错。检查工作流 transplant 步骤是否缺少复制 dtsi 文件。修改工作流添加必要的 cp 命令。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
+            echo "=========================================================="
+            echo "🔥 当前尝试使用提供商/模型: $FULL_MODEL"
+            echo "=========================================================="
+            
+            # 生成本次尝试所用的 opencode.json (基础配置)
+            python custom_scripts/pick_best_model.py --opencode-config-for "$PROVIDER" "$MODEL_NAME" > opencode.json
+            
+            # 生成 oh-my-opencode.json (高级动态角色分配，如 DMXAPI 专属优化)
+            mkdir -p ~/.config/opencode
+            python custom_scripts/pick_best_model.py --omo-config-for "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-opencode.json
+            
+            # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
+            if grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
+              echo "分析 last_error.log 中的 DTS/phandle 报错信息。这类报错通常是因为工作流的 transplant 步骤复制了 DTS 文件但没有复制配套的 dtsi 文件。请检查 transplant 步骤是否需要同时复制 mt7621_xiaomi_nand_128m.dtsi 等配套文件。修复方式：修改工作流的 transplant 步骤（添加 cp dtsi 的命令）。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
+              
+              echo "尝试 oh-my-opencode..."
+              oh-my-opencode run --model "$FULL_MODEL" "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || true
               if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
-                echo "::error::oh-my-opencode 和 opencode 均失败，DTS/phandle 修复未成功"
+                echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
               else
                 FIX_SUCCEEDED=true
               fi
-            fi
-            rm -f prompt.txt
-          else
-            echo "尝试 oh-my-opencode..."
-            oh-my-opencode run --model "$BEST_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" 2>&1 | tee opencode_output.log || true
-            if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
-              echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback"
+              
+              if [ "$FIX_SUCCEEDED" = "false" ]; then
+                echo "尝试 opencode run..."
+                opencode run --model "$FULL_MODEL" "分析 last_error.log 的 DTS/phandle 报错。检查工作流 transplant 步骤是否缺少复制 dtsi 文件。修改工作流添加必要的 cp 命令。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
+                if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
+                  echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
+                else
+                  FIX_SUCCEEDED=true
+                fi
+              fi
+              rm -f prompt.txt
             else
-              FIX_SUCCEEDED=true
-            fi
-            
-            if [ "$FIX_SUCCEEDED" = "false" ]; then
-              echo "尝试 opencode run..."
-              opencode run --model "$BEST_MODEL" "分析 last_error.log 报错。搜索源码找到根本原因并修复。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
+              echo "尝试 oh-my-opencode..."
+              oh-my-opencode run --model "$FULL_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" 2>&1 | tee opencode_output.log || true
               if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
-                echo "::error::oh-my-opencode 和 opencode 均失败，修复未成功"
+                echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
               else
                 FIX_SUCCEEDED=true
               fi
+              
+              if [ "$FIX_SUCCEEDED" = "false" ]; then
+                echo "尝试 opencode run..."
+                opencode run --model "$FULL_MODEL" "分析 last_error.log 报错。搜索源码找到根本原因并修复。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
+                if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
+                  echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
+                else
+                  FIX_SUCCEEDED=true
+                fi
+              fi
             fi
-          fi
-          rm -f opencode_output.log
+            
+            rm -f opencode_output.log
+            
+            # 如果某次循环成功产生了代码修改，立刻退出循环并提交
+            if [ "$FIX_SUCCEEDED" = "true" ]; then
+              # 判断是否真正修改了代码（除了自动生成的缓存文件）
+              git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+              git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+              git add .
+              git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+              
+              if ! git diff --cached --quiet; then
+                echo "✅ 成功利用 $FULL_MODEL 完成修复，退出模型循环。"
+                break
+              else
+                echo "⚠️ 模型 $FULL_MODEL 运行结束，但没有产生有效的代码修改，将继续尝试更强模型..."
+                FIX_SUCCEEDED=false
+              fi
+            fi
+          done < models_to_try.txt
           
-          # ── 仅在 AI 修复成功后才提交和推送 ──
+          # ── 检查是否最终修复成功 ──
           if [ "$FIX_SUCCEEDED" != "true" ]; then
-            echo "::error::Track 3 AI 修复失败，不提交任何更改"
+            echo "::error::所有模型尝试完毕，Track 3 AI 修复彻底失败，不提交任何更改"
             exit 1
           fi
           
