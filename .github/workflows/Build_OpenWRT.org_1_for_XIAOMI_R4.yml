@@ -236,6 +236,48 @@ jobs:
           cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
           
+      - name: Base-files fix
+        run: |
+          cd openwrt
+          echo "=== 修复 base-files 版本 (APK 兼容性) ==="
+          # 1) 强制修改 PKG_RELEASE，确保它是纯数字或合理格式，去除依赖 $(COMMITCOUNT)
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || true
+
+          # 2) 不再强行替换 VERSION:=，这会破坏解析导致 base-files=
+          # 改为仅替换生成 base-files.version 文件的内容
+          sed -i '/echo.*>.*base-files.version/s/echo .*/echo 1-r1/' package/base-files/Makefile || true
+
+          # 3) 清理旧缓存
+          find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
+          rm -rf build_dir/target-*/base-files/ tmp/.base-files_* 2>/dev/null || true
+          echo "base-files APK 版本格式修复完成"
+
+      - name: Ensure python-installer is built first
+        run: |
+          cd openwrt
+          echo "=== 确保 python-installer 在 python-packaging 之前编译 ==="
+          # python-packaging host-compile 需要 python-installer 模块
+          # 显式先编译 python-installer
+          if [ -d "feeds/packages/lang/python/python-installer" ]; then
+            echo "编译 python-installer host package..."
+            make package/feeds/packages/python-installer/host-compile V=s || \
+              make package/feeds/packages/python-installer/compile V=s || \
+              echo "python-installer 编译失败，但继续尝试后续编译"
+          else
+            echo "feeds/packages/lang/python/python-installer 目录不存在，跳过"
+          fi
+          echo "python-installer 优先编译步骤完成"
+
+      - name: Compile packages only
+        run: |
+          cd openwrt
+          echo "=== 开始编译 packages 部分 ==="
+          make package/compile V=s > packages.log 2>&1 || {
+            echo "首次编译 packages 失败，尝试运行修复脚本..."
+            python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
+          }
+          echo "=== packages 编译步骤结束 ==="
+          
      
       
       - name: 归档前清理
