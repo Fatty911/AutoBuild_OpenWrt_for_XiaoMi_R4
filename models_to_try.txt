@@ -1,9 +1,9 @@
 dmxapi/KAT-Coder-ProV2-free
-dmxapi/doubao-seed-2.0-pro-free
 dmxapi/mimo-v2-pro-free
-dmxapi/qwen3.5-plus-free
-dmxapi/DMXAPI-CodeX-Free
-dmxapi/K2.6-code-preview-free
+dmxapi/doubao-seed-2.0-pro-free
 dmxapi/MiniMax-M2.7-free
+dmxapi/qwen3.5-plus-free
 dmxapi/glm-5.1-free
+dmxapi/K2.6-code-preview-free
+dmxapi/DMXAPI-CodeX-Free
 atomgit/zai-org/GLM-5
