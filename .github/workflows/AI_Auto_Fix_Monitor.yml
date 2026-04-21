@@ -1,5 +1,5 @@
 name: AI Auto Fix Monitor
-run-name: "AI Fix for ${{ github.event.workflow_run.name }} (#${{ github.event.workflow_run.run_number }})"
+run-name: "AI Fix for ${{ github.event.workflow_run.name || inputs.failed_workflow_name }} (#${{ github.event.workflow_run.run_number || inputs.failed_run_id }})"
 
 on:
   workflow_run:
@@ -16,11 +16,21 @@ on:
     ]
     types:
       - completed
+  workflow_dispatch:
+    inputs:
+      failed_run_id:
+        description: 'Failed Run ID'
+        required: true
+        type: string
+      failed_workflow_name:
+        description: 'Failed Workflow Name'
+        required: true
+        type: string
 
 jobs:
   ai_fix:
-    name: "AI Fix → ${{ github.event.workflow_run.name }}"
-    if: ${{ github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.name != 'AI Auto Fix Monitor' }}
+    name: "AI Fix → ${{ github.event.workflow_run.name || inputs.failed_workflow_name }}"
+    if: ${{ (github.event_name == 'workflow_dispatch') || (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.name != 'AI Auto Fix Monitor') }}
     runs-on: ubuntu-22.04
     permissions:
       contents: write
@@ -32,10 +42,12 @@ jobs:
       - name: Download error log artifact
         env:
           GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name || inputs.failed_workflow_name }}
         run: |
-          echo "检测到工作流 [${{ github.event.workflow_run.name }}] 运行失败！"
-          echo "正在下载错误日志 (Run ID: ${{ github.event.workflow_run.id }})..."
-          gh run download ${{ github.event.workflow_run.id }} -n error-log || echo "未找到 error-log 产物，可能错误过早发生或未被提取。"
+          echo "检测到工作流 [$WORKFLOW_NAME] 运行失败！"
+          echo "正在下载错误日志 (Run ID: $RUN_ID)..."
+          gh run download $RUN_ID -n error-log || echo "未找到 error-log 产物，可能错误过早发生或未被提取。"
           ls -la
 
       - name: Setup Node.js
@@ -59,13 +71,13 @@ jobs:
         with:
           name: error-log
           github-token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-          run-id: ${{ github.event.workflow_run.id }}
+          run-id: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
 
       - name: Run AI Auto Fix (Track 2)
         id: track2
         continue-on-error: true
         env:
-          FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
@@ -96,7 +108,7 @@ jobs:
           QINIU_MODEL_LIST: ${{ secrets.QINIU_MODEL_LIST }}
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-          WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path }}
+          WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}
         run: |
           if [ -f "last_error.log" ]; then
             echo "=== 找到 last_error.log ==="
@@ -176,7 +188,7 @@ jobs:
           
           if [ ! -f "last_error.log" ]; then
             echo "Track 3: 未找到 last_error.log，尝试使用 gh CLI 提取原始日志..."
-            gh run download ${{ github.event.workflow_run.id }} -n error-log || echo "日志下载彻底失败，将由大模型自行探索"
+            gh run download ${{ github.event.workflow_run.id || inputs.failed_run_id }} -n error-log || echo "日志下载彻底失败，将由大模型自行探索"
           fi
 
           BEST_MODEL=$(python custom_scripts/pick_best_model.py)
@@ -190,7 +202,7 @@ jobs:
           
           # ── 提取 transplant 步骤上下文（用于 DTS/phandle 报错）──
           TRANSPLANT_CONTEXT=""
-          WORKFLOW_YML="${{ github.workspace }}/${{ github.event.workflow_run.path }}"
+          WORKFLOW_YML="${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}"
           if [ -f "$WORKFLOW_YML" ]; then
             TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
           fi
@@ -333,8 +345,8 @@ jobs:
           echo "Track 3 修复成功并已推送"
           
           # ── 重触发原来失败的工作流 ──
-          FAILED_WORKFLOW="${{ github.event.workflow_run.name }}"
-          FAILED_RUN_ID="${{ github.event.workflow_run.id }}"
+          FAILED_WORKFLOW="${{ github.event.workflow_run.name || inputs.failed_workflow_name }}"
+          FAILED_RUN_ID="${{ github.event.workflow_run.id || inputs.failed_run_id }}"
           echo "重触发工作流: $FAILED_WORKFLOW (Run ID: $FAILED_RUN_ID)"
           gh run rerun $FAILED_RUN_ID || echo "重触发失败，可手动触发"
 
