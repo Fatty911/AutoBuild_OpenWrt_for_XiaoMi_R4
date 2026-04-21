@@ -200,11 +200,10 @@ jobs:
           echo "=== 修复 base-files 版本 (APK 兼容性) ==="
 
           # 1) 强制修改 PKG_RELEASE，确保它是纯数字或合理格式，去除依赖 $(COMMITCOUNT)
-          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1-r1/' package/base-files/Makefile
 
-          # 2) 不再强行替换 VERSION:=，这会破坏解析导致 base-files=
-          # 改为仅替换生成 base-files.version 文件的内容
-          sed -i '/echo.*>.*base-files.version/s/echo .*/echo 1-r1/' package/base-files/Makefile
+          # 2) 替换 VERSION:=，Alpine APK 不支持 ~ 号，改为纯数字
+          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=1-r1/' package/base-files/Makefile
 
           # 3) 清理旧缓存
           find staging_dir -name 'base-files.version' -delete 2>/dev/null || true

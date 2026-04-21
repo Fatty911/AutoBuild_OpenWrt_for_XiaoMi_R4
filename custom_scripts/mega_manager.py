@@ -23,6 +23,24 @@ def get_mega_client(username, password):
     try:
         from mega import Mega  # type: ignore
         from mega.errors import RequestError  # type: ignore
+        import mega.mega
+        
+        # 热修复 mega.py 1.0.8 中的 UnboundLocalError bug (下载小文件时触发)
+        try:
+            mega_file = mega.mega.__file__
+            with open(mega_file, "r") as f:
+                content = f.read()
+            if "for i in range(0, len(chunk) - 16, 16):" in content and "i = 0\n" not in content:
+                content = content.replace(
+                    "for i in range(0, len(chunk) - 16, 16):", 
+                    "i = 0\n                for i in range(0, len(chunk) - 16, 16):"
+                )
+                with open(mega_file, "w") as f:
+                    f.write(content)
+                print(f"已动态修补 mega.py 的下载 bug: {mega_file}")
+        except Exception as e:
+            print(f"修补 mega.py 失败: {e}")
+            
     except ImportError:
         print("错误: mega.py 未安装，请先运行 pip install mega.py")
         sys.exit(1)

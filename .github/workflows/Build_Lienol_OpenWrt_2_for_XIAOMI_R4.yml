@@ -274,7 +274,6 @@ jobs:
         echo "Performing manual porting for Xiaomi Mi Router 4..."
         git clone https://github.com/coolsnowwolf/lede lede-source
         cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
-        cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_nand_128m.dtsi target/linux/ramips/dts/ 2>/dev/null || true
         cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ 2>/dev/null || true
         rm -rf lede-source
 
