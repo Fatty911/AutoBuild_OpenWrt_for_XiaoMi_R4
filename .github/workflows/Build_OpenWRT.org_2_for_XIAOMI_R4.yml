@@ -274,45 +274,8 @@ jobs:
           tag_name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
-      - name: Download from MEGA
-        env:
-          MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
-          MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
-        run: |
-          python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir
-      
-      - name: 解压文件
-        run: |
-          echo "解压前磁盘空间："
-          df -hT
-          cd /workdir
-          echo "=== 检查 tar 文件 ==="
-          ls -lh ${{ env.SOURCE }}.tar.gz || { echo "ERROR: tar 文件不存在!"; exit 1; }
-          TARBALL_SIZE=$(stat -c%s "${{ env.SOURCE }}.tar.gz")
-          echo "tar.gz 大小: $TARBALL_SIZE bytes ($(numfmt --to=iec $TARBALL_SIZE))"
-          if [ "$TARBALL_SIZE" -lt 1000000 ]; then
-            echo "ERROR: tar.gz 文件小于 1MB ($TARBALL_SIZE bytes)，MEGA 下载的文件损坏或不完整"
-            exit 1
-          fi
-          echo "=== 开始解压（使用 pigz 并行解压）==="
-          pigz -dc ${{ env.SOURCE }}.tar.gz | tar -xf -
-          echo "=== 删除 tar 文件释放空间 ==="
-          rm -f ${{ env.SOURCE }}.tar.gz
-          echo "=== 检查解压结果 ==="
-          ls -la
-          ls -la openwrt/ 2>/dev/null && echo "openwrt 目录存在" || {
-            echo "ERROR: openwrt 目录不存在!"
-            exit 1
-          }
-          echo "=== 清理不需要的文件 ==="
-          rm -rf openwrt/build_dir/toolchain-* openwrt/staging_dir/toolchain-* openwrt/staging_dir/host openwrt/staging_dir/hostpkg openwrt/build_dir/host openwrt/build_dir/hostpkg-* openwrt/.git 2>/dev/null || true
-          # find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
-          # find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
-          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-          echo "清理后磁盘空间："
-          df -hT
-
-      - name: Check for .bin file after initial compilation
+      # 以下步骤仅在首次构建失败时执行，复用已解压的 openwrt 目录
+      - name: Check for .bin file after initial compilation (retry)
         id: check_bin_initial2
         run: |
           cd /workdir

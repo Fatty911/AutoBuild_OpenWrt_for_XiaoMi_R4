@@ -281,23 +281,36 @@ jobs:
           cd openwrt
           echo "清理前磁盘空间："
           df -hT
+          
+          echo "=== 优化归档：保留可复用产物 ==="
+          
           # 删除编译日志
           rm -f *.log
-          # 删除 dl 目录（源码包，第2步不需要）
-          rm -rf dl
-          # 删除 host 工具链（但保留 staging_dir/host 因为 Org2 的 package/compile 需要）
-          # rm -rf staging_dir/host
-          # rm -rf staging_dir/hostpkg
+          
+          # 【保留】dl 目录 - Org2 可以复用源码包，避免重新下载
+          # rm -rf dl  # 不再删除，节省下游 5-10 分钟
+          
+          # 【保留】staging_dir/host - Org2 需要用于生成固件
+          # rm -rf staging_dir/host  # 不删除
+          # rm -rf staging_dir/hostpkg  # 不删除
+          
+          # 【删除】build_dir/host - 编译中间文件，可从 staging_dir/host 重新生成
           rm -rf build_dir/host
           rm -rf build_dir/hostpkg-*
-          # 删除 target 编译中间文件（.o .a）会导致 Phase 2 重新编译所有包，非常耗时
-          # 前移组件缓存：在此保留所有的 .o 和 .a 文件
+          
+          # 【删除】toolchain 编译中间文件 - staging_dir/toolchain 已足够
+          rm -rf build_dir/toolchain-*
+          
+          # 【保留】target 编译产物 - .o .a 文件用于增量编译
           # find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
           # find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
-          # 删除 tmp 目录
+          
+          # 【删除】临时文件
           rm -rf tmp
-          # 删除 .git
           rm -rf .git
+          
+          echo "归档内容预览："
+          du -sh dl staging_dir build_dir 2>/dev/null || true
           echo "清理后磁盘空间："
           df -hT
 

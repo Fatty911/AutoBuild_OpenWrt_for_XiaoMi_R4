@@ -284,13 +284,13 @@ jobs:
           rm -rf staging_dir/toolchain-*
           rm -rf staging_dir/host
           rm -rf staging_dir/hostpkg
-          rm -rf dl
+          # 保留 dl/ 目录以便下游工作流复用下载的源码包
+          # rm -rf dl
           rm -rf tmp
           rm -rf .ccache
           rm -f *.log
-          # 保留 .o 和 .a 文件以加速后续构建
-          # find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
-          # find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
+          echo "=== 保留 dl/ 目录以供下游复用 ==="
+          du -sh dl/ 2>/dev/null || echo "dl/ 目录不存在"
           df -hT
       
       
