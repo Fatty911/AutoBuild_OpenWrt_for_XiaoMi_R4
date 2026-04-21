@@ -122,8 +122,8 @@ jobs:
           rm -rf openwrt/staging_dir/toolchain-*
           rm -rf openwrt/staging_dir/host
           rm -rf openwrt/staging_dir/hostpkg
-          find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
-          find openwrt/build_dir -name "*.a" -delete 2>/dev/null || true
+          # find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
+          # find openwrt/build_dir -name "*.a" -delete 2>/dev/null || true
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
           echo "清理后磁盘空间："
           df -hT

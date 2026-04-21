@@ -236,6 +236,14 @@ jobs:
           docker rmi $(docker images -q) 2>/dev/null || true
           df -hT
 
+      - name: Base-files fix
+        run: |
+          cd openwrt
+          echo "=== 修复 base-files 版本 (APK 兼容性) ==="
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1-r1/' package/base-files/Makefile
+          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=1-r1/' package/base-files/Makefile
+          find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
+
       - name: Compile 1 (tools)
         id: compile_1
         run: |
@@ -280,8 +288,9 @@ jobs:
           rm -rf tmp
           rm -rf .ccache
           rm -f *.log
-          find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
-          find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
+          # 保留 .o 和 .a 文件以加速后续构建
+          # find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
+          # find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
           df -hT
       
       

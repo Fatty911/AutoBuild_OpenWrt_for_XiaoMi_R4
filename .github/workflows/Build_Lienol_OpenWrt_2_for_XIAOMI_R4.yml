@@ -136,8 +136,8 @@ jobs:
         rm -rf openwrt/staging_dir/toolchain-*
         rm -rf openwrt/staging_dir/host
         rm -rf openwrt/staging_dir/hostpkg
-        find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
-        find openwrt/build_dir -name "*.a" -delete 2>/dev/null || true
+        # find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
+        # find openwrt/build_dir -name "*.a" -delete 2>/dev/null || true
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         
         # 验证符号链接和 Makefile
@@ -160,55 +160,6 @@ jobs:
         cd openwrt
         make defconfig
         echo "=== defconfig 完成 ==="
-
-    - name: Compile Remaining packages
-      id: compile_remaining
-      # if: steps.main_packages.conclusion == 'success'
-      run: |
-        # 确保 openwrt 目录存在且有 Makefile
-        if [ ! -d "openwrt" ]; then
-          echo "::error::openwrt 目录不存在"
-          ls -la
-          exit 1
-        fi
-        if [ ! -f "openwrt/Makefile" ]; then
-          echo "::error::openwrt/Makefile 不存在"
-          ls -la openwrt/
-          exit 1
-        fi
-        cd openwrt
-        # set -x
-        LOG_FILE="packages.log"
-        echo "=== 检查并尝试编译 packages 部分 ==="
-        if make -n package/compile V=s >/dev/null 2>&1; then
-          {
-            make package/compile V=s > packages.log 2>&1 || {
-              echo "首次编译 packages 失败，尝试运行修复脚本..."
-              python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
-            }
-          } || true
-          echo "=== packages 编译步骤结束 ==="
-          # 提取最后一个失败组件的日志
-          python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
-          if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
-            echo "PACKAGES_BUILD_FAILED=true" >> $GITHUB_ENV
-            echo "检测到 packages 编译失败，已记录错误日志"
-          fi
-        else
-          echo "当前源码不支持目标 package/compile，跳过该步骤，交给后续整包固件编译。"
-        fi
-
-    - name: Detect packages build failure
-      id: detect_packages_failure
-      run: |
-        if [ "$PACKAGES_BUILD_FAILED" = "true" ]; then
-          echo "检测到 packages 编译失败，准备提取错误信息..."
-          cd openwrt
-          python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
-          echo "failure_detected=true" >> $GITHUB_OUTPUT
-        else
-          echo "failure_detected=false" >> $GITHUB_OUTPUT
-        fi
 
     - name: Try compiling the firmware
       id: compile_attempt
@@ -280,11 +231,6 @@ jobs:
         echo "修复 DTS nvmem-layout 兼容性..."
         python3 $GITHUB_WORKSPACE/custom_scripts/fix_dts_nvmem_layout.py .
 
-        echo "=== Lienol2: 修复 base-files 版本 ==="
-        if [ -f "package/base-files/Makefile" ]; then
-          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || echo 'PKG_RELEASE:=1' >> package/base-files/Makefile
-          echo "base-files PKG_RELEASE 已设为 1"
-        fi
         echo "isFixed=true" >> $GITHUB_OUTPUT
         
     - name: Compile the firmware with fixes

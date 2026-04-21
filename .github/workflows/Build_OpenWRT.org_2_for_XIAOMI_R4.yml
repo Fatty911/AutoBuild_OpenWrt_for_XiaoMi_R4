@@ -124,8 +124,8 @@ jobs:
           }
           echo "=== 清理不需要的文件（但保留 host 工具链） ==="
           rm -rf openwrt/build_dir/toolchain-* openwrt/staging_dir/toolchain-* openwrt/build_dir/host openwrt/build_dir/hostpkg-* openwrt/.git 2>/dev/null || true
-          find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
-          find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
+          # find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
+          # find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
           echo "清理后磁盘空间："
           df -hT
@@ -191,73 +191,12 @@ jobs:
           echo "isFixed=true" >> $GITHUB_OUTPUT
           echo "::notice::Transplant completed successfully"
 
-      - name: Defconfig and base-files fix
+      - name: Defconfig
         run: |
           cd openwrt
           echo "=== Running defconfig ==="
           make defconfig
-
-          echo "=== 修复 base-files 版本 (APK 兼容性) ==="
-
-          # 1) 强制修改 PKG_RELEASE，确保它是纯数字或合理格式，去除依赖 $(COMMITCOUNT)
-          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1-r1/' package/base-files/Makefile
-
-          # 2) 替换 VERSION:=，Alpine APK 不支持 ~ 号，改为纯数字
-          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=1-r1/' package/base-files/Makefile
-
-          # 3) 清理旧缓存
-          find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
-          rm -rf build_dir/target-*/base-files/ tmp/.base-files_* 2>/dev/null || true
-          echo "base-files APK 版本格式修复完成 (仅修复 PKG_RELEASE)"
-
           echo "=== Defconfig completed ==="
-
-      - name: Ensure python-installer is built first
-        run: |
-          cd openwrt
-          echo "=== 确保 python-installer 在 python-packaging 之前编译 ==="
-          # python-packaging host-compile 需要 python-installer 模块
-          # 显式先编译 python-installer
-          if [ -d "feeds/packages/lang/python/python-installer" ]; then
-            echo "编译 python-installer host package..."
-            make package/feeds/packages/python-installer/host-compile V=s || \
-              make package/feeds/packages/python-installer/compile V=s || \
-              echo "python-installer 编译失败，但继续尝试后续编译"
-          else
-            echo "feeds/packages/lang/python/python-installer 目录不存在，跳过"
-          fi
-          echo "python-installer 优先编译步骤完成"
-
-      - name: Compile packages only
-        run: |
-          cd openwrt
-          echo "=== 开始编译 packages 部分 ==="
-          {
-            make package/compile V=s > packages.log 2>&1 || {
-              echo "首次编译 packages 失败，尝试运行修复脚本..."
-              python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
-            }
-          } || true
-          echo "=== packages 编译步骤结束 ==="
-          
-          # 提取最后一个失败组件的日志
-          python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
-          if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
-            echo "BUILD_FAILED=true" >> $GITHUB_ENV
-            echo "检测到编译失败，已记录错误日志"
-          fi
-
-      - name: Detect packages build failure
-        id: detect_packages_failure
-        run: |
-          if [ "$BUILD_FAILED" = "true" ]; then
-            echo "检测到 packages 编译失败，准备提取错误信息..."
-            cd openwrt
-            python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
-            echo "failure_detected=true" >> $GITHUB_OUTPUT
-          else
-            echo "failure_detected=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Compile firmware
         run: |
@@ -367,8 +306,8 @@ jobs:
           }
           echo "=== 清理不需要的文件 ==="
           rm -rf openwrt/build_dir/toolchain-* openwrt/staging_dir/toolchain-* openwrt/staging_dir/host openwrt/staging_dir/hostpkg openwrt/build_dir/host openwrt/build_dir/hostpkg-* openwrt/.git 2>/dev/null || true
-          find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
-          find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
+          # find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
+          # find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
           echo "清理后磁盘空间："
           df -hT

@@ -201,8 +201,9 @@ jobs:
         # 修复 base-files 版本（Lienol1 专用）
         echo "=== Lienol1: 修复 base-files 版本 ==="
         if [ -f "package/base-files/Makefile" ]; then
-          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || echo 'PKG_RELEASE:=1' >> package/base-files/Makefile
-          echo "base-files PKG_RELEASE 已设为 1"
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1-r1/' package/base-files/Makefile || true
+          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=1-r1/' package/base-files/Makefile || true
+          echo "base-files PKG_RELEASE 已设为 1-r1"
         fi
         # 逐行读取 feeds.conf.default 并编译
         while IFS= read -r line; do
@@ -309,8 +310,9 @@ jobs:
         rm -rf dl tmp .git
         rm -rf build_dir/host build_dir/hostpkg-*
         rm -rf staging_dir/host staging_dir/hostpkg
-        find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
-        find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
+        # 保留 .o 和 .a 文件以加速后续构建
+        # find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
+        # find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
         echo "归档前磁盘空间："
         df -hT
         cd /workdir
