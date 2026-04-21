@@ -327,13 +327,13 @@ jobs:
           rm -f last_error.log prompt.txt opencode.json 2>/dev/null || true
           
           # 排除自动生成的缓存文件
-          git restore --staged .zen_free_models_cache.json .leaderboard_cache.json 2>/dev/null || true
-          git checkout -- .zen_free_models_cache.json .leaderboard_cache.json 2>/dev/null || true
+          git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+          git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
           
           git add .
           
           # 再次确保缓存文件不被提交
-          git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json 2>/dev/null || true
+          git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
           
           if git diff --cached --quiet; then
             echo "::error::AI 运行完成但未产生任何代码更改，修复可能无效"
@@ -341,6 +341,10 @@ jobs:
           fi
           git commit -m "Auto-fix build error with OpenCode Deep Repair"
           git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git
+          
+          # 拉取最新的提交以避免冲突 (rebase 模式)
+          git pull --rebase origin main || true
+          
           git push origin HEAD:main || { echo "::error::Push failed"; exit 1; }
           echo "Track 3 修复成功并已推送"
           
