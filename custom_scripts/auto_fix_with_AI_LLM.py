@@ -1079,6 +1079,8 @@ def main():
             except Exception as e:
                 print(f"[ZEN] 获取免费模型或比对排行榜失败: {e}")
 
+    # 模型配置 - 按性价比重新排序
+    # 昂贵模型（用户要求暂时不使用）
     claude_models = split_models(
         "CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4.6,anthropic/claude-opus-4.6"
     )
@@ -1088,93 +1090,30 @@ def main():
     gpt_models = split_models(
         "OPENAI_MODEL_LIST", "openai/gpt-5.4,openai/gpt-5.3,openai/gpt-5.2"
     )
-    grok_models = split_models("GROK_MODEL_LIST", "x-ai/grok-4.2,x-ai/grok-4.1")
+    # Grok-4.2 ($3.00/1M) - 用户要求仅用于压缩
+    grok_models = split_models("GROK_MODEL_LIST", "x-ai/grok-4.2")
+    # GLM-5/5.1 - 主要决策模型
     glm_models_or = split_models("GLM_MODEL_LIST", "z-ai/glm-5-turbo,z-ai/glm-5")
     glm_models_cn = split_models("GLM_MODEL_LIST", "glm-5-turbo,glm-5")
-    # minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7") # 注释掉 MiniMax，防幻觉
+    # MiniMax-M2.7 ($0.53/1M) - 意图理解能力差，仅用于简单任务
+    minimax_models = split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7")
 
     providers = []
 
-    # 1) OPENCODE ZEN (动态获取符合前 15 名的 free 模型)
-    if zen_api_key and zen_valid_free_models:
+    # 1) 智谱 GLM-5.1 (高性价比优先) - $2.15/1M, 智能指数51, 主要决策模型
+    zhipu_api_key = os.getenv("ZHIPU_API_KEY", "").strip()
+    if zhipu_api_key:
+        zhipu_models = split_models("ZHIPU_MODEL_LIST", "GLM-5.1")
         providers.append(
             {
-                "name": "OPENCODE-ZEN",
-                "proxy_url": "https://opencode.ai/zen",
-                "api_key": zen_api_key,
-                "models": zen_valid_free_models,
+                "name": "ZHIPU-GLM",
+                "proxy_url": "https://open.bigmodel.cn/api/paas/v4/",
+                "api_key": zhipu_api_key,
+                "models": zhipu_models,
             }
         )
 
-    # 2) Claude Sonnet (优先用 OpenRouter)
-    if openrouter_api_key:
-        providers.append(
-            {
-                "name": "CLAUDE",
-                "proxy_url": "https://openrouter.ai/api/v1",
-                "api_key": openrouter_api_key,
-                "models": claude_models,
-            }
-        )
-
-    # 3) Gemini
-    if openrouter_api_key:
-        providers.append(
-            {
-                "name": "GEMINI",
-                "proxy_url": "https://openrouter.ai/api/v1",
-                "api_key": openrouter_api_key,
-                "models": gemini_models,
-            }
-        )
-
-    # 4) GPT（优先 OpenAI，无 key 时用 OpenRouter 兜底）
-    if openai_api_key:
-        providers.append(
-            {
-                "name": "OPENAI",
-                "proxy_url": "https://api.openai.com/v1",
-                "api_key": openai_api_key,
-                "models": gpt_models,
-            }
-        )
-    elif openrouter_api_key:
-        providers.append(
-            {
-                "name": "GPT-OR",
-                "proxy_url": "https://openrouter.ai/api/v1",
-                "api_key": openrouter_api_key,
-                "models": gpt_models,
-            }
-        )
-
-    # 5) Grok
-    xai_api_key = os.getenv("XAI_API_KEY", "").strip()
-    if xai_api_key:
-        providers.append(
-            {
-                "name": "GROK",
-                "proxy_url": "https://api.x.ai/v1",
-                "api_key": xai_api_key,
-                "models": grok_models,
-            }
-        )
-
-    # 6) Qwen3.6-Plus Free via OpenRouter (排行榜前十 + 免费)
-    if openrouter_api_key:
-        qwen_free_models = split_models(
-            "OPENROUTER_QWEN_FREE_MODEL_LIST", "qwen/qwen3.6-plus:free"
-        )
-        providers.append(
-            {
-                "name": "QWEN-FREE-OR",
-                "proxy_url": "https://openrouter.ai/api/v1",
-                "api_key": openrouter_api_key,
-                "models": qwen_free_models,
-            }
-        )
-
-    # 7) 阿里云百炼 (Qwen3.6-Plus 等国产模型)
+    # 2) 阿里云百炼 Qwen3.6-Plus (备用高性价比) - $1.13/1M, 智能指数50
     bailian_api_key = os.getenv("BAILIAN_API_KEY", "").strip()
     if bailian_api_key:
         bailian_models = split_models(
@@ -1189,61 +1128,32 @@ def main():
             }
         )
 
-    # 8) Moonshot (Kimi)
-    moonshot_api_key = os.getenv("MOONSHOT_API_KEY", "").strip()
-    if moonshot_api_key:
-        moonshot_models = split_models("MOONSHOT_MODEL_LIST", "moonshot-v1-auto")
+    # 3) OPENCODE ZEN (免费模型)
+    if zen_api_key and zen_valid_free_models:
         providers.append(
             {
-                "name": "MOONSHOT",
-                "proxy_url": "https://api.moonshot.cn/v1",
-                "api_key": moonshot_api_key,
-                "models": moonshot_models,
+                "name": "OPENCODE-ZEN",
+                "proxy_url": "https://opencode.ai/zen",
+                "api_key": zen_api_key,
+                "models": zen_valid_free_models,
             }
         )
 
-    # 8.5) NVIDIA NIM (Kimi K2.5 免费)
-    nvidia_nim_api_key = os.getenv("NVIDIA_NIM_API_KEY", "").strip()
-    if nvidia_nim_api_key:
-        nim_models = split_models("NVIDIA_NIM_MODEL_LIST", "moonshotai/kimi-k2.5")
-        providers.append(
-            {
-                "name": "NVIDIA-NIM",
-                "proxy_url": "https://integrate.api.nvidia.com/v1",
-                "api_key": nvidia_nim_api_key,
-                "models": nim_models,
-            }
-        )
-
-    # 8.6) 七牛云 (Nemotron 3 Super 免费)
-    qiniu_api_key = os.getenv("QINIU_API_KEY", "").strip()
-    if qiniu_api_key:
-        qiniu_models = split_models(
-            "QINIU_MODEL_LIST", "nvidia/nemotron-3-super-120b-a12b-free"
+    # 4) Qwen3.6-Plus Free via OpenRouter (免费)
+    if openrouter_api_key:
+        qwen_free_models = split_models(
+            "OPENROUTER_QWEN_FREE_MODEL_LIST", "qwen/qwen3.6-plus:free"
         )
         providers.append(
             {
-                "name": "QINIU",
-                "proxy_url": "https://api.qnaigc.com/v1",
-                "api_key": qiniu_api_key,
-                "models": qiniu_models,
+                "name": "QWEN-FREE-OR",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": qwen_free_models,
             }
         )
 
-    # 9) DeepSeek
-    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    if deepseek_api_key:
-        deepseek_models = split_models("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
-        providers.append(
-            {
-                "name": "DEEPSEEK",
-                "proxy_url": "https://api.deepseek.com/v1",
-                "api_key": deepseek_api_key,
-                "models": deepseek_models,
-            }
-        )
-
-    # 10) GLM（优先 OpenRouter；其次 atomgit/modelscope/siliconflow）
+    # 5) GLM via OpenRouter & 其他免费源
     if openrouter_api_key:
         providers.append(
             {
@@ -1268,6 +1178,132 @@ def main():
                     "models": glm_models_cn,
                 }
             )
+
+    # 6) NVIDIA NIM (Kimi K2.5 免费)
+    nvidia_nim_api_key = os.getenv("NVIDIA_NIM_API_KEY", "").strip()
+    if nvidia_nim_api_key:
+        nim_models = split_models("NVIDIA_NIM_MODEL_LIST", "moonshotai/kimi-k2.5")
+        providers.append(
+            {
+                "name": "NVIDIA-NIM",
+                "proxy_url": "https://integrate.api.nvidia.com/v1",
+                "api_key": nvidia_nim_api_key,
+                "models": nim_models,
+            }
+        )
+
+    # 7) 七牛云 (Nemotron 3 Super 免费)
+    qiniu_api_key = os.getenv("QINIU_API_KEY", "").strip()
+    if qiniu_api_key:
+        qiniu_models = split_models(
+            "QINIU_MODEL_LIST", "nvidia/nemotron-3-super-120b-a12b-free"
+        )
+        providers.append(
+            {
+                "name": "QINIU",
+                "proxy_url": "https://api.qnaigc.com/v1",
+                "api_key": qiniu_api_key,
+                "models": qiniu_models,
+            }
+        )
+
+    # 8) Moonshot (Kimi)
+    moonshot_api_key = os.getenv("MOONSHOT_API_KEY", "").strip()
+    if moonshot_api_key:
+        moonshot_models = split_models("MOONSHOT_MODEL_LIST", "moonshot-v1-auto")
+        providers.append(
+            {
+                "name": "MOONSHOT",
+                "proxy_url": "https://api.moonshot.cn/v1",
+                "api_key": moonshot_api_key,
+                "models": moonshot_models,
+            }
+        )
+
+    # 9) DeepSeek
+    deepseek_api_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
+    if deepseek_api_key:
+        deepseek_models = split_models("DEEPSEEK_MODEL_LIST", "deepseek-r1,deepseek-v3")
+        providers.append(
+            {
+                "name": "DEEPSEEK",
+                "proxy_url": "https://api.deepseek.com/v1",
+                "api_key": deepseek_api_key,
+                "models": deepseek_models,
+            }
+        )
+
+    # 10) MiniMax-M2.7 ($0.53/1M) - 低成本简单任务，注意：意图理解能力差
+    minimax_api_key = os.getenv("MINIMAX_API_KEY", "").strip()
+    if minimax_api_key:
+        providers.append(
+            {
+                "name": "MINIMAX",
+                "proxy_url": "https://api.minimax.chat",
+                "api_key": minimax_api_key,
+                "models": minimax_models,
+            }
+        )
+
+    # 11) Grok-4.2 ($3.00/1M) - 用户要求仅用于压缩任务，不参与主要决策
+    xai_api_key = os.getenv("XAI_API_KEY", "").strip()
+    if xai_api_key:
+        providers.append(
+            {
+                "name": "GROK",
+                "proxy_url": "https://api.x.ai/v1",
+                "api_key": xai_api_key,
+                "models": grok_models,
+            }
+        )
+
+    # 12) 昂贵的模型 - 用户要求暂时不使用，仅在其他模型都不可用时作为后备
+    # Claude ($10.00/1M), Gemini ($4.50/1M), GPT ($5.63/1M)
+    if openrouter_api_key:
+        providers.append(
+            {
+                "name": "GLM-OR-BACKUP",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": glm_models_or,
+            }
+        )
+        providers.append(
+            {
+                "name": "CLAUDE",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": claude_models,
+            }
+        )
+        providers.append(
+            {
+                "name": "GEMINI",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": gemini_models,
+            }
+        )
+
+    # GPT（OpenAI 或 OpenRouter 兜底）
+    if openai_api_key:
+        providers.append(
+            {
+                "name": "OPENAI",
+                "proxy_url": "https://api.openai.com/v1",
+                "api_key": openai_api_key,
+                "models": gpt_models,
+            }
+        )
+    elif openrouter_api_key:
+        providers.append(
+            {
+                "name": "GPT-OR",
+                "proxy_url": "https://openrouter.ai/api/v1",
+                "api_key": openrouter_api_key,
+                "models": gpt_models,
+            }
+        )
 
     if not providers:
         print(
