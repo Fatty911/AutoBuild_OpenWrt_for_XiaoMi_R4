@@ -25,7 +25,7 @@ on:
       - package/luci-app-autoupdate/**
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  group: lienol1-phase1-${{ github.ref }}-${{ github.run_number % 2 }}
   cancel-in-progress: true
 
 env:
