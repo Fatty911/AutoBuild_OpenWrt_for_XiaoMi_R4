@@ -273,9 +273,23 @@ jobs:
             python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
           }
           echo "=== packages 编译步骤结束 ==="
+
+      - name: Perform manual porting for Xiaomi Mi Router 4
+        id: transplant
+        run: |
+          cd openwrt
+          echo "=== 执行移植：为 Xiaomi Mi Router 4 添加 LEDE 的 base-files ==="
+          git clone --depth 1 https://github.com/coolsnowwolf/lede lede-source
+          if [ -d "lede-source/target/linux/ramips/mt7621/base-files" ]; then
+            mkdir -p target/linux/ramips/mt7621/
+            cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ 
+            echo "移植完成：已复制 LEDE 的 base-files"
+          else
+            echo "警告: LEDE 中未找到 base-files，跳过移植"
+          fi
+          rm -rf lede-source
+          echo "移植步骤完成"
           
-     
-      
       - name: 归档前清理
         run: |
           cd openwrt

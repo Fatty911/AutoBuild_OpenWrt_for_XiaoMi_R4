@@ -178,19 +178,6 @@ jobs:
             echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: Perform manual porting for Xiaomi Mi Router 4
-        id: transplant
-        if: steps.check_bin_initial.outputs.BIN_EXISTS == 'false'
-        run: |
-          cd openwrt
-          echo "Performing manual porting for Xiaomi Mi Router 4..."
-          echo "openwrt.org 主线已内置 Mi Router 4 支持 (IMAGE_SIZE=124416k), 无需修改"
-          git clone https://github.com/coolsnowwolf/lede lede-source
-          cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ || echo "Warning: base-files copy failed"
-          rm -rf lede-source
-          echo "isFixed=true" >> $GITHUB_OUTPUT
-          echo "::notice::Transplant completed successfully"
-
       - name: Defconfig
         run: |
           cd openwrt
