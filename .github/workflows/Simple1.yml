@@ -21,7 +21,7 @@ on:
       - package/luci-app-autoupdate/**
 
 concurrency:
-  group: simple1-phase1-${{ github.ref }}-${{ github.run_number % 2 }}
+  group: simple1-phase1-${{ github.ref }}-${{ (endsWith(format('{0}', github.run_number), '0') || endsWith(format('{0}', github.run_number), '2') || endsWith(format('{0}', github.run_number), '4') || endsWith(format('{0}', github.run_number), '6') || endsWith(format('{0}', github.run_number), '8')) && 'even' || 'odd' }}
   cancel-in-progress: true
 
 env:
