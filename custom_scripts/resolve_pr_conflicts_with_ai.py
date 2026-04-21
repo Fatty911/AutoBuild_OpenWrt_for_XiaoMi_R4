@@ -58,12 +58,35 @@ def get_model_chain():
     openai_key = os.getenv("OPENAI_API_KEY", "").strip()
     xai_key = os.getenv("XAI_API_KEY", "").strip()
     minimax_key = os.getenv("MINIMAX_API_KEY", "").strip()
+    zhipu_key = os.getenv("ZHIPU_API_KEY", "").strip()
+    bailian_key = os.getenv("BAILIAN_API_KEY", "").strip()
 
-    # 1) OPENCODE ZEN (mimo-v2-pro) - 最先尝试
+    # 1) 智谱 GLM-5.1 (高性价比优先) - $2.15/1M, 智能指数51, 主要决策模型
+    if zhipu_key:
+        chain.append(("https://open.bigmodel.cn/api/paas/v4/", zhipu_key, split_models("ZHIPU_MODEL_LIST", "GLM-5.1")))
+
+    # 2) 百炼 Qwen3.6-Plus (备用高性价比) - $1.13/1M, 智能指数50
+    if bailian_key:
+        chain.append(("https://dashscope.aliyuncs.com/compatible-mode/v1", bailian_key, split_models("BAILIAN_MODEL_LIST", "qwen3.6-plus")))
+
+    # 3) OPENCODE ZEN (免费模型)
     if zen_key:
         chain.append(("https://opencode.ai/zen", zen_key, ["mimo-v2-pro-free"]))
 
-    # 2) Claude (OpenRouter)
+    # 4) GLM via OpenRouter (备用)
+    if openrouter_key:
+        chain.append(("https://openrouter.ai/api/v1", openrouter_key, split_models("GLM_MODEL_LIST", "glm-5")))
+
+    # 5) MiniMax-M2.7 (低成本简单任务) - $0.53/1M, 注意：意图理解能力差
+    if minimax_key:
+        chain.append(("https://api.minimax.chat", minimax_key, split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7")))
+
+    # 6) Grok-4.2 (仅压缩任务) - $3.00/1M, 用户要求仅用于压缩
+    if xai_key:
+        chain.append(("https://api.x.ai/v1", xai_key, split_models("GROK_MODEL_LIST", "grok-4.2")))
+
+    # 7) 昂贵的模型 - 用户要求暂时不使用，仅在其他模型都不可用时作为后备
+    # Claude (OpenRouter) - $10.00/1M
     if openrouter_key:
         chain.append(
             ("https://openrouter.ai/api/v1", openrouter_key, split_models("CLAUDE_MODEL_LIST", "claude-sonnet-4.6"))
@@ -79,12 +102,6 @@ def get_model_chain():
         chain.append(
             ("https://openrouter.ai/api/v1", openrouter_key, split_models("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3,gpt-5.2"))
         )
-    if xai_key:
-        chain.append(("https://api.x.ai/v1", xai_key, split_models("GROK_MODEL_LIST", "grok-4.2")))
-    if openrouter_key:
-        chain.append(("https://openrouter.ai/api/v1", openrouter_key, split_models("GLM_MODEL_LIST", "glm-5")))
-    if minimax_key:
-        chain.append(("https://api.minimax.chat", minimax_key, split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7")))
     return chain
 
 
