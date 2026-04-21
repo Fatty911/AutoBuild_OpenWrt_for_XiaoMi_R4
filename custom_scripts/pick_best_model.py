@@ -352,13 +352,28 @@ def pick_model():
         print(f"[pick_best_model] 百炼 Qwen3.6-Plus (高性价比): {bl_models[0]}", file=sys.stderr)
         return "bailian", bl_models[0], bl_models[-1], bl_models
 
-    # 3. SiliconFlow GLM-5/5.1 - 备用GLM源
+    # 3. Moonshot Kimi-K2.5 (千帆CodingPlan) - 付费但不贵，性能中上
+    if moonshot_key:
+        ms_models = split_env("MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k")
+        print(f"[pick_best_model] Moonshot Kimi (高性价比): {ms_models[0]}", file=sys.stderr)
+        return "moonshot", ms_models[0], ms_models[-1], ms_models
+
+    # 4. OpenRouter Kimi-K2.5 / GLM-5.1 (付费但不贵)
+    if openrouter_key:
+        or_models = split_env(
+            "OPENROUTER_HIGHVALUE_MODEL_LIST",
+            "moonshotai/kimi-k2.5,z-ai/glm-5.1",
+        )
+        print(f"[pick_best_model] OpenRouter 高性价比: {or_models[0]}", file=sys.stderr)
+        return "openrouter", or_models[0], or_models[-1], or_models
+
+    # 5. SiliconFlow GLM-5/5.1 - 备用GLM源
     if siliconflow_key:
         sf_models = split_env("SILICONFLOW_MODEL_LIST", "zai-org/GLM-5,zai-org/GLM-5.1")
         print(f"[pick_best_model] SiliconFlow GLM: {sf_models[0]}", file=sys.stderr)
         return "siliconflow", sf_models[0], sf_models[-1], sf_models
 
-    # 4. AtomGit 免费模型 (GLM-5, Qwen3.5)
+    # 6. AtomGit 免费模型 (GLM-5, Qwen3.5)
     if atomgit_key:
         ag_models = split_env(
             "ATOMGIT_MODEL_LIST", "zai-org/GLM-5,Qwen/Qwen3.5-397B-A17B"
@@ -424,15 +439,7 @@ def pick_model():
         print(f"[pick_best_model] ModelScope: {ms_models[0]}", file=sys.stderr)
         return "modelscope", ms_models[0], ms_models[-1], ms_models
 
-    # 12. Moonshot (Kimi)
-    if moonshot_key:
-        ms_models = split_env(
-            "MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k"
-        )
-        print(f"[pick_best_model] Moonshot: {ms_models[0]}", file=sys.stderr)
-        return "moonshot", ms_models[0], ms_models[-1], ms_models
-
-    # 13. GLM 代理
+    # 12. GLM 代理
     if glm_proxy_url:
         glm_models = split_env("GLM_MODEL_LIST", "GLM-5,GLM-5.1")
         print(f"[pick_best_model] GLM 代理: {glm_models[0]}", file=sys.stderr)
