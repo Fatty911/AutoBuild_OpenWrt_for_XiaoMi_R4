@@ -9,7 +9,7 @@
 #
 
 name: Build Lienol 2 packages and fixes for XIAOMI_R4
-run-name: "Lienol2 triggered by ${{ github.event.workflow_run.name || github.event_name }}"
+run-name: "Lienol Phase 2 ← ${{ github.event.workflow_run.name || github.event_name }} (#${{ github.event.workflow_run.run_number || github.run_number }})"
 
 on:
   workflow_run:

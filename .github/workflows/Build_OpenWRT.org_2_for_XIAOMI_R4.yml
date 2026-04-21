@@ -1,5 +1,5 @@
 name: Build OpenWRT.org 2 fix and transplant for XIAOMI_R4 
-run-name: "Org2 triggered by ${{ github.event.workflow_run.name || github.event_name }}"
+run-name: "Org Phase 2 ← ${{ github.event.workflow_run.name || github.event_name }} (#${{ github.event.workflow_run.run_number || github.run_number }})"
 
 on:
   workflow_run:
