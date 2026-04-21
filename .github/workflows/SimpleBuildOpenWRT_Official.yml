@@ -21,7 +21,7 @@ on:
   repository_dispatch:
     types: Openwrt.org Source Code Update
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  group: simplebuild-openwrt-official
   cancel-in-progress: true
 
 env:

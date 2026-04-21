@@ -16,7 +16,7 @@ on:
         default: ''
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  group: firmware-auto-update-checker
   cancel-in-progress: true
 
 env:

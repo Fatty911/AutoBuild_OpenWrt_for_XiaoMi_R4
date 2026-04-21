@@ -12,7 +12,7 @@
 name: Update Checker for Lienol
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
+  group: update-checker-lienol
   cancel-in-progress: true
 
 env:
