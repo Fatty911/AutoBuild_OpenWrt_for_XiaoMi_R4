@@ -266,12 +266,37 @@ jobs:
             openwrt/bin
             openwrt/.config
 
+      - name: Determine release prefix
+        id: release_prefix
+        run: |
+          prefix=""
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            if echo "${{ github.event.workflow_run.name }}" | grep -q "Simple 1"; then
+              prefix="Simple1"
+            elif echo "${{ github.event.workflow_run.name }}" | grep -q "Build OpenWRT.org 1"; then
+              prefix="Org1"
+            fi
+          fi
+          
+          if [ -n "$prefix" ]; then
+            release_name="OpenWrt.org_${prefix}_${DEVICE_NAME}_${kernel_version}"
+            fixed_release_name="OpenWrt.org_fixed_${prefix}_${DEVICE_NAME}_${kernel_version}"
+          else
+            release_name="OpenWrt.org_${DEVICE_NAME}_${kernel_version}"
+            fixed_release_name="OpenWrt.org_fixed_${DEVICE_NAME}_${kernel_version}"
+          fi
+          
+          echo "release_name=$release_name" >> $GITHUB_OUTPUT
+          echo "release_tag_name=$release_name" >> $GITHUB_OUTPUT
+          echo "fixed_release_name=$fixed_release_name" >> $GITHUB_OUTPUT
+          echo "fixed_release_tag_name=$fixed_release_name" >> $GITHUB_OUTPUT
+
       - name: Create Release
         uses: softprops/action-gh-release@master
         with:
           files: openwrt/bin/targets/**/*.bin
-          name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
-          tag_name: OpenWrt.org_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
+          name: ${{ steps.release_prefix.outputs.release_name }}
+          tag_name: ${{ steps.release_prefix.outputs.release_tag_name }}
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
       # 以下步骤仅在首次构建失败时执行，复用已解压的 openwrt 目录
@@ -351,8 +376,8 @@ jobs:
         if: steps.transplant2.outputs.isFixed == 'true'
         with:
           files: openwrt/bin/targets/**/*.bin
-          name: OpenWrt.org_fixed_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
-          tag_name: OpenWrt.org_fixed_${{ env.DEVICE_NAME }}_${{ env.kernel_version }}
+          name: ${{ steps.release_prefix.outputs.fixed_release_name }}
+          tag_name: ${{ steps.release_prefix.outputs.fixed_release_tag_name }}
           token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
       - name: Extract Error Log
