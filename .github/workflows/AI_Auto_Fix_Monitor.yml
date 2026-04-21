@@ -339,6 +339,19 @@ jobs:
             echo "::error::AI 运行完成但未产生任何代码更改，修复可能无效"
             exit 1
           fi
+          
+          # === 推送前语法校验 ===
+          echo "=== 🔍 推送前语法校验 ==="
+          python custom_scripts/validate_syntax.py
+          VALIDATION_EXIT=$?
+          if [ $VALIDATION_EXIT -ne 0 ]; then
+            echo "::error::❌ 语法校验失败，拒绝推送，回滚修改"
+            git checkout -- .
+            git clean -fd
+            exit 1
+          fi
+          echo "✅ 语法校验通过，准备提交"
+          
           git commit -m "Auto-fix build error with OpenCode Deep Repair"
           git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git
           
