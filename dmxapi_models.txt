@@ -1,8 +1,8 @@
 dmxapi/KAT-Coder-ProV2-free
-dmxapi/mimo-v2-pro-free
 dmxapi/doubao-seed-2.0-pro-free
-dmxapi/glm-5.1-free
-dmxapi/MiniMax-M2.7-free
-dmxapi/qwen3.5-plus-free
-dmxapi/K2.6-code-preview-free
+dmxapi/mimo-v2-pro-free
 dmxapi/DMXAPI-CodeX-Free
+dmxapi/glm-5.1-free
+dmxapi/qwen3.5-plus-free
+dmxapi/MiniMax-M2.7-free
+dmxapi/K2.6-code-preview-free
