@@ -510,7 +510,6 @@ def validate_required_steps(workflow_file, yaml_content):
                 "归档",
                 "Upload to MEGA",
             ],
-            ".github/workflows/Simple1.yml": ["归档", "Upload to MEGA"],
             ".github/workflows/SimpleBuildOpenWRT_Official.yml": [
                 "Generate release tag",
                 "Upload firmware to release",

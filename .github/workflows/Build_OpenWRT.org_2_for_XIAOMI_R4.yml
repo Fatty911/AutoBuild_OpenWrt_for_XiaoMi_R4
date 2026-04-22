@@ -5,7 +5,6 @@ on:
   workflow_run:
     workflows: 
       - "Build OpenWRT.org 1 before transplant for XIAOMI_R4"
-      - "Simple 1 Build OpenWRT.org 1 before transplant for XIAOMI_R4"
     types:
       - completed
   repository_dispatch:
@@ -258,9 +257,7 @@ jobs:
         run: |
           prefix=""
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            if echo "${{ github.event.workflow_run.name }}" | grep -q "Simple 1"; then
-              prefix="Simple1"
-            elif echo "${{ github.event.workflow_run.name }}" | grep -q "Build OpenWRT.org 1"; then
+            if echo "${{ github.event.workflow_run.name }}" | grep -q "Build OpenWRT.org 1"; then
               prefix="Org1"
             fi
           fi
