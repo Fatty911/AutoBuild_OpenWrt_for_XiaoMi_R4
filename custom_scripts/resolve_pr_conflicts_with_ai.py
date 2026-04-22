@@ -89,18 +89,18 @@ def get_model_chain():
     # Claude (OpenRouter) - $10.00/1M
     if openrouter_key:
         chain.append(
-            ("https://openrouter.ai/api/v1", openrouter_key, split_models("CLAUDE_MODEL_LIST", "claude-sonnet-4.6"))
+            ("https://openrouter.ai/api/v1", openrouter_key, split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4"))
         )
         chain.append(
-            ("https://openrouter.ai/api/v1", openrouter_key, split_models("GEMINI_MODEL_LIST", "gemini-3.1-pro,gemini-3.1-pro-preview"))
+            ("https://openrouter.ai/api/v1", openrouter_key, split_models("GEMINI_MODEL_LIST", "google/gemini-2.5-pro-preview"))
         )
     if openai_key:
         chain.append(
-            ("https://api.openai.com/v1", openai_key, split_models("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3,gpt-5.2"))
+            ("https://api.openai.com/v1", openai_key, split_models("OPENAI_MODEL_LIST", "gpt-4.1,gpt-4o"))
         )
     elif openrouter_key:
         chain.append(
-            ("https://openrouter.ai/api/v1", openrouter_key, split_models("OPENAI_MODEL_LIST", "gpt-5.4,gpt-5.3,gpt-5.2"))
+            ("https://openrouter.ai/api/v1", openrouter_key, split_models("OPENAI_MODEL_LIST", "openai/gpt-4.1,openai/gpt-4o"))
         )
     return chain
 
