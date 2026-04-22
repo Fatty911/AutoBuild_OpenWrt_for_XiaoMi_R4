@@ -197,8 +197,25 @@ def download_from_mega(args):
         filename = node["a"]["n"]
         dest_path = os.path.join(dest_dir, filename)
         print(f"开始下载: {filename} -> {dest_path}")
-        m.download((nid, node), dest_dir)
-        print(f"下载完成: {filename}")
+        
+        # 添加重试机制，应对 mega.py 的 UnboundLocalError bug
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                m.download((nid, node), dest_dir)
+                print(f"下载完成: {filename}")
+                break
+            except UnboundLocalError as e:
+                if attempt < max_retries - 1:
+                    print(f"下载失败 (UnboundLocalError)，重试 {attempt + 1}/{max_retries}: {e}")
+                    import time
+                    time.sleep(2)
+                else:
+                    print(f"下载失败，重试次数用尽: {e}")
+                    raise
+            except Exception as e:
+                print(f"下载失败: {e}")
+                raise
 
 def delete_from_mega():
     username = os.getenv("MEGA_USERNAME")
