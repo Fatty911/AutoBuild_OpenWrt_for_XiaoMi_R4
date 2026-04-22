@@ -617,6 +617,21 @@ def git_push(workflow_file, pat, repo, model_name, run_id="unknown"):
         return False
 
     msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
+    
+    try:
+        with open(".ai_model_scores.json", "a+") as f:
+            f.seek(0)
+            try:
+                scores = json.load(f)
+            except json.JSONDecodeError:
+                scores = {}
+            scores[model_name] = scores.get(model_name, 0) + 1
+            f.seek(0)
+            f.truncate()
+            json.dump(scores, f, indent=2)
+    except Exception:
+        pass
+
     subprocess.run(["git", "commit", "-m", msg], check=True)
     try:
         result = subprocess.run(
@@ -814,18 +829,11 @@ def main():
         "STRICT RULES:\n"
         "1. Output ONLY the complete raw YAML. No explanations, no markdown, no ```yaml.\n"
         "2. Make the SMALLEST possible change to fix the error.\n"
-        "3. Do NOT rewrite, delete, rename or reorder ANY steps except the one causing the error.\n"
-        "4. NEVER touch these steps: 'Upload firmware to release', 'Auto fix with AI on failure', 'Delete workflow runs', 'Generate release tag', 'Perform manual porting'.\n"
-        "5. If the error is in a 'Compile the firmware with fixes' or 'Compile' job, only fix that specific job/step.\n"
-        "6. Preserve the full original structure and all other jobs exactly.\n"
-        "7. Look at git history to see if there are commits fixing similar issues, and do not repeat mistakes.\n\n"
-        "Common errors in this repo: apk version invalid, base-files PKG_RELEASE, Makefile syntax, missing steps.\n\n"
-        f"Workflow file: {workflow_file}\n\n"
-        "High priority error lines:\n"
-        f"{error_focus}\n\n"
-        f"Full workflow content:\n{workflow_content}\n\n"
-        f"Error logs:\n{error_log}\n\n"
-        "Output only the full corrected YAML."
+        "3. DO NOT format, reorder, or touch unrelated lines.\n"
+        "4. The YAML must be valid syntax.\n"
+        "5. 【AI协作与模型质量管理】修复报错时请保证信息的实时性和真实性，禁止基于旧数据库幻觉出不存在的 action 版本或配置参数。若存在调用未知库的情况，请视为你的内部数据可能过期。如果因为幻觉导致二次错误，你将在下次 fallback 评估中被扣分。\n\n"
+        f"Original YAML content:\n{yaml_content}\n\n"
+        f"Error log to fix:\n{error_focus}"
     )
 
     # 固定优先级：OPENCODE ZEN -> Claude -> Gemini -> GPT -> Grok -> GLM -> 其他

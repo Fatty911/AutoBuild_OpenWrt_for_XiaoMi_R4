@@ -113,7 +113,8 @@ def resolve_file_with_ai(path: Path):
         "1) Fix ONLY conflict regions marked by <<<<<<<, =======, >>>>>>>.\n"
         "2) Keep all non-conflict code unchanged.\n"
         "3) Do not delete unrelated logic.\n"
-        "4) Return ONLY the final full file content, no markdown.\n\n"
+        "4) 【AI协作与防幻觉】必须确认所用包或方法的准确性。若是框架/库相关，请务必保证不是你训练数据里的幻觉，不臆造虚假模块。\n"
+        "5) Return ONLY the final full file content, no markdown.\n\n"
         f"File: {path}\n\n"
         f"{content}"
     )
@@ -191,7 +192,8 @@ def main():
     run(["git", "add", "."])
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
     if diff.returncode != 0:
-        run(["git", "commit", "-m", f"Auto resolve PR #{pr_number} conflicts with AI"])
+        best_model = os.getenv("BEST_MODEL", "AI")
+        run(["git", "commit", "-m", f"Auto resolve PR #{pr_number} conflicts with AI (Model: {best_model})"])
         run(["git", "push", "origin", f"HEAD:{head_ref}"])
 
     merge_resp = gh_api(
