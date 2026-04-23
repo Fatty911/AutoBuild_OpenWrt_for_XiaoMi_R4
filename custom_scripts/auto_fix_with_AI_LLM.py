@@ -590,7 +590,31 @@ def build_error_focus(error_log, max_lines=80):
 
 
 def git_push(workflow_file, pat, repo, model_name, run_id="unknown"):
-    """配置 git 并提交推送修复"""
+    """配置 git 并提交推送修复
+    
+    注意：添加 [skip ci] 标记避免立即触发新工作流，
+    防止AI修复导致的频繁循环触发。
+    """
+    
+    # 检查最近10分钟内是否已有AI修复推送
+    try:
+        result = subprocess.run(
+            ["git", "log", "-1", "--format=%ct", "--grep=\"Auto fix:\""],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            last_push_time = int(result.stdout.strip())
+            current_time = int(time.time())
+            time_diff_minutes = (current_time - last_push_time) / 60
+            
+            if time_diff_minutes < 10:
+                print(f"最近 {time_diff_minutes:.1f} 分钟前已有AI修复推送，暂缓推送以避免频繁触发工作流")
+                print("文件已修改但未推送，请在适当时候手动推送或等待定时触发")
+                return False
+    except Exception as e:
+        print(f"检查上次推送时间失败: {e}，继续推送")
+    
     subprocess.run(
         [
             "git",
@@ -616,7 +640,7 @@ def git_push(workflow_file, pat, repo, model_name, run_id="unknown"):
         print("No changes detected, nothing to commit.")
         return False
 
-    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name}"
+    msg = f"Auto fix: {os.path.basename(workflow_file)} error fixed by {model_name} [skip ci]"
     
     try:
         with open(".ai_model_scores.json", "a+") as f:
