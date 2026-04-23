@@ -26,18 +26,48 @@ def get_mega_client(username, password):
         import mega.mega
         
         # 热修复 mega.py 1.0.8 中的 UnboundLocalError bug (下载小文件时触发)
+        # 错误原因：循环变量 i 在循环外被引用，但可能循环从未执行
         try:
             mega_file = mega.mega.__file__
             with open(mega_file, "r") as f:
                 content = f.read()
-            if "for i in range(0, len(chunk) - 16, 16):" in content and "i = 0\n" not in content:
-                content = content.replace(
-                    "for i in range(0, len(chunk) - 16, 16):", 
-                    "i = 0\n                for i in range(0, len(chunk) - 16, 16):"
-                )
+            
+            patched = False
+            
+            # 尝试多种模式匹配
+            patterns_to_fix = [
+                ("for i in range(0, len(chunk) - 16, 16):", "i = 0\n                for i in range(0, len(chunk) - 16, 16):"),
+                ("for i in range(0, len(file_data) - 16, 16):", "i = 0\n                for i in range(0, len(file_data) - 16, 16):"),
+            ]
+            
+            for old_pattern, new_pattern in patterns_to_fix:
+                if old_pattern in content and "i = 0" not in content[:content.find(old_pattern)+50]:
+                    content = content.replace(old_pattern, new_pattern)
+                    patched = True
+            
+            # 直接修复：在 _download_file 方法中查找所有 i += 16 前添加初始化
+            import re
+            if not patched:
+                # 查找所有可能的问题位置
+                matches = list(re.finditer(r'(\s+)(i \+= 16)', content))
+                if matches:
+                    for match in reversed(matches):
+                        indent = match.group(1)
+                        # 在 i += 16 前插入 i = 0 初始化
+                        insert_pos = content.rfind('\n', 0, match.start())
+                        line_start = content.rfind('\n', 0, insert_pos)
+                        prev_line = content[line_start+1:insert_pos]
+                        if 'for' not in prev_line and 'i = 0' not in prev_line:
+                            content = content[:match.start()] + indent + "i = 0\n" + content[match.start():]
+                            patched = True
+            
+            if patched:
                 with open(mega_file, "w") as f:
                     f.write(content)
                 print(f"已动态修补 mega.py 的下载 bug: {mega_file}")
+            else:
+                print("mega.py 可能已修复或代码结构不同，跳过热修复")
+                
         except Exception as e:
             print(f"修补 mega.py 失败: {e}")
             
