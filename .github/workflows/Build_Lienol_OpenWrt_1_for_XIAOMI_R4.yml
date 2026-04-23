@@ -218,6 +218,9 @@ jobs:
             continue
           fi
           for pkg in $PACKAGES; do
+            case "$pkg" in
+              wireguard-tools|openvpn-easy-rsa) echo "跳过小组件: $pkg (留给Phase2)"; continue ;;
+            esac
             echo "编译软件包: $pkg 于 $(date)"
              if make package/$pkg/compile V=s > packages.log 2>&1 || make -j1 package/$pkg/compile V=s > packages.log 2>&1; then
               echo "软件包 $pkg 编译成功"
