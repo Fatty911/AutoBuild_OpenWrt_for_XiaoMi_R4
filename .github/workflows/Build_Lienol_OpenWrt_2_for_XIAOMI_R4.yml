@@ -78,7 +78,10 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         sudo chown -R $USER:$GROUPS /workdir
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
-        pip install "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" && pip install "mega.py==1.0.8" --no-deps || exit 1
+        pip install "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" || exit 1
+        curl -L https://mega.nz/MEGAcmd/MEGAcmd_latest_amd64.deb -o /tmp/megacmd.deb
+        sudo apt install -y /tmp/megacmd.deb || sudo dpkg -i /tmp/megacmd.deb || (sudo apt-get install -f -y && sudo dpkg -i /tmp/megacmd.deb)
+        rm -f /tmp/megacmd.deb
 
     - name: Download from MEGA
       env:

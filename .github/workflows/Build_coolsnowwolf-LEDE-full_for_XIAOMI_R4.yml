@@ -90,7 +90,10 @@ jobs:
           sudo chown -R $USER:$GROUPS /workdir
           sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
           mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
-          pip install --cache-dir /workdir/pip-cache "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" && pip install --cache-dir /workdir/pip-cache "mega.py==1.0.8" --no-deps || true
+          pip install --cache-dir /workdir/pip-cache "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" || true
+          curl -L https://mega.nz/MEGAcmd/MEGAcmd_latest_amd64.deb -o /tmp/megacmd.deb
+          sudo apt install -y /tmp/megacmd.deb || sudo dpkg -i /tmp/megacmd.deb || (sudo apt-get install -f -y && sudo dpkg -i /tmp/megacmd.deb)
+          rm -f /tmp/megacmd.deb
           echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
           echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
           echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
