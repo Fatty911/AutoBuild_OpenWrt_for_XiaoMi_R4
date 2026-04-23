@@ -79,9 +79,9 @@ jobs:
         sudo chown -R $USER:$GROUPS /workdir
         sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
         pip install "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" || exit 1
-        curl -L https://mega.nz/MEGAcmd/MEGAcmd_latest_amd64.deb -o /tmp/megacmd.deb
-        sudo apt install -y /tmp/megacmd.deb || sudo dpkg -i /tmp/megacmd.deb || (sudo apt-get install -f -y && sudo dpkg -i /tmp/megacmd.deb)
-        rm -f /tmp/megacmd.deb
+        curl -fsSL https://mega.nz/keys/MEGA_signing.key | sudo gpg --dearmor -o /usr/share/keyrings/meganz-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/meganz-archive-keyring.gpg] https://mega.nz/linux/repo/xUbuntu_22.04/ ./" | sudo tee /etc/apt/sources.list.d/mega.list
+        sudo apt update && sudo apt install -y megacmd
 
     - name: Download from MEGA
       env:

@@ -87,10 +87,9 @@ jobs:
           sudo timedatectl set-timezone "$TZ"
           sudo chown -R $USER:$GROUPS /workdir
           sudo apt install -y jq parallel python3-pip pigz
-          # 安装 MEGAcmd (官方CLI工具，替代有bug的mega.py)
-          curl -L https://mega.nz/MEGAcmd/MEGAcmd_latest_amd64.deb -o /tmp/megacmd.deb
-          sudo apt install -y /tmp/megacmd.deb || sudo dpkg -i /tmp/megacmd.deb || (sudo apt-get install -f -y && sudo dpkg -i /tmp/megacmd.deb)
-          rm -f /tmp/megacmd.deb
+          curl -fsSL https://mega.nz/keys/MEGA_signing.key | sudo gpg --dearmor -o /usr/share/keyrings/meganz-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/meganz-archive-keyring.gpg] https://mega.nz/linux/repo/xUbuntu_22.04/ ./" | sudo tee /etc/apt/sources.list.d/mega.list
+          sudo apt update && sudo apt install -y megacmd
           echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
           echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
           echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
