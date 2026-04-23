@@ -193,95 +193,21 @@ jobs:
         cd openwrt
         make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
 
-    - name: Compile packages by feeds
+    - name: Compile packages
       id: compile_packages
       run: |
         cd openwrt
-        # 保护根目录 Makefile
-        cp Makefile Makefile.bak
-
-        # 修复 base-files 版本（Lienol1 专用）
-        echo "=== Lienol1: 修复 base-files 版本 ==="
-        if [ -f "package/base-files/Makefile" ]; then
-          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1-r1/' package/base-files/Makefile || true
-          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=1-r1/' package/base-files/Makefile || true
-          echo "base-files PKG_RELEASE 已设为 1-r1"
-        fi
-        # 逐行读取 feeds.conf.default 并编译
-        while IFS= read -r line; do
-          [[ -z "$line" || "$line" =~ ^# ]] && continue
-          FEED=$(echo "$line" | awk '{print $2}')
-          echo "处理 feed: $FEED 于 $(date)"
-          PACKAGES=$(ls package/feeds/$FEED 2>/dev/null | grep -v Makefile || true)
-          if [ -z "$PACKAGES" ]; then
-            echo "警告: $FEED 下没有找到软件包，跳过"
-            continue
-          fi
-          for pkg in $PACKAGES; do
-            echo "编译软件包: $pkg 于 $(date)"
-             if make package/$pkg/compile V=s > packages.log 2>&1 || make -j1 package/$pkg/compile V=s > packages.log 2>&1; then
-              echo "软件包 $pkg 编译成功"
-            else
-              retry_count=$((retry_count + 1))
-              echo "尝试第 $retry_count 次修复..."
-              if grep -q "PKG_VERSION.*error" packages.log; then
-                echo "Fixing PKG_VERSION formats..."
-                find ./package ./feeds -type f \( -name "Makefile" -o -name "*.mk" \) 2>/dev/null | while read -r makefile; do
-                  if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
-                    echo "Found target in $makefile"
-                    sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile" || exit 1
-                    echo "已修改$makefile:"
-                    grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
-                  fi
-                done
-              elif grep -q "DEPENDS.*error" packages.log; then
-                echo "Fixing dependency duplicates..."
-                find ./package ./feeds -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
-                  makefile="$1"
-                  awk '\''BEGIN { FS = "[[:space:]]+" }
-                  /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
-                      split($0, deps, " ")
-                      seen_versioned = ""
-                      seen_bare = ""
-                      result = $1
-                      for (i = 2; i <= length(deps); i++) {
-                          dep = deps[i]
-                          if (dep ~ /\$\(/) {
-                              result = result " " dep
-                          }
-                      }
-                          print result
-                  }'\'' "$makefile" > "$makefile.tmp" && mv "$makefile.tmp" "$makefile"
-                ' sh {} \; 2>/dev/null
-              fi
-            fi
-          done
-          echo "Feed $FEED 编译完成 于 $(date)"
-        done < feeds.conf.default
-        if [ ! -s Makefile ]; then
-          echo "警告: Makefile 被清空，从备份恢复"
-          cp Makefile.bak Makefile
-        fi
-        rm -f Makefile.bak
-
-    - name: List main packages
-      run: |
-        cd openwrt
-        find package/ -type d -name src -prune -o -type f -name Makefile -not -path 'package/feeds/*' -exec dirname {} \; > main_packages.txt
-        echo "Main packages to compile:"
-        cat main_packages.txt
-
-    - name: Compile main packages
-      id: compile_main_packages
-      run: |
-        cd openwrt
-        while read -r pkg; do
-          echo "编译 $pkg at $(date)"
-          { make $pkg/compile -j2 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || { make $pkg/compile -j1 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || {
-            echo "编译 $pkg 失败，查看编译此包时的日志"
-            cat "$pkg.log"
+        echo "=== 开始编译 packages (并行模式) ==="
+        echo "开始时间: $(date)"
+        make package/compile -j$(nproc) V=s > packages.log 2>&1 || {
+          echo "并行编译失败，尝试串行编译..."
+          make package/compile -j1 V=s >> packages.log 2>&1 || {
+            echo "尝试运行修复脚本..."
+            python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
           }
-        done < main_packages.txt
+        }
+        echo "结束时间: $(date)"
+        echo "=== packages 编译步骤结束 ==="
 
     - name: 查看日志结尾300行
       if: always()

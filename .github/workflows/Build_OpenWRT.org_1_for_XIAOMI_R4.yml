@@ -268,11 +268,18 @@ jobs:
         run: |
           cd openwrt
           echo "=== 开始编译 packages 部分 ==="
-          make package/compile V=s > packages.log 2>&1 || {
+          make package/compile -j$(nproc) V=s > packages.log 2>&1 || {
             echo "首次编译 packages 失败，尝试运行修复脚本..."
             python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make package/compile V=s" "packages.log"
           }
           echo "=== packages 编译步骤结束 ==="
+          
+      - name: Install packages
+        run: |
+          cd openwrt
+          echo "=== 开始安装 packages ==="
+          make package/install -j$(nproc) V=s > package_install.log 2>&1 || make package/install -j1 V=s >> package_install.log 2>&1 || true
+          echo "=== packages 安装步骤结束 ==="
 
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
