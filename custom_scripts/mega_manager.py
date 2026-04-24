@@ -20,7 +20,6 @@ import sys
 import argparse
 import time
 import tempfile
-import re
 
 
 def run_mega_cmd(args, check=True, capture_output=True, timeout=None):
@@ -76,7 +75,7 @@ def ensure_logged_in():
 
 
 def get_file_mtime(filepath):
-    return int(os.path.getmtime(filepath))
+    return os.path.getmtime(filepath)
 
 
 def parse_mega_datetime(date_str, time_str):
@@ -85,7 +84,7 @@ def parse_mega_datetime(date_str, time_str):
         dt = datetime.strptime(f"{date_str} {time_str}", "%d%b%Y %H:%M:%S")
         return int(dt.timestamp())
     except Exception:
-        return 0
+        return None
 
 
 def get_remote_file_mtime(remote_folder, filename):
@@ -100,26 +99,10 @@ def get_remote_file_mtime(remote_folder, filename):
                 date_part = parts[-3] if len(parts) >= 5 else ""
                 time_part = parts[-2] if len(parts) >= 6 else ""
                 mtime = parse_mega_datetime(date_part, time_part)
-                print(f"远程文件时间戳: {mtime} (解析自 {date_part} {time_part})")
-                return mtime
+                if mtime is not None:
+                    print(f"远程文件时间戳: {mtime} (解析自 {date_part} {time_part})")
+                    return mtime
     return None
-
-
-def get_remote_file_size(remote_folder, filename):
-    result = run_mega_cmd(["ls", "-l", f"/{remote_folder}"], check=False, capture_output=True)
-    if result.returncode != 0:
-        return None
-    
-    for line in result.stdout.strip().split('\n'):
-        if filename in line:
-            parts = line.split()
-            for part in parts:
-                if part.isdigit() and len(part) > 6:
-                    size = int(part)
-                    print(f"远程文件大小: {size} bytes")
-                    return size
-    return None
-
 
 def upload_to_mega():
     source = os.getenv("SOURCE")
@@ -151,8 +134,7 @@ def upload_to_mega():
         sys.exit(1)
     
     local_mtime = get_file_mtime(local_file)
-    local_size = os.path.getsize(local_file)
-    print(f"本地文件时间戳: {local_mtime}, 大小: {local_size} bytes")
+    print(f"本地文件时间戳: {local_mtime}")
     
     remote_path = f"/{source}"
     target_filename = f"{source}.tar.gz"
@@ -160,21 +142,16 @@ def upload_to_mega():
     run_mega_cmd(["mkdir", "-p", remote_path], check=False)
     
     remote_mtime = get_remote_file_mtime(source, target_filename)
-    remote_size = get_remote_file_size(source, target_filename)
     
     if remote_mtime is not None:
-        print(f"网盘中存在同名文件，时间戳: {remote_mtime}，本地时间戳: {local_mtime}")
+        print(f"网盘中存在同名文件，时间戳: {remote_mtime}，本地时间戳: {local_mtime:.0f}")
         
-        if remote_mtime >= local_mtime:
-            print(f"网盘文件不比本地旧（remote={remote_mtime} >= local={local_mtime}），跳过上传")
+        if remote_mtime < local_mtime:
+            print(f"网盘文件较旧，删除后重新上传: {target_filename}")
+            run_mega_cmd(["rm", "-f", f"/{remote_path}/{target_filename}"], check=False)
+        else:
+            print(f"网盘文件不比本地旧（remote={remote_mtime} >= local={local_mtime:.0f}），跳过上传")
             sys.exit(0)
-        
-        if remote_size and abs(remote_size - local_size) < 1000:
-            print(f"网盘文件大小接近本地文件（差异 < 1KB），跳过上传")
-            sys.exit(0)
-        
-        print(f"网盘文件较旧，删除后重新上传: {target_filename}")
-        run_mega_cmd(["rm", "-f", f"/{remote_path}/{target_filename}"], check=False)
     
     print(f"开始上传: {local_file} -> MEGA:/{source}/")
     
