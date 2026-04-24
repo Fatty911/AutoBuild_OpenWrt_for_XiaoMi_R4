@@ -146,7 +146,22 @@ jobs:
         run: |
           cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
-          
+
+      - name: Port LEDE base-files for Xiaomi Mi Router 4
+        run: |
+          cd openwrt
+          echo "=== 移植：为 Xiaomi Mi Router 4 添加 LEDE 的 base-files ==="
+          git clone --depth 1 https://github.com/coolsnowwolf/lede lede-source
+          if [ -d "lede-source/target/linux/ramips/mt7621/base-files" ]; then
+            mkdir -p target/linux/ramips/mt7621/
+            cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/
+            echo "移植完成：已复制 LEDE 的 base-files"
+          else
+            echo "警告: LEDE 中未找到 base-files，跳过移植"
+          fi
+          rm -rf lede-source
+          echo "移植步骤完成"
+           
       # - name: Setup tmate session
       #   uses: mxschmitt/action-tmate@v3
       #   if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
