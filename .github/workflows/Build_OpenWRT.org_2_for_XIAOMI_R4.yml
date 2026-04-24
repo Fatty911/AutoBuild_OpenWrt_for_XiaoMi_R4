@@ -180,6 +180,18 @@ jobs:
             echo "BIN_EXISTS=false" >> $GITHUB_OUTPUT
           fi
 
+      - name: Load Org1 progress
+        id: progress
+        run: |
+          PROGRESS_FILE=".org1_progress"
+          if [ -f "$PROGRESS_FILE" ]; then
+            LEVEL=$(cat "$PROGRESS_FILE")
+          else
+            LEVEL=0
+          fi
+          echo "Org1进度级别: $LEVEL"
+          echo "level=$LEVEL" >> $GITHUB_OUTPUT
+
       - name: Defconfig
         run: |
           cd openwrt
@@ -190,17 +202,38 @@ jobs:
       - name: Compile firmware
         run: |
           cd openwrt
-          echo "=== 开始编译固件镜像 ==="
-          {
-            make -j1 V=s > compile.log 2>&1 || {
-              echo "首次编译固件失败，尝试运行修复脚本..."
+          LEVEL="${{ steps.progress.outputs.level }}"
+          echo "=== 根据Org1进度级别($LEVEL)决定编译策略 ==="
+          
+          if [ "$LEVEL" -ge 3 ]; then
+            echo "Org1已完成完整编译，检查bin文件..."
+            if ls bin/targets/*/*/*.bin 2>/dev/null | grep -v initramfs | head -1; then
+              echo "固件已存在，跳过编译"
+            else
+              echo "固件不存在，重新编译..."
+              make -j1 V=s > compile.log 2>&1 || true
+            fi
+          elif [ "$LEVEL" -ge 2 ]; then
+            echo "Org1已完成target/install，执行最终make..."
+            make -j$(nproc) V=s > compile.log 2>&1 || make -j1 V=s >> compile.log 2>&1 || {
               python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
             }
-          } || true
+          elif [ "$LEVEL" -ge 1 ]; then
+            echo "Org1已完成package/install，执行target/install + make..."
+            make target/install -j$(nproc) V=s > target_install.log 2>&1 || true
+            make -j$(nproc) V=s > compile.log 2>&1 || make -j1 V=s >> compile.log 2>&1 || {
+              python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+            }
+          else
+            echo "Org1只完成package/compile，执行完整编译..."
+            make -j$(nproc) V=s > compile.log 2>&1 || make -j1 V=s >> compile.log 2>&1 || {
+              python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+            }
+          fi
+          
           echo "=== 固件编译步骤结束 ==="
           ls -la bin/targets/*/ 2>/dev/null || true
           
-          # 提取最后一个失败组件的日志
           python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
           if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
             echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV

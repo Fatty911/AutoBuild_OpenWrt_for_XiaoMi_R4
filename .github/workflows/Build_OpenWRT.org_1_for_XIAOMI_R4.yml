@@ -264,6 +264,25 @@ jobs:
           fi
           echo "python-installer 优先编译步骤完成"
 
+      - name: Load Org1 progress
+        id: progress
+        run: |
+          PROGRESS_FILE=".org1_progress"
+          if [ -f "$PROGRESS_FILE" ]; then
+            LEVEL=$(cat "$PROGRESS_FILE")
+          else
+            LEVEL=0
+          fi
+          echo "当前进度级别: $LEVEL"
+          echo "level=$LEVEL" >> $GITHUB_OUTPUT
+          
+          # 进度级别说明:
+          # 0: package/compile (最基础)
+          # 1: package/compile + package/install
+          # 2: package/compile + package/install + target/install
+          # 3: package/compile + package/install + target/install + make (完整固件)
+          # 每次Org1成功后自动升级一级
+
       - name: Compile packages only
         run: |
           cd openwrt
@@ -275,18 +294,45 @@ jobs:
           echo "=== packages 编译步骤结束 ==="
           
       - name: Install packages
+        if: steps.progress.outputs.level >= 1
         run: |
           cd openwrt
-          echo "=== 开始安装 packages ==="
+          echo "=== [进度1] 开始安装 packages ==="
           make package/install -j$(nproc) V=s > package_install.log 2>&1 || make package/install -j1 V=s >> package_install.log 2>&1 || true
-          echo "=== packages 安装步骤结束 ==="
+          echo "=== [进度1] packages 安装步骤结束 ==="
 
       - name: Compile target (rootfs and images)
+        if: steps.progress.outputs.level >= 2
         run: |
           cd openwrt
-          echo "=== 开始编译 target (rootfs/镜像) ==="
+          echo "=== [进度2] 开始编译 target (rootfs/镜像) ==="
           make target/install -j$(nproc) V=s > target_install.log 2>&1 || make target/install -j1 V=s >> target_install.log 2>&1 || true
-          echo "=== target 编译步骤结束 ==="
+          echo "=== [进度2] target 编译步骤结束 ==="
+
+      - name: Build full firmware image
+        if: steps.progress.outputs.level >= 3
+        run: |
+          cd openwrt
+          echo "=== [进度3] 开始完整固件编译 ==="
+          make -j$(nproc) V=s > full_make.log 2>&1 || make -j1 V=s >> full_make.log 2>&1 || true
+          echo "=== [进度3] 完整固件编译结束 ==="
+          ls -la bin/targets/*/ 2>/dev/null || true
+
+      - name: Advance Org1 progress
+        if: success()
+        run: |
+          PROGRESS_FILE=".org1_progress"
+          CURRENT=$(cat "$PROGRESS_FILE" 2>/dev/null || echo "0")
+          NEXT=$((CURRENT + 1))
+          if [ "$NEXT" -gt 3 ]; then
+            NEXT=3
+            echo "Org1已达到最高进度级别(3)，不再升级"
+          else
+            echo "Org1本次成功，进度从 $CURRENT 升级到 $NEXT"
+          fi
+          echo "$NEXT" > "$PROGRESS_FILE"
+          echo "新的进度级别: $NEXT"
+          cat "$PROGRESS_FILE"
 
       - name: Perform manual porting for Xiaomi Mi Router 4
         id: transplant
@@ -413,6 +459,19 @@ jobs:
           name: error-log
           path: last_error.log
           retention-days: 1
+
+      - name: Commit progress file
+        if: success()
+        run: |
+          cd $GITHUB_WORKSPACE
+          if [ -f ".org1_progress" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add .org1_progress
+            git diff --cached --quiet || git commit -m "[auto] 更新Org1进度级别 [skip ci]"
+            git push origin main || echo "推送进度文件失败，可能没有变化"
+          fi
+
       - name: Delete workflow runs
         if: always()
         uses: Mattraks/delete-workflow-runs@main
