@@ -18,19 +18,26 @@ import os
 import subprocess
 import sys
 import argparse
+import time
+import tempfile
+import re
 
 
-def run_mega_cmd(args, check=True, capture_output=True):
-    """运行 MEGAcmd 命令"""
+def run_mega_cmd(args, check=True, capture_output=True, timeout=None):
     cmd = ["mega-" + args[0]] + args[1:]
     print(f"执行: {' '.join(cmd)}")
     
-    result = subprocess.run(
-        cmd,
-        capture_output=capture_output,
-        text=True,
-        check=False
-    )
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=capture_output,
+            text=True,
+            check=False,
+            timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        print(f"命令超时 ({timeout}秒)")
+        sys.exit(1)
     
     if result.stdout:
         print(result.stdout.strip())
@@ -68,8 +75,53 @@ def ensure_logged_in():
     print("登录成功")
 
 
+def get_file_mtime(filepath):
+    return int(os.path.getmtime(filepath))
+
+
+def parse_mega_datetime(date_str, time_str):
+    try:
+        from datetime import datetime
+        dt = datetime.strptime(f"{date_str} {time_str}", "%d%b%Y %H:%M:%S")
+        return int(dt.timestamp())
+    except Exception:
+        return 0
+
+
+def get_remote_file_mtime(remote_folder, filename):
+    result = run_mega_cmd(["ls", "-l", f"/{remote_folder}"], check=False, capture_output=True)
+    if result.returncode != 0:
+        return None
+    
+    for line in result.stdout.strip().split('\n'):
+        if filename in line:
+            parts = line.split()
+            if len(parts) >= 5:
+                date_part = parts[-3] if len(parts) >= 5 else ""
+                time_part = parts[-2] if len(parts) >= 6 else ""
+                mtime = parse_mega_datetime(date_part, time_part)
+                print(f"远程文件时间戳: {mtime} (解析自 {date_part} {time_part})")
+                return mtime
+    return None
+
+
+def get_remote_file_size(remote_folder, filename):
+    result = run_mega_cmd(["ls", "-l", f"/{remote_folder}"], check=False, capture_output=True)
+    if result.returncode != 0:
+        return None
+    
+    for line in result.stdout.strip().split('\n'):
+        if filename in line:
+            parts = line.split()
+            for part in parts:
+                if part.isdigit() and len(part) > 6:
+                    size = int(part)
+                    print(f"远程文件大小: {size} bytes")
+                    return size
+    return None
+
+
 def upload_to_mega():
-    """上传文件到 MEGA"""
     source = os.getenv("SOURCE")
     if not source:
         print("错误: 请设置 SOURCE 环境变量")
@@ -77,61 +129,105 @@ def upload_to_mega():
     
     ensure_logged_in()
     
-    # 查找本地文件
-    import glob
-    tar_files = glob.glob(f"{source}.tar.gz")
-    if not tar_files:
-        print(f"错误: 未找到 {source}.tar.gz 文件")
+    possible_paths = [
+        f"/workdir/{source}.tar.gz",
+        f"{source}.tar.gz",
+        f"./{source}.tar.gz",
+    ]
+    
+    local_file = None
+    for path in possible_paths:
+        print(f"检查文件路径: {path} -> 存在: {os.path.exists(path)}")
+        if os.path.exists(path):
+            local_file = path
+            break
+    
+    if not local_file:
+        print(f"错误: 未找到本地文件 {source}.tar.gz")
+        print(f"已检查路径: {possible_paths}")
+        print(f"当前工作目录: {os.getcwd()}")
+        if os.path.exists("/workdir"):
+            print("/workdir 目录内容:", os.listdir("/workdir"))
         sys.exit(1)
     
-    local_file = tar_files[0]
-    remote_path = f"/{source}"
+    local_mtime = get_file_mtime(local_file)
+    local_size = os.path.getsize(local_file)
+    print(f"本地文件时间戳: {local_mtime}, 大小: {local_size} bytes")
     
-    # 创建远程文件夹（如果不存在）
+    remote_path = f"/{source}"
+    target_filename = f"{source}.tar.gz"
+    
     run_mega_cmd(["mkdir", "-p", remote_path], check=False)
     
-    # 上传文件
-    print(f"上传 {local_file} 到 {remote_path}/")
-    result = run_mega_cmd(["put", "-c", local_file, remote_path + "/"])
+    remote_mtime = get_remote_file_mtime(source, target_filename)
+    remote_size = get_remote_file_size(source, target_filename)
+    
+    if remote_mtime is not None:
+        print(f"网盘中存在同名文件，时间戳: {remote_mtime}，本地时间戳: {local_mtime}")
+        
+        if remote_mtime >= local_mtime:
+            print(f"网盘文件不比本地旧（remote={remote_mtime} >= local={local_mtime}），跳过上传")
+            sys.exit(0)
+        
+        if remote_size and abs(remote_size - local_size) < 1000:
+            print(f"网盘文件大小接近本地文件（差异 < 1KB），跳过上传")
+            sys.exit(0)
+        
+        print(f"网盘文件较旧，删除后重新上传: {target_filename}")
+        run_mega_cmd(["rm", "-f", f"/{remote_path}/{target_filename}"], check=False)
+    
+    print(f"开始上传: {local_file} -> MEGA:/{source}/")
+    
+    result = run_mega_cmd(["put", local_file, f"{remote_path}/"], timeout=1800)
     
     if result.returncode == 0:
-        print("上传成功")
+        print("上传完成")
     else:
         print("上传失败")
         sys.exit(1)
 
 
 def download_from_mega(args):
-    """从 MEGA 下载文件"""
     remote_folder = args.remote_folder
     dest_dir = args.dest_dir
     
     ensure_logged_in()
     
+    temp_dir = os.path.join(dest_dir, ".mega_temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    tempfile.tempdir = temp_dir
+    os.environ["TMPDIR"] = temp_dir
+    print(f"临时目录已设置为: {temp_dir}")
+    
     remote_path = f"/{remote_folder}"
     
-    # 检查远程文件夹是否存在
     result = run_mega_cmd(["ls", remote_path], check=False)
     if result.returncode != 0:
         print(f"错误: 远程文件夹 {remote_path} 不存在")
         sys.exit(1)
     
-    # 创建目标目录
+    print(f"找到文件夹: {remote_folder}")
+    
     os.makedirs(dest_dir, exist_ok=True)
     
-    # 下载文件
-    print(f"从 {remote_path} 下载到 {dest_dir}")
-    result = run_mega_cmd(["get", remote_path, dest_dir])
-    
-    if result.returncode == 0:
-        print("下载成功")
-    else:
-        print("下载失败")
-        sys.exit(1)
+    max_retries = 3
+    for attempt in range(max_retries):
+        print(f"从 {remote_path} 下载到 {dest_dir} (尝试 {attempt + 1}/{max_retries})")
+        result = run_mega_cmd(["get", remote_path, dest_dir], timeout=1800)
+        
+        if result.returncode == 0:
+            print("下载成功")
+            break
+        else:
+            if attempt < max_retries - 1:
+                print(f"下载失败，等待 2 秒后重试...")
+                time.sleep(2)
+            else:
+                print("下载失败，重试次数用尽")
+                sys.exit(1)
 
 
 def delete_from_mega():
-    """从 MEGA 删除文件"""
     source = os.getenv("SOURCE")
     if not source:
         print("错误: 请设置 SOURCE 环境变量")
@@ -140,21 +236,40 @@ def delete_from_mega():
     ensure_logged_in()
     
     remote_path = f"/{source}"
+    target_filename = f"{source}.tar.gz"
     
-    # 检查文件夹是否存在
     result = run_mega_cmd(["ls", remote_path], check=False)
     if result.returncode != 0:
-        print(f"文件夹 {remote_path} 不存在，无需删除")
+        print(f"文件夹 '{source}' 不存在，无需清理")
         return
     
-    # 删除文件夹
-    print(f"删除 {remote_path}")
-    result = run_mega_cmd(["rm", "-r", "-f", remote_path], check=False)
+    file_path = f"/{remote_path}/{target_filename}"
+    result = run_mega_cmd(["ls", file_path], check=False)
+    
+    if result.returncode != 0:
+        print(f"未找到文件 '{target_filename}'，无需清理")
+        return
+    
+    print(f"永久删除网盘文件: MEGA:/{source}/{target_filename}")
+    result = run_mega_cmd(["rm", "-f", file_path], check=False)
     
     if result.returncode == 0:
-        print("删除成功")
+        print("文件删除成功")
     else:
-        print(f"删除失败: {result.stderr}")
+        print(f"删除文件失败: {result.stderr}")
+        return
+    
+    print("正在清空 MEGA 回收站以彻底释放空间...")
+    result = run_mega_cmd(["rpc", "confirm", "-f"], check=False)
+    
+    if result.returncode == 0:
+        print("回收站已清空，空间已彻底释放")
+    else:
+        result = run_mega_cmd(["emptytrash"], check=False)
+        if result.returncode == 0:
+            print("回收站已清空，空间已彻底释放")
+        else:
+            print("清空回收站失败（但文件已删除）")
 
 
 def main():
