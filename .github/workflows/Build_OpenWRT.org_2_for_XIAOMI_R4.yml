@@ -361,13 +361,9 @@ jobs:
           fi
           
           cd openwrt
-          echo "Performing manual porting for Xiaomi Mi Router 4..."
-          echo "openwrt.org 主线已内置 Mi Router 4 支持 (IMAGE_SIZE=124416k), 无需修改"
-          git clone https://github.com/coolsnowwolf/lede lede-source
-          cp -r lede-source/target/linux/ramips/mt7621/base-files target/linux/ramips/mt7621/ || echo "Warning: base-files copy failed"
-          rm -rf lede-source
+          echo "OpenWrt.org 主线已完整支持 Mi Router 4，无需移植 LEDE base-files"
           echo "isFixed=true" >> $GITHUB_OUTPUT
-          echo "::notice::Transplant completed successfully"
+          echo "::notice::Skipping transplant - OpenWrt official already supports Mi Router 4"
 
       - name: Compile the firmware with fixes
         if: steps.transplant2.outputs.isFixed == 'true'
