@@ -18,6 +18,7 @@ import os
 import subprocess
 import sys
 import argparse
+import calendar
 import time
 import tempfile
 
@@ -96,8 +97,8 @@ def get_remote_file_mtime(remote_folder, filename):
                     try:
                         from datetime import datetime
                         dt = datetime.strptime(datetime_part, "%Y-%m-%dT%H:%M:%S")
-                        mtime = int(dt.timestamp())
-                        print(f"远程文件时间戳: {mtime}")
+                        mtime = calendar.timegm(dt.timetuple())
+                        print(f"远程文件时间戳: {mtime} (UTC)")
                         return mtime
                     except ValueError:
                         pass
