@@ -192,6 +192,22 @@ def main():
     run(["git", "add", "."])
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
     if diff.returncode != 0:
+        # 多模型共识评审：5个模型评审，3/5通过才放行
+        review_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "multi_agent_review.py")
+        if os.path.exists(review_script):
+            review_result = subprocess.run(
+                [sys.executable, review_script, "review"],
+                capture_output=True, text=True,
+            )
+            print(review_result.stdout)
+            if review_result.stderr:
+                print(review_result.stderr, file=sys.stderr)
+            if "RESULT: PASS" not in review_result.stdout:
+                print("❌ 多模型共识评审未通过，放弃合并")
+                run(["git", "merge", "--abort"], check=False)
+                sys.exit(1)
+            print("✅ 多模型共识评审通过，继续合并")
+
         best_model = os.getenv("BEST_MODEL", "AI")
         run(["git", "commit", "-m", f"Auto resolve PR #{pr_number} conflicts with AI (Model: {best_model})"])
         run(["git", "push", "origin", f"HEAD:{head_ref}"])

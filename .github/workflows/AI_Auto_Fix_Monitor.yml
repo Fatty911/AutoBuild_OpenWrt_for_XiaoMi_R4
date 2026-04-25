@@ -348,6 +348,19 @@ jobs:
           fi
           echo "✅ 语法校验通过，准备提交"
           
+          # === 多模型共识评审：5个模型评审，3/5通过才放行 ===
+          echo "=== 🔍 多模型共识评审 ==="
+          python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG" || true
+          REVIEW_OUTPUT=$(python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG" 2>&1)
+          echo "$REVIEW_OUTPUT"
+          if echo "$REVIEW_OUTPUT" | grep -q "RESULT: FAIL"; then
+            echo "::error::❌ 多模型共识评审未通过，回滚修改"
+            git checkout -- .
+            git clean -fd
+            exit 1
+          fi
+          echo "✅ 多模型共识评审通过，准备提交"
+          
           git commit -m "Auto-fix build error with OpenCode Deep Repair"
           git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git
           

@@ -1367,8 +1367,26 @@ def main():
     if not validate_required_steps(workflow_file, fixed_content):
         sys.exit(1)
 
-    with open(workflow_file, "w") as f:
-        f.write(fixed_content)
+    # 多模型共识评审：5个模型评审，3/5通过才放行
+    review_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "multi_agent_review.py")
+    if os.path.exists(review_script):
+        with open(workflow_file, "w") as f:
+            f.write(fixed_content)
+        review_result = subprocess.run(
+            [sys.executable, review_script, "review", "--file", workflow_file, "--error", error_focus[:2000] if error_focus else ""],
+            capture_output=True, text=True,
+        )
+        print(review_result.stdout)
+        if review_result.stderr:
+            print(review_result.stderr, file=sys.stderr)
+        if "RESULT: PASS" not in review_result.stdout:
+            print("❌ 多模型共识评审未通过，恢复原始文件")
+            subprocess.run(["git", "checkout", "--", workflow_file], check=False)
+            sys.exit(1)
+        print("✅ 多模型共识评审通过，继续推送")
+    else:
+        with open(workflow_file, "w") as f:
+            f.write(fixed_content)
     print(f"Fixed content written to {workflow_file}")
 
     try:
