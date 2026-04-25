@@ -78,31 +78,31 @@ def get_file_mtime(filepath):
     return os.path.getmtime(filepath)
 
 
-def parse_mega_datetime(date_str, time_str):
-    try:
-        from datetime import datetime
-        dt = datetime.strptime(f"{date_str} {time_str}", "%d%b%Y %H:%M:%S")
-        return int(dt.timestamp())
-    except Exception:
-        return None
-
 
 def get_remote_file_mtime(remote_folder, filename):
-    result = run_mega_cmd(["ls", "-l", f"/{remote_folder}"], check=False, capture_output=True)
+    result = run_mega_cmd(["ls", "-l", "--time-format=ISO6081_WITH_TIME", f"/{remote_folder}"], check=False, capture_output=True)
     if result.returncode != 0:
         return None
     
+    print(f"MEGA ls 输出:\n{result.stdout}")
+    
     for line in result.stdout.strip().split('\n'):
         if filename in line:
+            print(f"找到文件行: {line}")
             parts = line.split()
             if len(parts) >= 5:
-                date_part = parts[-3] if len(parts) >= 5 else ""
-                time_part = parts[-2] if len(parts) >= 6 else ""
-                mtime = parse_mega_datetime(date_part, time_part)
-                if mtime is not None:
-                    print(f"远程文件时间戳: {mtime} (解析自 {date_part} {time_part})")
-                    return mtime
+                datetime_part = parts[-2] if len(parts) >= 6 else ""
+                if "T" in datetime_part:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.strptime(datetime_part, "%Y-%m-%dT%H:%M:%S")
+                        mtime = int(dt.timestamp())
+                        print(f"远程文件时间戳: {mtime}")
+                        return mtime
+                    except ValueError:
+                        pass
     return None
+
 
 def upload_to_mega():
     source = os.getenv("SOURCE")
