@@ -1,0 +1,156 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
+  "agents": {
+    "sisyphus": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "hephaestus": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "oracle": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "librarian": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "explore": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "multimodal-looker": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "prometheus": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "metis": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "momus": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "atlas": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "sisyphus-junior": {
+      "model": "qianfan-coding-plan/qwen3.5-397b-a17b",
+      "fallback": [
+        "qianfan-coding-plan/deepseek-v3.2",
+        "volcengine-coding/deepseek-v3.2"
+      ]
+    }
+  },
+  "categories": {
+    "visual-engineering": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "ultrabrain": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "deep": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "artistry": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "quick": {
+      "model": "qianfan-coding-plan/qwen3.5-397b-a17b",
+      "fallback": [
+        "qianfan-coding-plan/deepseek-v3.2",
+        "volcengine-coding/deepseek-v3.2"
+      ]
+    },
+    "unspecified-low": {
+      "model": "qianfan-coding-plan/qwen3.5-397b-a17b",
+      "fallback": [
+        "qianfan-coding-plan/deepseek-v3.2",
+        "volcengine-coding/deepseek-v3.2"
+      ]
+    },
+    "unspecified-high": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    },
+    "writing": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback": [
+        "qianfan-coding-plan/kimi-k2.5",
+        "volcengine-coding/kimi-k2.6",
+        "volcengine-coding/glm-5.1"
+      ]
+    }
+  }
+}

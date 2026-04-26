@@ -124,7 +124,11 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           # 安装 opencode 和 omo
           npm install -g opencode-ai oh-my-openagent
-          # 运行 omo 安装程序注册插件到 opencode.json
+          # 复制配置文件到正确位置
+          mkdir -p $HOME/.config/opencode
+          cp opencode.json $HOME/.config/opencode/
+          cp oh-my-openagent.json $HOME/.config/opencode/
+          # 运行 omo 安装程序注册插件
           oh-my-opencode install --no-tui --claude=no --gemini=no --copilot=no --skip-auth
 
       - name: Run OpenCode Agent
@@ -145,6 +149,10 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
           NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
+          QIANFAN_CODING_API_KEY: ${{ secrets.QIANFAN_CODING_API_KEY }}
+          ALIYUN_TOKENPLAN_API_KEY: ${{ secrets.ALIYUN_TOKENPLAN_API_KEY }}
+          MIMO_TOKENPLAN_API_KEY: ${{ secrets.MIMO_TOKENPLAN_API_KEY }}
+          VOLCANO_CODINGPLAN_API_KEY: ${{ secrets.VOLCANO_CODINGPLAN_API_KEY }}
           ATOMGIT_BASE_URL: "https://api-ai.gitcode.com/v1"
           ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
           NVIDIA_NIM_BASE_URL: "https://integrate.api.nvidia.com/v1"

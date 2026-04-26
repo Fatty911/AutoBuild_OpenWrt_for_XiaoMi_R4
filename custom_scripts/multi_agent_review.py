@@ -56,6 +56,42 @@ def get_review_models():
     """获取5个不同的评审模型（与修复模型分开，确保独立性）"""
     models = []
 
+    qianfan_key = os.getenv("QIANFAN_CODING_API_KEY", "").strip()
+    if qianfan_key:
+        models.append({
+            "name": "QIANFAN-GLM",
+            "proxy_url": "https://qianfan.baidubce.com/v2/coding",
+            "api_key": qianfan_key,
+            "model": os.getenv("QIANFAN_REVIEW_MODEL", "glm-5"),
+        })
+
+    volcano_key = os.getenv("VOLCANO_CODINGPLAN_API_KEY", "").strip()
+    if volcano_key:
+        models.append({
+            "name": "VOLCANO-Kimi",
+            "proxy_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+            "api_key": volcano_key,
+            "model": os.getenv("VOLCANO_REVIEW_MODEL", "kimi-k2.6"),
+        })
+
+    aliyun_key = os.getenv("ALIYUN_TOKENPLAN_API_KEY", "").strip()
+    if aliyun_key:
+        models.append({
+            "name": "ALIYUN-Qwen",
+            "proxy_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+            "api_key": aliyun_key,
+            "model": os.getenv("ALIYUN_REVIEW_MODEL", "qwen3.6-plus"),
+        })
+
+    mimo_key = os.getenv("MIMO_TOKENPLAN_API_KEY", "").strip()
+    if mimo_key:
+        models.append({
+            "name": "MIMO",
+            "proxy_url": "https://token-plan-cn.xiaomimimo.com/v1",
+            "api_key": mimo_key,
+            "model": os.getenv("MIMO_REVIEW_MODEL", "mimo-v2.5-pro"),
+        })
+
     zhipu_key = os.getenv("ZHIPU_API_KEY", "").strip()
     if zhipu_key:
         models.append({
@@ -65,24 +101,6 @@ def get_review_models():
             "model": os.getenv("ZHIPU_REVIEW_MODEL", "GLM-5.1"),
         })
 
-    bailian_key = os.getenv("BAILIAN_API_KEY", "").strip()
-    if bailian_key:
-        models.append({
-            "name": "BAILIAN-Qwen",
-            "proxy_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "api_key": bailian_key,
-            "model": os.getenv("BAILIAN_REVIEW_MODEL", "qwen3.6-plus"),
-        })
-
-    nvidia_key = os.getenv("NVIDIA_NIM_API_KEY", "").strip()
-    if nvidia_key:
-        models.append({
-            "name": "NVIDIA-Kimi",
-            "proxy_url": "https://integrate.api.nvidia.com/v1",
-            "api_key": nvidia_key,
-            "model": os.getenv("NVIDIA_NIM_REVIEW_MODEL", "moonshotai/kimi-k2.5"),
-        })
-
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
     if deepseek_key:
         models.append({
@@ -90,24 +108,6 @@ def get_review_models():
             "proxy_url": "https://api.deepseek.com/v1",
             "api_key": deepseek_key,
             "model": os.getenv("DEEPSEEK_REVIEW_MODEL", "deepseek-chat"),
-        })
-
-    moonshot_key = os.getenv("MOONSHOT_API_KEY", "").strip()
-    if moonshot_key:
-        models.append({
-            "name": "MOONSHOT",
-            "proxy_url": "https://api.moonshot.cn/v1",
-            "api_key": moonshot_key,
-            "model": os.getenv("MOONSHOT_REVIEW_MODEL", "moonshot-v1-auto"),
-        })
-
-    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    if openrouter_key:
-        models.append({
-            "name": "OR-GLM",
-            "proxy_url": "https://openrouter.ai/api/v1",
-            "api_key": openrouter_key,
-            "model": os.getenv("OR_REVIEW_MODEL", "z-ai/glm-5"),
         })
 
     return models

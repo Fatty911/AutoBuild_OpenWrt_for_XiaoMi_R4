@@ -1,10 +1,27 @@
 #!/usr/bin/env python3
-"""从编译日志中提取最后一个失败组件的日志，节省 LLM token"""
+"""从编译日志或基础设施日志中提取最后一个失败的错误，节省 LLM token"""
 
 import sys
 import re
 import os
 from pathlib import Path
+
+
+def extract_mega_error(mega_error_log="/tmp/mega_error.log"):
+    """提取 MEGA 上传错误日志"""
+    if not os.path.exists(mega_error_log):
+        return None, "", False
+    
+    try:
+        with open(mega_error_log, "r") as f:
+            content = f.read()
+        
+        if content.strip():
+            return "MEGA_Upload", content, True
+    except Exception as e:
+        print(f"⚠️ 读取 MEGA 错误日志失败: {e}", file=sys.stderr)
+    
+    return None, "", False
 
 
 def extract_last_error_component(log_content):
@@ -72,12 +89,19 @@ def extract_last_error_component(log_content):
     return component_name, "\n".join(block_lines), False
 
 
-def find_last_error_in_logs(log_dir=".", log_files=None):
+def find_last_error_in_logs(log_dir=".", log_files=None, check_infra_errors=True):
     """
     在多个日志文件中查找最后一个失败的组件
+    优先检查基础设施错误（MEGA 上传等），然后检查编译错误
     返回 (failed_component_name, failed_log_content, which_log_file)
     """
     import glob
+
+    if check_infra_errors:
+        mega_component, mega_log, mega_has_error = extract_mega_error()
+        if mega_has_error:
+            print("检测到 MEGA 上传错误，优先处理基础设施问题", file=sys.stderr)
+            return mega_component, mega_log, "mega_error.log"
 
     if log_files is None:
         log_files = [

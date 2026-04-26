@@ -105,10 +105,25 @@ def get_remote_file_mtime(remote_folder, filename):
     return None
 
 
-def upload_to_mega():
+def write_error_log(error_type, message, details=""):
+    error_log_path = os.getenv("MEGA_ERROR_LOG", "/tmp/mega_error.log")
+    try:
+        with open(error_log_path, "w") as f:
+            f.write(f"=== MEGA Upload Error ===\n")
+            f.write(f"Error Type: {error_type}\n")
+            f.write(f"Message: {message}\n")
+            if details:
+                f.write(f"\nDetails:\n{details}\n")
+        print(f"错误日志已写入: {error_log_path}")
+    except Exception as e:
+        print(f"写入错误日志失败: {e}")
+
+
+def upload_to_mega(skip_on_failure=False):
     source = os.getenv("SOURCE")
     if not source:
         print("错误: 请设置 SOURCE 环境变量")
+        write_error_log("CONFIG_ERROR", "SOURCE 环境变量未设置")
         sys.exit(1)
     
     ensure_logged_in()
@@ -127,11 +142,13 @@ def upload_to_mega():
             break
     
     if not local_file:
-        print(f"错误: 未找到本地文件 {source}.tar.gz")
+        error_msg = f"未找到本地文件 {source}.tar.gz"
+        print(f"错误: {error_msg}")
         print(f"已检查路径: {possible_paths}")
         print(f"当前工作目录: {os.getcwd()}")
         if os.path.exists("/workdir"):
             print("/workdir 目录内容:", os.listdir("/workdir"))
+        write_error_log("FILE_NOT_FOUND", error_msg, f"Checked paths: {possible_paths}")
         sys.exit(1)
     
     local_mtime = get_file_mtime(local_file)
@@ -154,15 +171,48 @@ def upload_to_mega():
             print(f"网盘文件不比本地旧（remote={remote_mtime} >= local={local_mtime:.0f}），跳过上传")
             sys.exit(0)
     
+    file_size_mb = os.path.getsize(local_file) / (1024 * 1024)
+    print(f"文件大小: {file_size_mb:.2f} MB")
     print(f"开始上传: {local_file} -> MEGA:/{source}/")
     
-    result = run_mega_cmd(["put", local_file, f"{remote_path}/"], timeout=1800)
+    max_retries = 3
+    retry_delay = 5
+    last_error = ""
     
-    if result.returncode == 0:
-        print("上传完成")
-    else:
-        print("上传失败")
-        sys.exit(1)
+    for attempt in range(max_retries):
+        print(f"上传尝试 {attempt + 1}/{max_retries}...")
+        
+        result = run_mega_cmd(["put", local_file, f"{remote_path}/"], check=False, timeout=1800)
+        
+        if result.returncode == 0:
+            print("上传完成")
+            return
+        
+        last_error = result.stderr or result.stdout or "Unknown error"
+        print(f"上传失败 (尝试 {attempt + 1}/{max_retries}): {last_error}")
+        
+        if attempt < max_retries - 1:
+            print(f"等待 {retry_delay} 秒后重试...")
+            time.sleep(retry_delay)
+            retry_delay *= 2
+    
+    error_details = f"""
+文件: {local_file}
+大小: {file_size_mb:.2f} MB
+目标路径: MEGA:/{source}/
+重试次数: {max_retries}
+最后错误: {last_error}
+工作目录: {os.getcwd()}
+"""
+    write_error_log("UPLOAD_FAILED", "MEGA 上传失败，重试次数已用尽", error_details)
+    
+    if skip_on_failure:
+        print("警告: MEGA 上传失败，但 skip-on-failure 模式已启用，继续执行...")
+        print("::warning::MEGA 上传失败，已跳过")
+        return
+    
+    print("上传失败")
+    sys.exit(1)
 
 
 def download_from_mega(args):
@@ -254,7 +304,11 @@ def main():
     parser = argparse.ArgumentParser(description="MEGA 网盘管理工具 (使用 MEGAcmd)")
     subparsers = parser.add_subparsers(dest="command", required=True)
     
-    subparsers.add_parser("upload", help="上传源码压缩包到 MEGA")
+    parser_upload = subparsers.add_parser("upload", help="上传源码压缩包到 MEGA")
+    parser_upload.add_argument("--skip-on-failure", action="store_true", 
+                                help="上传失败时跳过而不是退出")
+    parser_upload.add_argument("--error-log", dest="error_log", 
+                                help="错误日志输出路径")
     
     parser_download = subparsers.add_parser("download", help="从 MEGA 下载源码压缩包")
     parser_download.add_argument("remote_folder", help="MEGA 远程文件夹名")
@@ -265,7 +319,9 @@ def main():
     args = parser.parse_args()
     
     if args.command == "upload":
-        upload_to_mega()
+        if hasattr(args, 'error_log') and args.error_log:
+            os.environ["MEGA_ERROR_LOG"] = args.error_log
+        upload_to_mega(skip_on_failure=getattr(args, 'skip_on_failure', False))
     elif args.command == "download":
         download_from_mega(args)
     elif args.command == "delete":

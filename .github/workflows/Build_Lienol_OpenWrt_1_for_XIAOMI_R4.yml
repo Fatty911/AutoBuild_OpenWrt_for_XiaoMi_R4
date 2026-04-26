@@ -366,6 +366,7 @@ jobs:
       env:
         MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        MEGA_ERROR_LOG: /tmp/mega_error.log
       run: |
         # 检查文件是否存在
         if [ ! -f "${{ env.SOURCE }}.tar.gz" ]; then
@@ -376,12 +377,18 @@ jobs:
         echo "准备上传文件:"
         ls -lh ${{ env.SOURCE }}.tar.gz
         
-        # 上传到 MEGA
-        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py upload
+        # 上传到 MEGA (失败时跳过，不阻塞构建)
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py upload --skip-on-failure --error-log /tmp/mega_error.log
+        UPLOAD_EXIT_CODE=$?
         
-        # 标记MEGA上传成功
-        echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
-        echo "MEGA 上传成功"
+        if [ $UPLOAD_EXIT_CODE -eq 0 ]; then
+          echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
+          echo "MEGA 上传成功"
+        else
+          echo "::warning::MEGA 上传失败，但构建将继续"
+          echo "MEGA_UPLOAD_SUCCESS=false" >> $GITHUB_ENV
+        fi
+      continue-on-error: true
 
     - name: Record build job outputs
       id: build_job_outputs
@@ -396,10 +403,17 @@ jobs:
       run: python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
 
     - name: Extract Error Log
-      if: failure()
+      if: failure() || hashFiles('/tmp/mega_error.log') != ''
       run: |
         cd $GITHUB_WORKSPACE
-        python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
+        # 先检查 MEGA 上传错误
+        if [ -f "/tmp/mega_error.log" ]; then
+          echo "检测到 MEGA 上传错误日志"
+          cp /tmp/mega_error.log last_error.log
+        else
+          # 否则从编译日志提取错误
+          python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
+        fi
 
     - name: Upload Error Log Artifact
       uses: actions/upload-artifact@main

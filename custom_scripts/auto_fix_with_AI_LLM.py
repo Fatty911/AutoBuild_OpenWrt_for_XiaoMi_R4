@@ -1131,6 +1131,58 @@ def main():
 
     providers = []
 
+    # 0) 千帆 CodingPlan (最高优先级) - GLM-5 高性价比
+    qianfan_api_key = os.getenv("QIANFAN_CODING_API_KEY", "").strip()
+    if qianfan_api_key:
+        qianfan_models = split_models("QIANFAN_MODEL_LIST", "glm-5,kimi-k2.5,qwen3.5-397b-a17b")
+        providers.append(
+            {
+                "name": "QIANFAN-CODING",
+                "proxy_url": "https://qianfan.baidubce.com/v2/coding",
+                "api_key": qianfan_api_key,
+                "models": qianfan_models,
+            }
+        )
+
+    # 0.5) 火山 CodingPlan - Kimi K2.6 高性价比
+    volcano_api_key = os.getenv("VOLCANO_CODINGPLAN_API_KEY", "").strip()
+    if volcano_api_key:
+        volcano_models = split_models("VOLCANO_MODEL_LIST", "kimi-k2.6,glm-5.1,deepseek-v3.2")
+        providers.append(
+            {
+                "name": "VOLCANO-CODING",
+                "proxy_url": "https://ark.cn-beijing.volces.com/api/coding/v3",
+                "api_key": volcano_api_key,
+                "models": volcano_models,
+            }
+        )
+
+    # 0.6) 阿里云 TokenPlan - Qwen3.6-Plus 高性价比
+    aliyun_tp_api_key = os.getenv("ALIYUN_TOKENPLAN_API_KEY", "").strip()
+    if aliyun_tp_api_key:
+        aliyun_tp_models = split_models("ALIYUN_TP_MODEL_LIST", "qwen3.6-plus,glm-5,deepseek-v3.2")
+        providers.append(
+            {
+                "name": "ALIYUN-TOKENPLAN",
+                "proxy_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+                "api_key": aliyun_tp_api_key,
+                "models": aliyun_tp_models,
+            }
+        )
+
+    # 0.7) 小米 MiMo TokenPlan - MiMo V2.5 Pro
+    mimo_tp_api_key = os.getenv("MIMO_TOKENPLAN_API_KEY", "").strip()
+    if mimo_tp_api_key:
+        mimo_tp_models = split_models("MIMO_TP_MODEL_LIST", "mimo-v2.5-pro")
+        providers.append(
+            {
+                "name": "MIMO-TOKENPLAN",
+                "proxy_url": "https://token-plan-cn.xiaomimimo.com/v1",
+                "api_key": mimo_tp_api_key,
+                "models": mimo_tp_models,
+            }
+        )
+
     # 1) 智谱 GLM-5.1 (高性价比优先) - $2.15/1M, 智能指数51, 主要决策模型
     zhipu_api_key = os.getenv("ZHIPU_API_KEY", "").strip()
     if zhipu_api_key:

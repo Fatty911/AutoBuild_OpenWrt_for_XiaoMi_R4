@@ -1,0 +1,259 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": true,
+  "model": "qianfan-coding-plan/glm-5",
+  "small_model": "qianfan-coding-plan/kimi-k2.5",
+  "snapshot": false,
+  "disabled_providers": [
+    "groq",
+    "google",
+    "xai",
+    "zen",
+    "alibaba-cn",
+    "openrouter",
+    "siliconflow",
+    "tencent-tokenplan",
+    "modal_glm5",
+    "anthropic",
+    "proxy_anthropic",
+    "minimax",
+    "minimax-cn",
+    "minimax-coding-plan",
+    "minimax-cn-coding-plan",
+    "proxy_openrouter",
+    "proxy_amazon-bedrock",
+    "modal",
+    "atomgit_glm5"
+  ],
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "threshold": 0.85
+  },
+  "provider": {
+    "qianfan-coding-plan": {
+      "name": "Baidu Qianfan CodingPlan",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://qianfan.baidubce.com/v2/coding"
+      },
+      "models": {
+        "glm-5": {
+          "id": "glm-5",
+          "limit": {
+            "context": 200000,
+            "output": 20000
+          }
+        },
+        "kimi-k2.5": {
+          "id": "kimi-k2.5",
+          "limit": {
+            "context": 262144,
+            "output": 26214
+          }
+        },
+        "deepseek-v3.2": {
+          "id": "deepseek-v3.2",
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        },
+        "qwen3.5-397b-a17b": {
+          "id": "qwen3.5-397b-a17b",
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        }
+      },
+      "whitelist": [
+        "glm-5",
+        "kimi-k2.5",
+        "deepseek-v3.2",
+        "qwen3.5-397b-a17b"
+      ]
+    },
+    "alibaba-tokenplan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Alibaba TokenPlan",
+      "options": {
+        "baseURL": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+      },
+      "models": {
+        "qwen3.6-plus": {
+          "id": "qwen3.6-plus",
+          "limit": {
+            "context": 1000000,
+            "output": 65536
+          }
+        },
+        "glm-5": {
+          "id": "glm-5",
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          }
+        },
+        "deepseek-v3.2": {
+          "id": "deepseek-v3.2",
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        }
+      },
+      "whitelist": [
+        "qwen3.6-plus",
+        "glm-5",
+        "deepseek-v3.2"
+      ]
+    },
+    "zhipu": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Zhipu AI",
+      "options": {
+        "baseURL": "https://open.bigmodel.cn/api/paas/v4/"
+      },
+      "models": {
+        "glm-5.1": {
+          "limit": {
+            "context": 200000,
+            "input": 180000,
+            "output": 20000
+          },
+          "thinking": {
+            "type": "enabled"
+          }
+        }
+      },
+      "whitelist": [
+        "glm-5.1"
+      ]
+    },
+    "volcengine-coding": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Volcano Ark Coding Plan",
+      "options": {
+        "baseURL": "https://ark.cn-beijing.volces.com/api/coding/v3"
+      },
+      "models": {
+        "kimi-k2.5": {
+          "limit": {
+            "context": 262144,
+            "output": 26214
+          }
+        },
+        "kimi-k2.6": {
+          "limit": {
+            "context": 262144,
+            "output": 26214
+          }
+        },
+        "deepseek-v3.2": {
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        },
+        "glm-5.1": {
+          "limit": {
+            "context": 200000,
+            "output": 20000
+          }
+        }
+      },
+      "whitelist": [
+        "kimi-k2.5",
+        "kimi-k2.6",
+        "deepseek-v3.2",
+        "glm-5.1"
+      ]
+    },
+    "mimo-tokenplan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Xiaomi MiMo TokenPlan",
+      "options": {
+        "baseURL": "https://token-plan-cn.xiaomimimo.com/v1"
+      },
+      "models": {
+        "mimo-v2.5-pro": {
+          "id": "mimo-v2.5-pro",
+          "limit": {
+            "context": 1048576,
+            "input": 917504,
+            "output": 131072
+          }
+        }
+      },
+      "whitelist": [
+        "mimo-v2.5-pro"
+      ]
+    },
+    "deepseek": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "DeepSeek Official",
+      "options": {
+        "baseURL": "https://api.deepseek.com"
+      },
+      "models": {
+        "deepseek-v4-flash": {
+          "id": "deepseek-v4-flash",
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          }
+        },
+        "deepseek-v4-pro": {
+          "id": "deepseek-v4-pro",
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          }
+        },
+        "deepseek-reasoner": {
+          "id": "deepseek-reasoner",
+          "limit": {
+            "context": 128000,
+            "input": 115200,
+            "output": 12800
+          }
+        },
+        "deepseek-chat": {
+          "id": "deepseek-chat",
+          "limit": {
+            "context": 128000,
+            "input": 115200,
+            "output": 12800
+          }
+        }
+      },
+      "whitelist": [
+        "deepseek-v4-flash",
+        "deepseek-v4-pro",
+        "deepseek-reasoner",
+        "deepseek-chat"
+      ]
+    }
+  },
+  "agent": {
+    "build": {
+      "steps": 999
+    },
+    "plan": {
+      "model": "qianfan-coding-plan/glm-5",
+      "steps": 45
+    },
+    "title": {
+      "model": "qianfan-coding-plan/glm-5"
+    },
+    "summary": {
+      "model": "qianfan-coding-plan/glm-5"
+    }
+  },
+  "plugin": [
+    "oh-my-openagent"
+  ]
+}
