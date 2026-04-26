@@ -264,7 +264,7 @@ jobs:
               
               echo "尝试 oh-my-opencode..."
               oh-my-opencode run --model "$FULL_MODEL" "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || true
-              if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
+              if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
                 echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
               else
                 FIX_SUCCEEDED=true
@@ -273,7 +273,7 @@ jobs:
               if [ "$FIX_SUCCEEDED" = "false" ]; then
                 echo "尝试 opencode run..."
                 opencode run --model "$FULL_MODEL" "分析 last_error.log 的 DTS/phandle 报错。修改工作流解决报错。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
-                if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
+                if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
                   echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
                 else
                   FIX_SUCCEEDED=true
@@ -283,7 +283,7 @@ jobs:
             else
               echo "尝试 oh-my-opencode..."
               oh-my-opencode run --model "$FULL_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" 2>&1 | tee opencode_output.log || true
-              if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
+              if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
                 echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
               else
                 FIX_SUCCEEDED=true
@@ -292,7 +292,7 @@ jobs:
               if [ "$FIX_SUCCEEDED" = "false" ]; then
                 echo "尝试 opencode run..."
                 opencode run --model "$FULL_MODEL" "分析 last_error.log 报错。搜索源码找到根本原因并修复。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
-                if grep -qi "ProviderModelNotFoundError\|Error: Model not found\|\[session.error\]\|UnknownError\|参数错误\|Bad Request" opencode_output.log; then
+                if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
                   echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
                 else
                   FIX_SUCCEEDED=true
