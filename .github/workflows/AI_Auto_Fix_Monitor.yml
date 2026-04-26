@@ -358,8 +358,9 @@ jobs:
           
           # === 多模型共识评审：5个模型评审，3/5通过才放行 ===
           echo "=== 🔍 多模型共识评审 ==="
-          python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG" || true
-          REVIEW_OUTPUT=$(python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG" 2>&1)
+          ERROR_LOG_CONTENT=$(cat last_error.log 2>/dev/null || echo "No error log")
+          python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG_CONTENT" || true
+          REVIEW_OUTPUT=$(python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG_CONTENT" 2>&1)
           echo "$REVIEW_OUTPUT"
           if echo "$REVIEW_OUTPUT" | grep -q "RESULT: FAIL"; then
             echo "::error::❌ 多模型共识评审未通过，回滚修改"
