@@ -232,6 +232,12 @@ jobs:
           
           cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
           
+          # ── 保护关键文件：AI 运行前备份，防止 AI 误删 ──
+          PROTECTED_FILES="opencode.json oh-my-openagent.json AGENTS.md"
+          for f in $PROTECTED_FILES; do
+            [ -f "$f" ] && cp "$f" "${f}.protected_backup"
+          done
+          
           # ── 循环尝试每个 Provider 的模型，遇到兼容问题（如参数错误）则继续下一个 ──
           FIX_SUCCEEDED=false
           while read -r FULL_MODEL; do
@@ -244,63 +250,55 @@ jobs:
             echo "🔥 当前尝试使用提供商/模型: $FULL_MODEL"
             echo "=========================================================="
             
-            # 生成本次尝试所用的配置
+            # 生成本次尝试所用的 opencode.json 配置
             if [ "$PROVIDER" = "dmxapi" ]; then
                # DMXAPI 走专用的 Meta-Agent 脚本，能做动态多模型分配
                python custom_scripts/dmxapi_meta_router.py --config-opencode "$PROVIDER" "$MODEL_NAME" > opencode.json
                mkdir -p ~/.config/opencode
-               python custom_scripts/dmxapi_meta_router.py --config-omo > ~/.config/opencode/oh-my-opencode.json
+               python custom_scripts/dmxapi_meta_router.py --config-omo > ~/.config/opencode/oh-my-openagent.json
             else
                # 其它 Provider 走通用单模型配置
-               # 此处使用 pick_best_model 原有生成配置逻辑
                python custom_scripts/pick_best_model.py --opencode-config-for "$PROVIDER" "$MODEL_NAME" > opencode.json
                mkdir -p ~/.config/opencode
-               python custom_scripts/dmxapi_meta_router.py --config-omo-generic "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-opencode.json
+               python custom_scripts/dmxapi_meta_router.py --config-omo-generic "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-openagent.json
+            fi
+            
+            # 同步 opencode.json 到 ~/.config/opencode/ 供 oh-my-opencode 读取
+            cp opencode.json ~/.config/opencode/opencode.json
+            
+            # 验证生成的 opencode.json 是否合法 JSON
+            if ! python3 -c "import json; json.load(open('opencode.json'))" 2>/dev/null; then
+              echo "::warning::opencode.json 不是合法 JSON，跳过此模型"
+              cat opencode.json
+              continue
             fi
             
             # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
             if grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
-              echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
-              
-              echo "尝试 oh-my-opencode..."
-              oh-my-opencode run --model "$FULL_MODEL" "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || true
-              if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
-                echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
-              else
-                FIX_SUCCEEDED=true
-              fi
-              
-              if [ "$FIX_SUCCEEDED" = "false" ]; then
-                echo "尝试 opencode run..."
-                opencode run --model "$FULL_MODEL" "分析 last_error.log 的 DTS/phandle 报错。修改工作流解决报错。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
-                if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
-                  echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
-                else
-                  FIX_SUCCEEDED=true
-                fi
-              fi
-              rm -f prompt.txt
+              echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
             else
-              echo "尝试 oh-my-opencode..."
-              oh-my-opencode run --model "$FULL_MODEL" "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" 2>&1 | tee opencode_output.log || true
-              if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
-                echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
-              else
-                FIX_SUCCEEDED=true
-              fi
-              
-              if [ "$FIX_SUCCEEDED" = "false" ]; then
-                echo "尝试 opencode run..."
-                opencode run --model "$FULL_MODEL" "分析 last_error.log 报错。搜索源码找到根本原因并修复。不要删除关键步骤。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。退出。" 2>&1 | tee opencode_output.log || true
-                if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT" opencode_output.log; then
-                  echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
-                else
-                  FIX_SUCCEEDED=true
-                fi
-              fi
+              echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
             fi
             
-            rm -f opencode_output.log
+            # ── 尝试 oh-my-opencode（必须使用 --agent build）──
+            echo "尝试 oh-my-opencode run --agent build..."
+            oh-my-opencode run --agent build "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || true
+            if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
+              echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
+            else
+              FIX_SUCCEEDED=true
+            fi
+            
+            if [ "$FIX_SUCCEEDED" = "false" ]; then
+              echo "尝试 opencode run..."
+              opencode run "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || true
+              if grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
+                echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
+              else
+                FIX_SUCCEEDED=true
+              fi
+            fi
+            rm -f prompt.txt opencode_output.log
             
             # 如果某次循环成功产生了代码修改，立刻退出循环并提交
             if [ "$FIX_SUCCEEDED" = "true" ]; then
@@ -328,16 +326,27 @@ jobs:
           
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          rm -f last_error.log prompt.txt opencode.json 2>/dev/null || true
           
-          # 排除自动生成的缓存文件
-          git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
-          git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+          # ── 恢复被 AI 误删的关键文件 ──
+          for f in $PROTECTED_FILES; do
+            if [ ! -f "$f" ] && [ -f "${f}.protected_backup" ]; then
+              echo "⚠️ AI 删除了 $f，正在恢复..."
+              cp "${f}.protected_backup" "$f"
+            fi
+          done
+          rm -f *.protected_backup 2>/dev/null || true
+          
+          # ── 清理临时文件，但不删除 last_error.log（评审还需要用）──
+          rm -f prompt.txt opencode.json 2>/dev/null || true
+          
+          # 排除自动生成的缓存文件和运行时临时文件
+          git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+          git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
           
           git add .
           
-          # 再次确保缓存文件不被提交
-          git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+          # 再次确保缓存文件和临时文件不被提交
+          git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
           
           if git diff --cached --quiet; then
             echo "::error::AI 运行完成但未产生任何代码更改，修复可能无效"
@@ -356,11 +365,11 @@ jobs:
           fi
           echo "✅ 语法校验通过，准备提交"
           
-          # === 多模型共识评审：5个模型评审，3/5通过才放行 ===
+          # === 多模型共识评审：5个模型评审，3/5通过才放行（只执行一次）===
           echo "=== 🔍 多模型共识评审 ==="
           ERROR_LOG_CONTENT=$(cat last_error.log 2>/dev/null || echo "No error log")
-          python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG_CONTENT" || true
           REVIEW_OUTPUT=$(python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG_CONTENT" 2>&1)
+          REVIEW_EXIT=$?
           echo "$REVIEW_OUTPUT"
           if echo "$REVIEW_OUTPUT" | grep -q "RESULT: FAIL"; then
             echo "::error::❌ 多模型共识评审未通过，回滚修改"
@@ -369,6 +378,9 @@ jobs:
             exit 1
           fi
           echo "✅ 多模型共识评审通过，准备提交"
+          
+          # 评审通过后才删除 last_error.log
+          rm -f last_error.log
           
           git commit -m "Auto-fix build error with OpenCode Deep Repair"
           git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git

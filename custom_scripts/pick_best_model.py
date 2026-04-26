@@ -480,14 +480,66 @@ def pick_model():
     return "", "", "", []
 
 
+def generate_opencode_config(target_provider, target_model, target_small=None):
+    """生成 opencode.json 配置（JSON格式），供 oh-my-opencode/opencode 使用。
+    
+    target_provider: 提供商名称（如 zhipu, atomgit, openrouter 等）
+    target_model: 主模型名称（如 GLM-5.1）
+    target_small: 轻量模型名称（可选，默认与主模型相同）
+    """
+    if target_small is None:
+        target_small = target_model
+
+    provider_config = {}
+    if target_provider in CUSTOM_PROVIDER_INFO:
+        info = CUSTOM_PROVIDER_INFO[target_provider]
+        base_url = info.get("base_url") or os.getenv(
+            info.get("base_url_env", ""), ""
+        )
+        api_key_env = info["api_key_env"]
+        provider_config = {
+            "npm": "@ai-sdk/openai-compatible",
+            "options": {
+                "baseURL": base_url,
+                "apiKey": f"{{env:{api_key_env}}}",
+            },
+            "models": {target_model: {}},
+        }
+    else:
+        # 内置 provider（openrouter, openai, anthropic 等）只需 models 字段
+        provider_config = {"models": {target_model: {}}}
+
+    config = {
+        "$schema": "https://opencode.ai/config.json",
+        "plugin": ["oh-my-openagent"],
+        "provider": {target_provider: provider_config} if provider_config else {},
+        "model": f"{target_provider}/{target_model}",
+        "small_model": f"{target_provider}/{target_small}",
+    }
+    return config
+
+
 if __name__ == "__main__":
-    provider, model, small, models_list = pick_model()
+    # 解析命令行参数
+    args = sys.argv[1:]
 
-    if not model:
-        print("NO_MODEL_AVAILABLE")
-        sys.exit(1)
-
-    if "--opencode-config" in sys.argv:
+    if "--opencode-config-for" in args:
+        # 用法: python pick_best_model.py --opencode-config-for <provider> <model>
+        idx = args.index("--opencode-config-for")
+        if len(args) < idx + 3:
+            print("Usage: pick_best_model.py --opencode-config-for <provider> <model>", file=sys.stderr)
+            sys.exit(1)
+        target_provider = args[idx + 1]
+        target_model = args[idx + 2]
+        config = generate_opencode_config(target_provider, target_model)
+        print(json.dumps(config, indent=2))
+    elif "--opencode-config" in args:
+        # 用法: python pick_best_model.py --opencode-config
+        # 使用自动选择的最优 provider/model
+        provider, model, small, models_list = pick_model()
+        if not model:
+            print("NO_MODEL_AVAILABLE", file=sys.stderr)
+            sys.exit(1)
         provider_config = {}
         if provider in CUSTOM_PROVIDER_INFO:
             info = CUSTOM_PROVIDER_INFO[provider]
@@ -516,5 +568,10 @@ if __name__ == "__main__":
         }
         print(json.dumps(config, indent=2))
     else:
-        target_model = small if "--small" in sys.argv else model
+        # 默认：仅输出 provider/model 字符串
+        provider, model, small, models_list = pick_model()
+        if not model:
+            print("NO_MODEL_AVAILABLE")
+            sys.exit(1)
+        target_model = small if "--small" in args else model
         print(f"{provider}/{target_model}")

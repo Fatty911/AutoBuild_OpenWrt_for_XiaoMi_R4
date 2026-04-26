@@ -126,7 +126,13 @@ def call_review_model(model_config, prompt):
         proxy_url = f"https://{proxy_url}"
 
     base = proxy_url.rstrip("/")
-    url = f"{base}/v1/chat/completions" if not base.endswith("/v1") else f"{base}/chat/completions"
+    # 智能拼接：如果URL已包含版本路径（如 /v1, /v2, /v3, /v4 等），
+    # 直接追加 /chat/completions；否则追加 /v1/chat/completions
+    import re as _re
+    if _re.search(r'/v\d+$', base):
+        url = f"{base}/chat/completions"
+    else:
+        url = f"{base}/v1/chat/completions"
 
     headers = {
         "Content-Type": "application/json",

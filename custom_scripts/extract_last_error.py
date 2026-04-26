@@ -190,6 +190,41 @@ def main():
     # ends up inside the log-dir instead of the caller's working directory.
     output_path = os.path.abspath(args.output) if args.output else None
 
+    # 如果日志目录不存在（如 MEGA 下载失败导致 openwrt 目录缺失），
+    # 不崩溃，而是生成一个包含可用上下文的错误日志
+    if not os.path.isdir(args.log_dir):
+        print(f"⚠️ 日志目录不存在: {args.log_dir}", file=sys.stderr)
+        # 尝试在当前目录查找日志文件
+        component, log_content, log_file = find_last_error_in_logs(
+            log_dir=".", check_infra_errors=True
+        )
+        if component is None:
+            # 仍然没有日志，生成一个基本的错误描述
+            log_content = (
+                f"FATAL: 日志目录 '{args.log_dir}' 不存在。"
+                f"这通常意味着上游构建步骤未完成（如 MEGA 下载失败、"
+                f"工具链构建失败等），导致编译目录未创建。\n"
+                f"请检查上游 workflow 的 MEGA 上传/下载步骤是否成功。"
+            )
+            component = "missing_log_dir"
+            log_file = None
+
+        output = f"=== Last Failed Component ===\n"
+        if component:
+            output += f"Component: {component}\n"
+        if log_file:
+            output += f"Log File: {log_file}\n"
+        output += f"\n{log_content}"
+
+        print(output)
+
+        if output_path:
+            with open(output_path, "w") as f:
+                f.write(output)
+            print(f"\n✅ 错误日志已保存到: {output_path}", file=sys.stderr)
+
+        return 0 if component else 1
+
     os.chdir(args.log_dir)
 
     component, log_content, log_file = find_last_error_in_logs()

@@ -102,6 +102,21 @@ def get_error_signature(log_content):
     if re.search(r"Killed|signal 9|Error 137", log_content):
         return "oom_detected"
 
+    # Configuration out of sync (causes "No rule to make target" cascade)
+    # This is a high-priority detection because it causes infinite retry loops
+    # when .config is stale and feeds are not properly installed.
+    no_rule_count = len(re.findall(r"No rule to make target", log_content))
+    has_out_of_sync = bool(
+        re.search(r"configuration is out of sync|run 'make defconfig'", log_content)
+    )
+    if no_rule_count >= 3 or has_out_of_sync:
+        # Extract a sample missing target for diagnostic purposes
+        sample_match = re.search(
+            r"No rule to make target '([^']+)'", log_content
+        )
+        sample_target = sample_match.group(1) if sample_match else "multiple_targets"
+        return f"config_out_of_sync:{sample_target}"
+
     # root-ramips missing directory during initramfs generation
     if re.search(
         r"cp: cannot create regular file.*root-ramips/init.*No such file or directory",
@@ -2959,6 +2974,150 @@ def fix_apk_add_base_files_issue(log_content):
     return True
 
 
+def fix_config_out_of_sync(log_content):
+    """修复配置不同步导致的 'No rule to make target' 级联错误。
+
+    根因: .config 与 feeds/Makefile 不一致，通常发生在 feeds 更新后未重新
+    运行 defconfig，或 config 文件中启用了已被移除/重命名的包。
+
+    修复步骤:
+    1. make defconfig — 同步 .config
+    2. ./scripts/feeds update -i && ./scripts/feeds install -a — 重新安装 feed 索引
+    3. 清理 tmp 目录 — 消除过时的编译缓存
+    """
+    print("🔧 检测到配置不同步错误，执行修复...")
+
+    fix_applied = False
+
+    # Step 1: make defconfig
+    print("  📋 运行 make defconfig 同步配置...")
+    try:
+        result = subprocess.run(
+            ["make", "defconfig"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+        if result.returncode == 0:
+            print("  ✅ make defconfig 成功。")
+            fix_applied = True
+        else:
+            print(f"  ⚠️ make defconfig 返回非零: {result.returncode}")
+            print(f"     stderr: {result.stderr[-300:]}")
+            # Still consider it an attempt — defconfig may have warnings but still fix the issue
+            fix_applied = True
+    except subprocess.TimeoutExpired:
+        print("  ❌ make defconfig 超时。")
+    except Exception as e:
+        print(f"  ❌ make defconfig 异常: {e}")
+
+    # Step 2: feeds update -i && feeds install -a
+    print("  📦 运行 feeds update -i && feeds install -a...")
+    try:
+        update_result = subprocess.run(
+            ["./scripts/feeds", "update", "-i"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=180,
+        )
+        if update_result.returncode != 0:
+            print(f"  ⚠️ feeds update -i 失败:\n{update_result.stderr[-300:]}")
+        else:
+            print("    ✅ feeds update -i 完成。")
+
+        install_result = subprocess.run(
+            ["./scripts/feeds", "install", "-a"],
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=300,
+        )
+        if install_result.returncode != 0:
+            print(f"  ⚠️ feeds install -a 失败:\n{install_result.stderr[-300:]}")
+        else:
+            print("    ✅ feeds install -a 完成。")
+        fix_applied = True
+    except subprocess.TimeoutExpired:
+        print("  ❌ feeds update/install 超时。")
+        fix_applied = True  # Attempt was made
+    except Exception as e:
+        print(f"  ❌ feeds update/install 异常: {e}")
+
+    # Step 3: Clean tmp directory
+    tmp_dir = Path("tmp")
+    if tmp_dir.exists():
+        print("  🧹 清理 tmp 目录...")
+        try:
+            shutil.rmtree(tmp_dir)
+            tmp_dir.mkdir(exist_ok=True)
+            print("  ✅ tmp 目录已清理并重建。")
+            fix_applied = True
+        except Exception as e:
+            print(f"  ⚠️ 清理 tmp 目录失败: {e}")
+
+    # Step 4: Extract missing targets from log and try to disable them in .config
+    # This handles the case where packages were removed from feeds but still in .config
+    missing_targets = re.findall(r"No rule to make target '([^']+)'", log_content)
+    if missing_targets:
+        # Get unique package names from targets like "package/network/utils/iptables/compile"
+        missing_pkgs = set()
+        for target in missing_targets:
+            pkg_match = re.search(r"package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+)/compile", target)
+            if pkg_match:
+                missing_pkgs.add(pkg_match.group(1))
+
+        if missing_pkgs:
+            print(f"  🔍 检测到 {len(missing_pkgs)} 个缺失的包目标: {', '.join(sorted(missing_pkgs)[:10])}")
+            config_path = Path(".config")
+            if config_path.exists():
+                try:
+                    config_content = config_path.read_text(encoding="utf-8", errors="replace")
+                    modified = False
+                    for pkg in missing_pkgs:
+                        # Try to find CONFIG_PACKAGE_<pkg>=y and disable it
+                        pattern = re.compile(
+                            rf"^(CONFIG_PACKAGE_{re.escape(pkg)}=y)", re.MULTILINE
+                        )
+                        if pattern.search(config_content):
+                            config_content = pattern.sub(
+                                f"# CONFIG_PACKAGE_{pkg} is not set", config_content
+                            )
+                            print(f"    🚫 禁用缺失包: {pkg}")
+                            modified = True
+                    if modified:
+                        config_path.write_text(config_content, encoding="utf-8")
+                        print("  ✅ 已更新 .config 禁用缺失包。")
+                        fix_applied = True
+                        # Re-run defconfig to clean up after manual config edits
+                        try:
+                            subprocess.run(
+                                ["make", "defconfig"],
+                                check=False,
+                                capture_output=True,
+                                text=True,
+                                timeout=120,
+                            )
+                        except Exception:
+                            pass
+                except Exception as e:
+                    print(f"  ⚠️ 修改 .config 时出错: {e}")
+
+    if fix_applied:
+        print("✅ 配置不同步修复完成。")
+    else:
+        print("ℹ️ 未执行有效修复。")
+
+    return fix_applied
+
+
 # --- Main Logic ---
 def main():
     parser = argparse.ArgumentParser(description="OpenWrt 编译修复脚本")
@@ -3129,7 +3288,7 @@ def main():
             # Define thresholds for stopping
             # More tolerant for dependency/metadata issues which might need multiple steps
             if current_error_signature.startswith(
-                ("apk_", "makefile_dep_", "metadata_")
+                ("apk_", "makefile_dep_", "metadata_", "config_out_of_sync")
             ):
                 consecutive_threshold = 3
             else:
@@ -3152,6 +3311,8 @@ def main():
             if new_jobs != jobs:
                 jobs = new_jobs
                 fix_attempted = True
+        elif current_error_signature.startswith("config_out_of_sync"):
+            fix_attempted = fix_config_out_of_sync(log_content_global)
         elif current_error_signature.startswith("netifd_link_error"):
             fix_attempted = fix_netifd_libnl_tiny()
         elif current_error_signature == "lua_neturl_download":
