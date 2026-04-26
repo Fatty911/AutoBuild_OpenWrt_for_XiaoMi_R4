@@ -164,12 +164,12 @@ def upload_to_mega(skip_on_failure=False):
     if remote_mtime is not None:
         print(f"网盘中存在同名文件，时间戳: {remote_mtime}，本地时间戳: {local_mtime:.0f}")
         
-        if remote_mtime < local_mtime:
-            print(f"网盘文件较旧，删除后重新上传: {target_filename}")
-            run_mega_cmd(["rm", "-f", f"/{remote_path}/{target_filename}"], check=False)
-        else:
-            print(f"网盘文件不比本地旧（remote={remote_mtime} >= local={local_mtime:.0f}），跳过上传")
-            sys.exit(0)
+        print(f"删除网盘中的旧文件: {target_filename}")
+        run_mega_cmd(["rm", "-f", f"/{remote_path}/{target_filename}"], check=False)
+        
+        print("清空 MEGA 回收站以释放空间...")
+        run_mega_cmd(["rpc", "confirm", "-f"], check=False)
+        run_mega_cmd(["emptytrash"], check=False)
     
     file_size_mb = os.path.getsize(local_file) / (1024 * 1024)
     print(f"文件大小: {file_size_mb:.2f} MB")
@@ -215,7 +215,7 @@ def upload_to_mega(skip_on_failure=False):
     sys.exit(1)
 
 
-def download_from_mega(args):
+def download_from_mega(args, skip_on_failure=False):
     remote_folder = args.remote_folder
     dest_dir = args.dest_dir
     
@@ -231,7 +231,13 @@ def download_from_mega(args):
     
     result = run_mega_cmd(["ls", remote_path], check=False)
     if result.returncode != 0:
-        print(f"错误: 远程文件夹 {remote_path} 不存在")
+        error_msg = f"远程文件夹 {remote_path} 不存在"
+        print(f"错误: {error_msg}")
+        write_error_log("REMOTE_NOT_FOUND", error_msg, f"Remote path: {remote_path}")
+        if skip_on_failure:
+            print("警告: 远程文件夹不存在，但 skip-on-failure 模式已启用，继续执行...")
+            print("::warning::MEGA 远程文件夹不存在，已跳过下载")
+            return
         sys.exit(1)
     
     print(f"找到文件夹: {remote_folder}")
@@ -239,20 +245,47 @@ def download_from_mega(args):
     os.makedirs(dest_dir, exist_ok=True)
     
     max_retries = 3
+    retry_delay = 5
+    last_error = ""
+    
     for attempt in range(max_retries):
         print(f"从 {remote_path} 下载到 {dest_dir} (尝试 {attempt + 1}/{max_retries})")
-        result = run_mega_cmd(["get", remote_path, dest_dir], timeout=1800)
+        result = run_mega_cmd(["get", remote_path, dest_dir], check=False, timeout=1800)
         
         if result.returncode == 0:
             print("下载成功")
+            return
+        
+        last_error = result.stderr or result.stdout or "Unknown error"
+        
+        if "exeeded your available storage" in last_error.lower() or "storage" in last_error.lower():
+            print("警告: MEGA 存储空间超出限制，无法下载")
+            write_error_log("STORAGE_EXCEEDED", "MEGA 存储空间超出限制", 
+                          f"Remote: {remote_path}\nDest: {dest_dir}\nError: {last_error}")
             break
-        else:
-            if attempt < max_retries - 1:
-                print(f"下载失败，等待 2 秒后重试...")
-                time.sleep(2)
-            else:
-                print("下载失败，重试次数用尽")
-                sys.exit(1)
+        
+        print(f"下载失败 (尝试 {attempt + 1}/{max_retries}): {last_error}")
+        
+        if attempt < max_retries - 1:
+            print(f"等待 {retry_delay} 秒后重试...")
+            time.sleep(retry_delay)
+            retry_delay *= 2
+    
+    error_details = f"""
+远程路径: {remote_path}
+目标目录: {dest_dir}
+重试次数: {max_retries}
+最后错误: {last_error}
+"""
+    write_error_log("DOWNLOAD_FAILED", "MEGA 下载失败", error_details)
+    
+    if skip_on_failure:
+        print("警告: MEGA 下载失败，但 skip-on-failure 模式已启用，继续执行...")
+        print("::warning::MEGA 下载失败，已跳过")
+        return
+    
+    print("下载失败，重试次数用尽")
+    sys.exit(1)
 
 
 def delete_from_mega():
@@ -313,6 +346,10 @@ def main():
     parser_download = subparsers.add_parser("download", help="从 MEGA 下载源码压缩包")
     parser_download.add_argument("remote_folder", help="MEGA 远程文件夹名")
     parser_download.add_argument("dest_dir", help="本地目标目录")
+    parser_download.add_argument("--skip-on-failure", action="store_true", 
+                                  help="下载失败时跳过而不是退出")
+    parser_download.add_argument("--error-log", dest="error_log", 
+                                  help="错误日志输出路径")
     
     subparsers.add_parser("delete", help="删除 MEGA 上的临时源码压缩包")
     
@@ -323,7 +360,9 @@ def main():
             os.environ["MEGA_ERROR_LOG"] = args.error_log
         upload_to_mega(skip_on_failure=getattr(args, 'skip_on_failure', False))
     elif args.command == "download":
-        download_from_mega(args)
+        if hasattr(args, 'error_log') and args.error_log:
+            os.environ["MEGA_ERROR_LOG"] = args.error_log
+        download_from_mega(args, skip_on_failure=getattr(args, 'skip_on_failure', False))
     elif args.command == "delete":
         delete_from_mega()
 
