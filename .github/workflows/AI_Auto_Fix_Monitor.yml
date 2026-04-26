@@ -212,20 +212,20 @@ jobs:
           fi
           
           # ── 获取可用的所有提供商及模型 ──
-          echo "==== 收集 DMXAPI 实时可用的高阶免费模型 ===="
-          python custom_scripts/dmxapi_meta_router.py --list > dmxapi_models.txt 2>/dev/null || true
-          
-          echo "==== 收集备用/旧版 Provider 的兜底模型 ===="
+          echo "==== 收集备用/旧版 Provider 的兜底模型（优先使用）===="
           # 如果 pick_best_model.py 未报错则提取一个 fallback_model
           BEST_FALLBACK=$(python custom_scripts/pick_best_model.py 2>/dev/null)
           if [ "$BEST_FALLBACK" != "NO_MODEL_AVAILABLE" ] && [ -n "$BEST_FALLBACK" ]; then
-            # 因为旧脚本输出格式可能是 provider/model，直接追加
             echo "$BEST_FALLBACK" > fallback_models.txt
           else
             touch fallback_models.txt
           fi
           
-          cat dmxapi_models.txt fallback_models.txt | awk '!x[$0]++' > models_to_try.txt
+          echo "==== 收集 DMXAPI 实时可用的高阶免费模型 ===="
+          python custom_scripts/dmxapi_meta_router.py --list > dmxapi_models.txt 2>/dev/null || true
+          
+          # fallback 模型放在最前面（优先使用），DMXAPI 模型作为备选
+          cat fallback_models.txt dmxapi_models.txt | awk '!x[$0]++' > models_to_try.txt
           
           echo "将要尝试的模型优先级列表:"
           cat models_to_try.txt
