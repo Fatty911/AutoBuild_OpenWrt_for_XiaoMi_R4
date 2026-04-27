@@ -173,8 +173,15 @@ jobs:
 
       - name: Verify and rebuild host tools if needed
         id: verify_host_tools
+        env:
+          TERM: dumb
         run: |
           cd openwrt
+          echo "=== 复制配置文件并执行 defconfig ==="
+          if [ -f "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}" ]; then
+            cp "$GITHUB_WORKSPACE/${{ env.CONFIG_FILE }}" .config
+          fi
+          make defconfig || true
           echo "=== 检查 host tools ==="
           if [ ! -f "staging_dir/host/bin/openssl" ] || [ ! -f "staging_dir/host/bin/libdeflate-gzip" ]; then
             echo "Host tools 缺失或损坏，需要重新构建..."

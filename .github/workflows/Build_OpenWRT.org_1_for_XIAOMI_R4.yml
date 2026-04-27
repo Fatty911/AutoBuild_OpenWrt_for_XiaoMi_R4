@@ -225,6 +225,8 @@ jobs:
 
       - name: Compile tools and toolchain
         id: compile_tools
+        env:
+          TERM: dumb
         run: |
           cd openwrt
           make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
