@@ -90,23 +90,20 @@ jobs:
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         MEGA_ERROR_LOG: /tmp/mega_error.log
       run: |
-        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --skip-on-failure --error-log /tmp/mega_error.log || true
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --error-log /tmp/mega_error.log
         if [ ! -f "/workdir/${{ env.SOURCE }}.tar.gz" ]; then
-          echo "MEGA_DOWNLOAD_FAILED=true" >> $GITHUB_OUTPUT
-          echo "::warning::MEGA 下载失败，将尝试从源码构建"
-        else
-          TARBALL_SIZE=$(stat -c%s "/workdir/${{ env.SOURCE }}.tar.gz" 2>/dev/null || echo 0)
-          if [ "$TARBALL_SIZE" -lt 1000000 ]; then
-            echo "MEGA_DOWNLOAD_FAILED=true" >> $GITHUB_OUTPUT
-            echo "::warning::MEGA 下载的文件损坏或不完整 (大小: $TARBALL_SIZE bytes)"
-            rm -f "/workdir/${{ env.SOURCE }}.tar.gz"
-          else
-            echo "MEGA_DOWNLOAD_FAILED=false" >> $GITHUB_OUTPUT
-          fi
+          echo "::error::MEGA 下载失败，Phase 2 需要依赖 Phase 1 的编译产物，请检查 MEGA 存储或重新运行 Phase 1"
+          exit 1
         fi
+        TARBALL_SIZE=$(stat -c%s "/workdir/${{ env.SOURCE }}.tar.gz" 2>/dev/null || echo 0)
+        if [ "$TARBALL_SIZE" -lt 1000000 ]; then
+          echo "::error::MEGA 下载的文件损坏或不完整 (大小: $TARBALL_SIZE bytes)，请检查 MEGA 存储或重新运行 Phase 1"
+          rm -f "/workdir/${{ env.SOURCE }}.tar.gz"
+          exit 1
+        fi
+        echo "MEGA 下载成功，文件大小: $(numfmt --to=iec $TARBALL_SIZE)"
     
     - name: 解压文件
-      if: steps.mega_download.outputs.MEGA_DOWNLOAD_FAILED != 'true'
       run: |
         echo "解压前磁盘空间："
         df -hT
@@ -154,8 +151,6 @@ jobs:
         rm -rf openwrt/staging_dir/toolchain-*
         rm -rf openwrt/staging_dir/host
         rm -rf openwrt/staging_dir/hostpkg
-        # find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
-        # find openwrt/build_dir -name "*.a" -delete 2>/dev/null || true
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         
         # 验证符号链接和 Makefile
@@ -172,31 +167,6 @@ jobs:
         
         echo "解压后磁盘空间："
         df -hT
-
-    - name: Clone source from git (MEGA fallback)
-      if: steps.mega_download.outputs.MEGA_DOWNLOAD_FAILED == 'true'
-      run: |
-        echo "::warning::MEGA 下载失败，从 Git 克隆源码..."
-        cd /workdir
-        
-        BRANCHES=("main" "master" "25.12" "24.10")
-        echo "尝试分支列表: ${BRANCHES[*]}"
-        
-        for branch in "${BRANCHES[@]}"; do
-          echo "尝试分支: $branch"
-          if git clone --depth=1 -b "$branch" ${{ env.REPO_URL }} openwrt 2>/dev/null; then
-            echo "成功克隆分支: $branch"
-            ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-            echo "源码克隆完成"
-            exit 0
-          else
-            echo "分支 $branch 不存在"
-            rm -rf openwrt 2>/dev/null || true
-          fi
-        done
-        
-        echo "::error::所有分支尝试失败"
-        exit 1
 
     - name: Sync OpenWrt config
       run: |
