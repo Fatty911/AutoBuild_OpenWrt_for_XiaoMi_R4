@@ -250,14 +250,12 @@ jobs:
             echo "🔥 当前尝试使用提供商/模型: $FULL_MODEL"
             echo "=========================================================="
             
-            # 生成本次尝试所用的 opencode.json 配置
+            # 生成本次尝试所用的配置
             if [ "$PROVIDER" = "dmxapi" ]; then
-               # DMXAPI 走专用的 Meta-Agent 脚本，能做动态多模型分配
                python custom_scripts/dmxapi_meta_router.py --config-opencode "$PROVIDER" "$MODEL_NAME" > opencode.json
                mkdir -p ~/.config/opencode
                python custom_scripts/dmxapi_meta_router.py --config-omo > ~/.config/opencode/oh-my-openagent.json
             else
-               # 其它 Provider 走通用单模型配置
                python custom_scripts/pick_best_model.py --opencode-config-for "$PROVIDER" "$MODEL_NAME" > opencode.json
                mkdir -p ~/.config/opencode
                python custom_scripts/dmxapi_meta_router.py --config-omo-generic "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-openagent.json
