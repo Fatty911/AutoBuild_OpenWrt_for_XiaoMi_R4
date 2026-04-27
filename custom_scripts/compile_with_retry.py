@@ -2984,10 +2984,16 @@ def fix_config_out_of_sync(log_content):
     1. make defconfig — 同步 .config
     2. ./scripts/feeds update -i && ./scripts/feeds install -a — 重新安装 feed 索引
     3. 清理 tmp 目录 — 消除过时的编译缓存
+    4. 禁用缺失包 — 从日志提取缺失包并在 .config 中禁用
+
+    返回值:
+        tuple: (attempted, confirmed) - attempted 表示是否执行了修复步骤，
+               confirmed 表示是否有明确的成功信号
     """
     print("🔧 检测到配置不同步错误，执行修复...")
 
-    fix_applied = False
+    attempted = False  # 是否执行了修复步骤
+    confirmed = False  # 是否有明确的成功信号
 
     # Step 1: make defconfig
     print("  📋 运行 make defconfig 同步配置...")
@@ -3003,12 +3009,13 @@ def fix_config_out_of_sync(log_content):
         )
         if result.returncode == 0:
             print("  ✅ make defconfig 成功。")
-            fix_applied = True
+            attempted = True
+            confirmed = True
         else:
             print(f"  ⚠️ make defconfig 返回非零: {result.returncode}")
             print(f"     stderr: {result.stderr[-300:]}")
-            # Still consider it an attempt — defconfig may have warnings but still fix the issue
-            fix_applied = True
+            # defconfig 非零返回码可能只是警告，仍视为尝试
+            attempted = True
     except subprocess.TimeoutExpired:
         print("  ❌ make defconfig 超时。")
     except Exception as e:
@@ -3044,10 +3051,11 @@ def fix_config_out_of_sync(log_content):
             print(f"  ⚠️ feeds install -a 失败:\n{install_result.stderr[-300:]}")
         else:
             print("    ✅ feeds install -a 完成。")
-        fix_applied = True
+            confirmed = True  # feeds install 成功是明确的成功信号
+        attempted = True
     except subprocess.TimeoutExpired:
         print("  ❌ feeds update/install 超时。")
-        fix_applied = True  # Attempt was made
+        attempted = True  # 执行了但超时
     except Exception as e:
         print(f"  ❌ feeds update/install 异常: {e}")
 
@@ -3059,7 +3067,7 @@ def fix_config_out_of_sync(log_content):
             shutil.rmtree(tmp_dir)
             tmp_dir.mkdir(exist_ok=True)
             print("  ✅ tmp 目录已清理并重建。")
-            fix_applied = True
+            attempted = True
         except Exception as e:
             print(f"  ⚠️ 清理 tmp 目录失败: {e}")
 
@@ -3068,9 +3076,13 @@ def fix_config_out_of_sync(log_content):
     missing_targets = re.findall(r"No rule to make target '([^']+)'", log_content)
     if missing_targets:
         # Get unique package names from targets like "package/network/utils/iptables/compile"
+        # 扩展正则以覆盖更多 OpenWrt 包路径格式
         missing_pkgs = set()
         for target in missing_targets:
-            pkg_match = re.search(r"package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/)?([^/]+)/compile", target)
+            pkg_match = re.search(
+                r"package/(?:feeds/[^/]+/|pkgs/|libs/|utils/|network/|kernel/|system/|devel/|lang/|multimedia/|firmware/|boot/)?([^/]+)/compile",
+                target,
+            )
             if pkg_match:
                 missing_pkgs.add(pkg_match.group(1))
 
@@ -3082,20 +3094,29 @@ def fix_config_out_of_sync(log_content):
                     config_content = config_path.read_text(encoding="utf-8", errors="replace")
                     modified = False
                     for pkg in missing_pkgs:
-                        # Try to find CONFIG_PACKAGE_<pkg>=y and disable it
-                        pattern = re.compile(
+                        # 同时处理 =y（内建）和 =m（模块）两种情况
+                        pattern_y = re.compile(
                             rf"^(CONFIG_PACKAGE_{re.escape(pkg)}=y)", re.MULTILINE
                         )
-                        if pattern.search(config_content):
-                            config_content = pattern.sub(
+                        pattern_m = re.compile(
+                            rf"^(CONFIG_PACKAGE_{re.escape(pkg)}=m)", re.MULTILINE
+                        )
+                        if pattern_y.search(config_content):
+                            config_content = pattern_y.sub(
                                 f"# CONFIG_PACKAGE_{pkg} is not set", config_content
                             )
-                            print(f"    🚫 禁用缺失包: {pkg}")
+                            print(f"    🚫 禁用缺失包 (内建): {pkg}")
+                            modified = True
+                        if pattern_m.search(config_content):
+                            config_content = pattern_m.sub(
+                                f"# CONFIG_PACKAGE_{pkg} is not set", config_content
+                            )
+                            print(f"    🚫 禁用缺失包 (模块): {pkg}")
                             modified = True
                     if modified:
                         config_path.write_text(config_content, encoding="utf-8")
                         print("  ✅ 已更新 .config 禁用缺失包。")
-                        fix_applied = True
+                        attempted = True
                         # Re-run defconfig to clean up after manual config edits
                         try:
                             subprocess.run(
@@ -3110,12 +3131,12 @@ def fix_config_out_of_sync(log_content):
                 except Exception as e:
                     print(f"  ⚠️ 修改 .config 时出错: {e}")
 
-    if fix_applied:
-        print("✅ 配置不同步修复完成。")
+    if attempted or confirmed:
+        print(f"✅ 配置不同步修复{'完成（已确认）' if confirmed else '已尝试'}。")
     else:
         print("ℹ️ 未执行有效修复。")
 
-    return fix_applied
+    return attempted or confirmed
 
 
 # --- Main Logic ---

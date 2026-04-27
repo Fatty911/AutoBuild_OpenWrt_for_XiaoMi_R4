@@ -525,14 +525,20 @@ if __name__ == "__main__":
 
     if "--opencode-config-for" in args:
         # 用法: python pick_best_model.py --opencode-config-for <provider> <model>
-        idx = args.index("--opencode-config-for")
-        if len(args) < idx + 3:
-            print("Usage: pick_best_model.py --opencode-config-for <provider> <model>", file=sys.stderr)
+        try:
+            idx = args.index("--opencode-config-for")
+            if len(args) < idx + 3:
+                raise ValueError("Missing arguments")
+            target_provider = args[idx + 1]
+            target_model = args[idx + 2]
+            if not target_provider or not target_model:
+                raise ValueError("Empty provider or model")
+            config = generate_opencode_config(target_provider, target_model)
+            print(json.dumps(config, indent=2))
+        except (ValueError, IndexError) as e:
+            print(f"Usage: pick_best_model.py --opencode-config-for <provider> <model>", file=sys.stderr)
+            print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
-        target_provider = args[idx + 1]
-        target_model = args[idx + 2]
-        config = generate_opencode_config(target_provider, target_model)
-        print(json.dumps(config, indent=2))
     elif "--opencode-config" in args:
         # 用法: python pick_best_model.py --opencode-config
         # 使用自动选择的最优 provider/model

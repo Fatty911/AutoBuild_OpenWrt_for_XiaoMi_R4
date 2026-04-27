@@ -27,6 +27,7 @@ import argparse
 import json
 import subprocess
 import time
+import re  # 移到顶部，避免函数内重复导入
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -126,10 +127,9 @@ def call_review_model(model_config, prompt):
         proxy_url = f"https://{proxy_url}"
 
     base = proxy_url.rstrip("/")
-    # 智能拼接：如果URL已包含版本路径（如 /v1, /v2, /v3, /v4 等），
+    # 智能拼接：如果URL已包含版本路径（如 /v1, /v2, /v3, /v4 等，含可选尾斜杠），
     # 直接追加 /chat/completions；否则追加 /v1/chat/completions
-    import re as _re
-    if _re.search(r'/v\d+$', base):
+    if re.search(r'/v\d+/?$', base):
         url = f"{base}/chat/completions"
     else:
         url = f"{base}/v1/chat/completions"
