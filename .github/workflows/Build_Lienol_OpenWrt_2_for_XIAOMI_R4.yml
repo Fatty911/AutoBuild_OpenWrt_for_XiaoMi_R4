@@ -84,29 +84,38 @@ jobs:
         sudo apt update && sudo apt install -y megacmd
 
     - name: Download from MEGA
+      id: mega_download
       env:
         MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         MEGA_ERROR_LOG: /tmp/mega_error.log
       run: |
-        # 下载到 /workdir（构建挂载点），避免占用根文件系统空间
         python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --skip-on-failure --error-log /tmp/mega_error.log
+        if [ ! -f "/workdir/${{ env.SOURCE }}.tar.gz" ]; then
+          echo "MEGA_DOWNLOAD_FAILED=true" >> $GITHUB_OUTPUT
+          echo "::warning::MEGA 下载失败，将尝试从源码构建"
+        else
+          echo "MEGA_DOWNLOAD_FAILED=false" >> $GITHUB_OUTPUT
+        fi
       continue-on-error: true
     
     - name: 解压文件
+      if: steps.mega_download.outputs.MEGA_DOWNLOAD_FAILED != 'true'
       run: |
         echo "解压前磁盘空间："
         df -hT
         cd /workdir
         
-        # 清理旧的 openwrt 目录，避免检查误判
         echo "清理旧的 openwrt 目录..."
         rm -rf openwrt
         
-        # 查找下载的 tar.gz 文件（可能文件名不是预期的）
-        TAR_FILE=$(ls -t *.tar.gz 2>/dev/null | head -1)
+        TAR_FILE="${{ env.SOURCE }}.tar.gz"
         
-        if [ -z "$TAR_FILE" ]; then
+        if [ ! -f "$TAR_FILE" ]; then
+          TAR_FILE=$(ls -t *.tar.gz 2>/dev/null | head -1)
+        fi
+        
+        if [ -z "$TAR_FILE" ] || [ ! -f "$TAR_FILE" ]; then
           echo "::error::未找到任何 .tar.gz 文件，MEGA下载可能失败"
           echo "当前目录内容:"
           ls -la
@@ -118,11 +127,9 @@ jobs:
         tar -xzf "$TAR_FILE"
         rm -f "$TAR_FILE"
         
-        # 列出解压后的目录结构
         echo "解压后的目录结构:"
         ls -la
         
-        # 检查 openwrt 目录是否存在
         if [ ! -d "openwrt" ]; then
           echo "::error::解压后未找到 openwrt 目录"
           echo "当前目录内容:"
@@ -159,6 +166,15 @@ jobs:
         
         echo "解压后磁盘空间："
         df -hT
+
+    - name: Clone source from git (MEGA fallback)
+      if: steps.mega_download.outputs.MEGA_DOWNLOAD_FAILED == 'true'
+      run: |
+        echo "::warning::MEGA 下载失败，从 Git 克隆源码..."
+        cd /workdir
+        git clone --depth=1 --single-branch -b main ${{ env.REPO_URL }} openwrt
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        echo "源码克隆完成"
 
     - name: Sync OpenWrt config
       run: |

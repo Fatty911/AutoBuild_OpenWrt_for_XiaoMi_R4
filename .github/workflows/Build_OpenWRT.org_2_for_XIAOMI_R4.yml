@@ -95,15 +95,23 @@ jobs:
           df -hT
 
       - name: Download from MEGA
+        id: mega_download
         env:
           MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
           MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
           MEGA_ERROR_LOG: /tmp/mega_error.log
         run: |
           python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --skip-on-failure --error-log /tmp/mega_error.log
+          if [ ! -f "/workdir/${{ env.SOURCE }}.tar.gz" ]; then
+            echo "MEGA_DOWNLOAD_FAILED=true" >> $GITHUB_OUTPUT
+            echo "::warning::MEGA 下载失败，将尝试从源码构建"
+          else
+            echo "MEGA_DOWNLOAD_FAILED=false" >> $GITHUB_OUTPUT
+          fi
         continue-on-error: true
 
       - name: 解压文件
+        if: steps.mega_download.outputs.MEGA_DOWNLOAD_FAILED != 'true'
         run: |
           cd /workdir
           echo "解压前磁盘空间："
@@ -128,11 +136,18 @@ jobs:
           }
           echo "=== 清理不需要的文件（但保留 host 工具链） ==="
           rm -rf openwrt/build_dir/toolchain-* openwrt/staging_dir/toolchain-* openwrt/build_dir/host openwrt/build_dir/hostpkg-* openwrt/.git 2>/dev/null || true
-          # find openwrt/build_dir -name "*.o" -delete 2>/dev/null || true
-          # find openwrt/build_dir -name "*.a" -not -path "*/staging_dir/*" -delete 2>/dev/null || true
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
           echo "清理后磁盘空间："
           df -hT
+
+      - name: Clone source from git (MEGA fallback)
+        if: steps.mega_download.outputs.MEGA_DOWNLOAD_FAILED == 'true'
+        run: |
+          echo "::warning::MEGA 下载失败，从 Git 克隆源码..."
+          cd /workdir
+          git clone --depth=1 --single-branch -b main ${{ env.REPO_URL }} openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          echo "源码克隆完成"
 
       - name: Verify and rebuild host tools if needed
         id: verify_host_tools
