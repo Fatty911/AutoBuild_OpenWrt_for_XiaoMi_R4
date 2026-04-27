@@ -172,9 +172,38 @@ jobs:
       run: |
         echo "::warning::MEGA 下载失败，从 Git 克隆源码..."
         cd /workdir
-        git clone --depth=1 --single-branch -b main ${{ env.REPO_URL }} openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-        echo "源码克隆完成"
+        
+        # 获取 OpenWrt 官方最新稳定版本
+        STABLE_VERSION=$(curl -s https://downloads.openwrt.org/releases/ | grep -oP 'href="\K[\d.]+' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+        MAJOR_VERSION=$(echo "$STABLE_VERSION" | cut -d'.' -f1,2)
+        
+        # 构建分支列表
+        BRANCHES=(
+          "main"
+          "master"
+          "$MAJOR_VERSION"
+          "$STABLE_VERSION"
+          "openwrt-${MAJOR_VERSION}"
+          "openwrt-${STABLE_VERSION}"
+        )
+        echo "尝试分支列表: ${BRANCHES[*]}"
+        
+        # 尝试每个分支
+        for branch in "${BRANCHES[@]}"; do
+          echo "尝试分支: $branch"
+          if git clone ${{ env.REPO_URL }} -b "$branch" openwrt 2>/dev/null; then
+            echo "成功克隆分支: $branch"
+            ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+            echo "源码克隆完成"
+            exit 0
+          else
+            echo "分支 $branch 不存在"
+            rm -rf openwrt 2>/dev/null || true
+          fi
+        done
+        
+        echo "::error::所有分支尝试失败"
+        exit 1
 
     - name: Sync OpenWrt config
       run: |
