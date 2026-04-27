@@ -411,13 +411,6 @@ jobs:
           name: error-log
           path: last_error.log
           retention-days: 1
-      - name: Trigger AI Auto Fix Monitor
-        if: failure()
-        env:
-          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-        run: |
-          echo "Triggering AI Auto Fix Monitor via GitHub CLI..."
-          gh workflow run AI_Auto_Fix_Monitor.yml -f failed_run_id=${{ github.run_id }} -f failed_workflow_name="${{ github.workflow }}"
       - name: Delete workflow runs
         if: always()
         run: |
