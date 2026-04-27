@@ -90,14 +90,20 @@ jobs:
         MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
         MEGA_ERROR_LOG: /tmp/mega_error.log
       run: |
-        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --skip-on-failure --error-log /tmp/mega_error.log
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --skip-on-failure --error-log /tmp/mega_error.log || true
         if [ ! -f "/workdir/${{ env.SOURCE }}.tar.gz" ]; then
           echo "MEGA_DOWNLOAD_FAILED=true" >> $GITHUB_OUTPUT
           echo "::warning::MEGA 下载失败，将尝试从源码构建"
         else
-          echo "MEGA_DOWNLOAD_FAILED=false" >> $GITHUB_OUTPUT
+          TARBALL_SIZE=$(stat -c%s "/workdir/${{ env.SOURCE }}.tar.gz" 2>/dev/null || echo 0)
+          if [ "$TARBALL_SIZE" -lt 1000000 ]; then
+            echo "MEGA_DOWNLOAD_FAILED=true" >> $GITHUB_OUTPUT
+            echo "::warning::MEGA 下载的文件损坏或不完整 (大小: $TARBALL_SIZE bytes)"
+            rm -f "/workdir/${{ env.SOURCE }}.tar.gz"
+          else
+            echo "MEGA_DOWNLOAD_FAILED=false" >> $GITHUB_OUTPUT
+          fi
         fi
-      continue-on-error: true
     
     - name: 解压文件
       if: steps.mega_download.outputs.MEGA_DOWNLOAD_FAILED != 'true'

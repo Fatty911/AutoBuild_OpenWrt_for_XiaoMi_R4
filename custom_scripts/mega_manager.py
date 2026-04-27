@@ -37,7 +37,7 @@ def run_mega_cmd(args, check=True, capture_output=True, timeout=None):
         )
     except subprocess.TimeoutExpired:
         print(f"命令超时 ({timeout}秒)")
-        sys.exit(1)
+        return subprocess.CompletedProcess(cmd, returncode=124, stdout="", stderr=f"命令超时 ({timeout}秒)")
     
     if result.stdout:
         print(result.stdout.strip())
@@ -159,17 +159,55 @@ def upload_to_mega(skip_on_failure=False):
     
     run_mega_cmd(["mkdir", "-p", remote_path], check=False)
     
-    remote_mtime = get_remote_file_mtime(source, target_filename)
+    print("=== 上传前清理 MEGA 网盘空间 ===")
     
-    if remote_mtime is not None:
-        print(f"网盘中存在同名文件，时间戳: {remote_mtime}，本地时间戳: {local_mtime:.0f}")
-        
-        print(f"删除网盘中的旧文件: {target_filename}")
-        run_mega_cmd(["rm", "-f", f"/{remote_path}/{target_filename}"], check=False)
-        
-        print("清空 MEGA 回收站以释放空间...")
-        run_mega_cmd(["rpc", "confirm", "-f"], check=False)
-        run_mega_cmd(["emptytrash"], check=False)
+    ls_result = run_mega_cmd(["ls", remote_path], check=False, capture_output=True)
+    if ls_result.returncode == 0 and ls_result.stdout.strip():
+        print(f"网盘文件夹 /{source}/ 当前内容:")
+        print(ls_result.stdout.strip())
+        for line in ls_result.stdout.strip().split('\n'):
+            clean_line = line.strip().rstrip(':')
+            # mega-ls output: folder title lines end with ':', file lines are bare filenames
+            if clean_line and not clean_line.startswith('/') and clean_line != source:
+                file_to_delete = f"/{source}/{clean_line}"
+                print(f"删除旧文件: {file_to_delete}")
+                rm_result = run_mega_cmd(["rm", "-f", file_to_delete], check=False)
+                if rm_result.returncode != 0:
+                    print(f"删除失败，尝试直接路径: /{source}/{clean_line}")
+                    run_mega_cmd(["rm", "-f", f"/{source}/{clean_line}"], check=False)
+    
+    # mega-put may deposit files at root level instead of inside the target folder
+    root_ls_result = run_mega_cmd(["ls", "/"], check=False, capture_output=True)
+    if root_ls_result.returncode == 0 and root_ls_result.stdout.strip():
+        for line in root_ls_result.stdout.strip().split('\n'):
+            clean_line = line.strip().rstrip(':')
+            if target_filename in clean_line and clean_line != source:
+                print(f"删除根目录残留文件: /{clean_line}")
+                run_mega_cmd(["rm", "-f", f"/{clean_line}"], check=False)
+    
+    all_folders_result = run_mega_cmd(["ls", "/"], check=False, capture_output=True)
+    if all_folders_result.returncode == 0 and all_folders_result.stdout.strip():
+        for line in all_folders_result.stdout.strip().split('\n'):
+            folder_name = line.strip().rstrip(':')
+            if folder_name and folder_name != source:
+                folder_ls = run_mega_cmd(["ls", f"/{folder_name}"], check=False, capture_output=True)
+                if folder_ls.returncode == 0 and folder_ls.stdout.strip():
+                    for fline in folder_ls.stdout.strip().split('\n'):
+                        fname = fline.strip()
+                        if fname and '.tar.gz' in fname:
+                            print(f"删除其他文件夹中的旧构建文件: /{folder_name}/{fname}")
+                            run_mega_cmd(["rm", "-f", f"/{folder_name}/{fname}"], check=False)
+    
+    print("清空 MEGA 回收站以彻底释放空间...")
+    run_mega_cmd(["rpc", "confirm", "-f"], check=False)
+    run_mega_cmd(["emptytrash"], check=False)
+    time.sleep(3)
+    
+    du_result = run_mega_cmd(["du"], check=False, capture_output=True)
+    if du_result.returncode == 0:
+        print(f"MEGA 网盘当前使用量: {du_result.stdout.strip()}")
+    
+    print("=== MEGA 网盘空间清理完成 ===")
     
     file_size_mb = os.path.getsize(local_file) / (1024 * 1024)
     print(f"文件大小: {file_size_mb:.2f} MB")
