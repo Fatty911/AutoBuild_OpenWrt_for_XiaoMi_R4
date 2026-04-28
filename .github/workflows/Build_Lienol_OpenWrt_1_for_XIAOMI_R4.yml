@@ -19,7 +19,12 @@ on:
       - master
       - main
     paths:
-      - 'custom_scripts/**'
+      - 'custom_scripts/diy-part1.sh'
+      - 'custom_scripts/diy-part2.sh'
+      - 'custom_scripts/replace_wifi_config.sh'
+      - 'custom_scripts/extract_last_error.py'
+      - 'custom_scripts/validate_build_output.py'
+      - 'custom_scripts/mega_manager.py'
       - 'custom_configs/**'
       - .github/workflows/Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml
       - package/luci-app-autoupdate/**
