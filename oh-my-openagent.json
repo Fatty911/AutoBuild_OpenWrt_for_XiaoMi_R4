@@ -3,154 +3,214 @@
   "agents": {
     "sisyphus": {
       "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "variant": "max",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "volcengine-coding/glm-5.1",
+        "mimo-tokenplan/mimo-v2.5-pro",
+        "deepseek/deepseek-v4-pro",
+        "qianfan-coding-plan/glm-5",
+        "qianfan-coding-plan/kimi-k2.5",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus"
       ]
     },
     "hephaestus": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
+      "model": "qianfan-coding-plan/deepseek-v3.2",
+      "variant": "low",
+      "fallback_models": [
+        "qianfan-coding-plan/glm-5",
         "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
-      ]
+        "qianfan-coding-plan/deepseek-v3.2"
+      ],
+      "description": "DeepSeek V3.2 - Lightweight executor",
+      "color": "#64B5F6",
+      "mode": "subagent",
+      "temperature": 0.4,
+      "permission": {
+        "edit": "allow",
+        "task": "allow",
+        "bash": "allow"
+      }
     },
     "oracle": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
+      "model": "zhipu/glm-5.1",
+      "variant": "high",
+      "fallback_models": [
+        "volcengine-coding/glm-5.1",
+        "qianfan-coding-plan/glm-5",
         "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
-      ]
-    },
-    "librarian": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "qianfan-coding-plan/deepseek-v3.2",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus"
       ]
     },
     "explore": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
+      "model": "qianfan-coding-plan/deepseek-v3.2",
+      "variant": "low",
+      "fallback_models": [
+        "qianfan-coding-plan/glm-5",
         "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "qianfan-coding-plan/deepseek-v3.2"
       ]
     },
     "multimodal-looker": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
+      "model": "qianfan-coding-plan/kimi-k2.5",
+      "variant": "medium",
+      "fallback_models": [
+        "kimi-coding-plan/kimi-k2.6",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-flash",
+        "qianfan-coding-plan/glm-5",
         "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "qianfan-coding-plan/deepseek-v3.2"
       ]
     },
     "prometheus": {
       "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "variant": "max",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "volcengine-coding/glm-5.1",
+        "mimo-tokenplan/mimo-v2.5-pro",
+        "deepseek/deepseek-v4-pro",
+        "qianfan-coding-plan/glm-5",
+        "qianfan-coding-plan/kimi-k2.5",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus"
       ]
     },
     "metis": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
+      "model": "deepseek/deepseek-v4-pro",
+      "variant": "xhigh",
+      "fallback_models": [
+        "qianfan-coding-plan/glm-5",
         "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "qianfan-coding-plan/deepseek-v3.2",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus"
       ]
     },
     "momus": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "model": "kimi-coding-plan/kimi-k2.6",
+      "variant": "high",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "qianfan-coding-plan/glm-5",
+        "qianfan-coding-plan/kimi-k2.5",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus"
       ]
     },
     "atlas": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
+      "model": "qianfan-coding-plan/deepseek-v3.2",
+      "variant": "low",
+      "fallback_models": [
+        "qianfan-coding-plan/glm-5",
         "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "qianfan-coding-plan/deepseek-v3.2"
       ]
     },
     "sisyphus-junior": {
-      "model": "qianfan-coding-plan/qwen3.5-397b-a17b",
-      "fallback": [
-        "qianfan-coding-plan/deepseek-v3.2",
-        "volcengine-coding/deepseek-v3.2"
+      "model": "qianfan-coding-plan/deepseek-v3.2",
+      "variant": "low",
+      "fallback_models": [
+        "qianfan-coding-plan/glm-5",
+        "qianfan-coding-plan/kimi-k2.5",
+        "qianfan-coding-plan/deepseek-v3.2"
+      ]
+    },
+    "librarian": {
+      "model": "qianfan-coding-plan/deepseek-v3.2",
+      "variant": "low",
+      "fallback_models": [
+        "qianfan-coding-plan/glm-5",
+        "qianfan-coding-plan/kimi-k2.5",
+        "qianfan-coding-plan/deepseek-v3.2"
       ]
     }
   },
   "categories": {
     "visual-engineering": {
       "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "variant": "high",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "volcengine-coding/glm-5.1",
+        "mimo-tokenplan/mimo-v2.5-pro",
+        "deepseek/deepseek-v4-pro"
       ]
     },
     "ultrabrain": {
       "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "variant": "xhigh",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "volcengine-coding/glm-5.1",
+        "mimo-tokenplan/mimo-v2.5-pro",
+        "deepseek/deepseek-v4-pro"
       ]
     },
     "deep": {
       "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "variant": "medium",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "volcengine-coding/glm-5.1",
+        "mimo-tokenplan/mimo-v2.5-pro",
+        "deepseek/deepseek-v4-pro"
       ]
     },
     "artistry": {
       "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "variant": "high",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "volcengine-coding/glm-5.1",
+        "mimo-tokenplan/mimo-v2.5-pro",
+        "deepseek/deepseek-v4-pro"
       ]
     },
     "quick": {
-      "model": "qianfan-coding-plan/qwen3.5-397b-a17b",
-      "fallback": [
-        "qianfan-coding-plan/deepseek-v3.2",
-        "volcengine-coding/deepseek-v3.2"
+      "model": "qianfan-coding-plan/kimi-k2.5",
+      "fallback_models": [
+        "kimi-coding-plan/kimi-k2.6",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-flash"
       ]
     },
     "unspecified-low": {
-      "model": "qianfan-coding-plan/qwen3.5-397b-a17b",
-      "fallback": [
-        "qianfan-coding-plan/deepseek-v3.2",
-        "volcengine-coding/deepseek-v3.2"
+      "model": "qianfan-coding-plan/kimi-k2.5",
+      "fallback_models": [
+        "kimi-coding-plan/kimi-k2.6",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-flash"
       ]
     },
     "unspecified-high": {
       "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
+      "fallback_models": [
         "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+        "volcengine-coding/glm-5.1",
+        "mimo-tokenplan/mimo-v2.5-pro",
+        "deepseek/deepseek-v4-pro"
       ]
     },
     "writing": {
-      "model": "qianfan-coding-plan/glm-5",
-      "fallback": [
-        "qianfan-coding-plan/kimi-k2.5",
-        "volcengine-coding/kimi-k2.6",
-        "volcengine-coding/glm-5.1"
+      "model": "qianfan-coding-plan/kimi-k2.5",
+      "fallback_models": [
+        "kimi-coding-plan/kimi-k2.6",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-flash"
       ]
     }
-  }
+  },
+  "fallback_models": []
 }
