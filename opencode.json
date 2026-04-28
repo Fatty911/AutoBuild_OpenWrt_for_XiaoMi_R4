@@ -590,13 +590,7 @@
       "whitelist": [
         "DeepSeek-V4-Pro",
         "DeepSeek-V4-Flash",
-        "glm-5.1",
-        "glm-5",
-        "kimi-k2.5",
-        "Qwen3.5-397B-A17B",
-        "DeepSeek-V3.1",
-        "Qwen3-235B-A22B",
-        "MiniMax-M2.5"
+        "glm-5.1"
       ]
     },
     "nvidia": {
