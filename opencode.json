@@ -408,35 +408,11 @@
         "opencode-gemini-3.1-pro-preview",
         "opencode-gpt-5.5",
         "opencode-claude-4.6-sonnet",
-        "opencode-claude-4.6-opus",
+        "opencode-claude-4.7-opus",
         "opencode-grok-4.20",
         "opencode-deepseek-v4",
         "opencode-qwen3.6-plus",
-        "opencode-kimi-k2.6",
-        {
-          "id": "claude-opus-4-7",
-          "object": "model",
-          "created": 1777344950,
-          "owned_by": "opencode"
-        },
-        {
-          "id": "claude-opus-4-6",
-          "object": "model",
-          "created": 1777344950,
-          "owned_by": "opencode"
-        },
-        {
-          "id": "glm-5.1",
-          "object": "model",
-          "created": 1777344950,
-          "owned_by": "opencode"
-        },
-        {
-          "id": "gemini-3.1-pro",
-          "object": "model",
-          "created": 1777344950,
-          "owned_by": "opencode"
-        }
+        "opencode-kimi-k2.6"
       ],
       "models": {}
     },
@@ -544,6 +520,83 @@
       },
       "whitelist": [
         "kimi-k2.6"
+      ]
+    },
+    "unicom-coding-plan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Unicom Cloud Coding Plan",
+      "options": {
+        "baseURL": "https://aigw-gzgy2.cucloud.cn:8443/v1",
+        "apiKey": "sk-sp-qHTE9Xi5C8lAkxE0aaErpFc6nWZDsuHB"
+      },
+      "models": {
+        "DeepSeek-V4-Pro": {
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          }
+        },
+        "DeepSeek-V4-Flash": {
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          }
+        },
+        "glm-5.1": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        },
+        "glm-5": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        },
+        "kimi-k2.5": {
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        "Qwen3.5-397B-A17B": {
+          "limit": {
+            "context": 262144,
+            "output": 81920
+          }
+        },
+        "DeepSeek-V3.1": {
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        },
+        "Qwen3-235B-A22B": {
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "MiniMax-M2.5": {
+          "limit": {
+            "context": 256000,
+            "output": 32768
+          }
+        }
+      },
+      "whitelist": [
+        "DeepSeek-V4-Pro",
+        "DeepSeek-V4-Flash",
+        "glm-5.1",
+        "glm-5",
+        "kimi-k2.5",
+        "Qwen3.5-397B-A17B",
+        "DeepSeek-V3.1",
+        "Qwen3-235B-A22B",
+        "MiniMax-M2.5"
       ]
     },
     "nvidia": {
