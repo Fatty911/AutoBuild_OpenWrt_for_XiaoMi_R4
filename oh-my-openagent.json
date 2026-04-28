@@ -19,7 +19,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "hephaestus": {
@@ -33,7 +36,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ],
       "description": "DeepSeek V3.2 - Lightweight executor",
       "color": "#64B5F6",
@@ -62,7 +71,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "explore": {
@@ -76,7 +88,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ]
     },
     "multimodal-looker": {
@@ -97,7 +115,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "prometheus": {
@@ -118,7 +139,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "metis": {
@@ -138,7 +162,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "momus": {
@@ -158,7 +185,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "atlas": {
@@ -172,7 +202,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ]
     },
     "sisyphus-junior": {
@@ -186,7 +222,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ]
     },
     "librarian": {
@@ -200,7 +242,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ]
     }
   },
@@ -223,7 +271,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "ultrabrain": {
@@ -244,7 +295,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "deep": {
@@ -265,7 +319,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "artistry": {
@@ -286,7 +343,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "quick": {
@@ -299,7 +359,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ]
     },
     "unspecified-low": {
@@ -312,7 +378,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ]
     },
     "unspecified-high": {
@@ -332,7 +404,10 @@
         "amazon-bedrock/bedrock.claude-sonnet-4",
         "copilot/copilot.gpt-4o",
         "copilot/copilot.gpt-4.1",
-        "kimi-coding-plan/kimi-k2.6"
+        "kimi-coding-plan/kimi-k2.6",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "unicom-coding-plan/glm-5.1"
       ]
     },
     "writing": {
@@ -345,7 +420,13 @@
         "alibaba-tokenplan/glm-5",
         "alibaba-tokenplan/qwen3.6-plus",
         "volcengine-coding/deepseek-v3.2",
-        "volcengine-coding/kimi-k2.5"
+        "volcengine-coding/kimi-k2.5",
+        "unicom-coding-plan/glm-5",
+        "unicom-coding-plan/kimi-k2.5",
+        "unicom-coding-plan/Qwen3.5-397B-A17B",
+        "unicom-coding-plan/DeepSeek-V3.1",
+        "unicom-coding-plan/Qwen3-235B-A22B",
+        "unicom-coding-plan/MiniMax-M2.5"
       ]
     }
   },
