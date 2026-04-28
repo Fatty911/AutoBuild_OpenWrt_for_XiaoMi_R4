@@ -103,12 +103,23 @@ jobs:
         run: |
           python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --error-log /tmp/mega_error.log
           if [ ! -f "/workdir/${{ env.SOURCE }}.tar.gz" ]; then
-            echo "::error::MEGA 下载失败，Phase 2 需要依赖 Phase 1 的编译产物，请检查 MEGA 存储或重新运行 Phase 1"
+            echo "::error::MEGA 下载失败，正在诊断失败原因..."
+            # 诊断：用 mega-ls 检查 Phase 1 是否上传了文件
+            mega-ls /${{ env.SOURCE }} 2>/dev/null || true
+            MEGA_LS_OUTPUT=$(mega-ls /${{ env.SOURCE }} 2>/dev/null || echo "LS_FAILED")
+            if echo "$MEGA_LS_OUTPUT" | grep -qi "${{ env.SOURCE }}.tar.gz"; then
+              echo "FAILURE_TYPE=mega-download" >> $GITHUB_ENV
+              echo "::error::Phase 1 已上传文件到 MEGA，但 Phase 2 下载失败 → 需修复 MEGA 下载逻辑"
+            else
+              echo "FAILURE_TYPE=phase1-upload" >> $GITHUB_ENV
+              echo "::error::MEGA 上不存在 ${{ env.SOURCE }}.tar.gz → Phase 1 上传失败，需修复 MEGA 上传逻辑"
+            fi
             exit 1
           fi
           TARBALL_SIZE=$(stat -c%s "/workdir/${{ env.SOURCE }}.tar.gz" 2>/dev/null || echo 0)
           if [ "$TARBALL_SIZE" -lt 1000000 ]; then
-            echo "::error::MEGA 下载的文件损坏或不完整 (大小: $TARBALL_SIZE bytes)，请检查 MEGA 存储或重新运行 Phase 1"
+            echo "::error::MEGA 下载的文件损坏或不完整 (大小: $TARBALL_SIZE bytes)"
+            echo "FAILURE_TYPE=mega-download" >> $GITHUB_ENV
             rm -f "/workdir/${{ env.SOURCE }}.tar.gz"
             exit 1
           fi

@@ -14,7 +14,14 @@ on:
     branches:
       - main
     paths:
-      - 'custom_scripts/**'
+      - 'custom_scripts/diy-part1.sh'
+      - 'custom_scripts/diy-part2.sh'
+      - 'custom_scripts/compile_with_retry.py'
+      - 'custom_scripts/fix_dts_nvmem_layout.py'
+      - 'custom_scripts/replace_wifi_config.sh'
+      - 'custom_scripts/select_kernel.py'
+      - 'custom_scripts/extract_last_error.py'
+      - 'custom_scripts/validate_build_output.py'
       - 'custom_configs/**'
       - .github/workflows/SimpleBuildOpenWRT_Official.yml
       - package/luci-app-autoupdate/**

@@ -271,8 +271,20 @@ jobs:
               continue
             fi
             
-            # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
-            if grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
+             # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
+             FAILURE_TYPE="build"
+             if grep -qi "Phase 1 上传失败\|phase1-upload\|需修复 MEGA 上传逻辑" last_error.log 2>/dev/null; then
+               FAILURE_TYPE="phase1-upload"
+             elif grep -qi "Phase 2 下载失败\|mega-download\|需修复 MEGA 下载逻辑" last_error.log 2>/dev/null; then
+               FAILURE_TYPE="mega-download"
+             fi
+             echo "检测到失败类型: $FAILURE_TYPE"
+             
+             if [ "$FAILURE_TYPE" = "phase1-upload" ]; then
+               echo "Phase 1 编译成功但 MEGA 上传失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的上传逻辑（upload_to_mega 函数），找出上传失败的根本原因并修复。常见问题：mega-rpc 命令不存在、mega-put 超时、登录失败、存储满等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+             elif [ "$FAILURE_TYPE" = "mega-download" ]; then
+               echo "Phase 1 已成功上传到 MEGA，但 Phase 2 下载失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的下载逻辑（download_from_mega 函数），找出下载失败的根本原因并修复。常见问题：mega-get 超时、登录失败、文件路径错误等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+             elif grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
               echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
             else
               echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
