@@ -379,18 +379,8 @@ jobs:
         echo "准备上传文件:"
         ls -lh ${{ env.SOURCE }}.tar.gz
         
-        # 上传到 MEGA (失败时跳过，不阻塞构建)
-        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py upload --skip-on-failure --error-log /tmp/mega_error.log
-        UPLOAD_EXIT_CODE=$?
-        
-        if [ $UPLOAD_EXIT_CODE -eq 0 ]; then
-          echo "MEGA_UPLOAD_SUCCESS=true" >> $GITHUB_ENV
-          echo "MEGA 上传成功"
-        else
-          echo "::warning::MEGA 上传失败，但构建将继续"
-          echo "MEGA_UPLOAD_SUCCESS=false" >> $GITHUB_ENV
-        fi
-      continue-on-error: true
+        # 上传到 MEGA，失败直接终止（Phase 2 依赖此产物）
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py upload --error-log /tmp/mega_error.log
 
     - name: Record build job outputs
       id: build_job_outputs

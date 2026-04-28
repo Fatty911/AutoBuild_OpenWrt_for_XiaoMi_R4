@@ -38,6 +38,9 @@ def run_mega_cmd(args, check=True, capture_output=True, timeout=None):
     except subprocess.TimeoutExpired:
         print(f"命令超时 ({timeout}秒)")
         return subprocess.CompletedProcess(cmd, returncode=124, stdout="", stderr=f"命令超时 ({timeout}秒)")
+    except FileNotFoundError:
+        print(f"命令不存在: {cmd[0]}")
+        return subprocess.CompletedProcess(cmd, returncode=127, stdout="", stderr=f"命令不存在: {cmd[0]}")
     
     if result.stdout:
         print(result.stdout.strip())
@@ -119,7 +122,7 @@ def write_error_log(error_type, message, details=""):
         print(f"写入错误日志失败: {e}")
 
 
-def upload_to_mega(skip_on_failure=False):
+def upload_to_mega():
     source = os.getenv("SOURCE")
     if not source:
         print("错误: 请设置 SOURCE 环境变量")
@@ -199,7 +202,6 @@ def upload_to_mega(skip_on_failure=False):
                             run_mega_cmd(["rm", "-f", f"/{folder_name}/{fname}"], check=False)
     
     print("清空 MEGA 回收站以彻底释放空间...")
-    run_mega_cmd(["rpc", "confirm", "-f"], check=False)
     run_mega_cmd(["emptytrash"], check=False)
     time.sleep(3)
     
@@ -244,16 +246,11 @@ def upload_to_mega(skip_on_failure=False):
 """
     write_error_log("UPLOAD_FAILED", "MEGA 上传失败，重试次数已用尽", error_details)
     
-    if skip_on_failure:
-        print("警告: MEGA 上传失败，但 skip-on-failure 模式已启用，继续执行...")
-        print("::warning::MEGA 上传失败，已跳过")
-        return
-    
-    print("上传失败")
+    print("上传失败，Phase 1 编译产物未上传到 MEGA，Phase 2 将无法运行")
     sys.exit(1)
 
 
-def download_from_mega(args, skip_on_failure=False):
+def download_from_mega(args):
     remote_folder = args.remote_folder
     dest_dir = args.dest_dir
     
@@ -272,10 +269,6 @@ def download_from_mega(args, skip_on_failure=False):
         error_msg = f"远程文件夹 {remote_path} 不存在"
         print(f"错误: {error_msg}")
         write_error_log("REMOTE_NOT_FOUND", error_msg, f"Remote path: {remote_path}")
-        if skip_on_failure:
-            print("警告: 远程文件夹不存在，但 skip-on-failure 模式已启用，继续执行...")
-            print("::warning::MEGA 远程文件夹不存在，已跳过下载")
-            return
         sys.exit(1)
     
     print(f"找到文件夹: {remote_folder}")
@@ -317,11 +310,6 @@ def download_from_mega(args, skip_on_failure=False):
 """
     write_error_log("DOWNLOAD_FAILED", "MEGA 下载失败", error_details)
     
-    if skip_on_failure:
-        print("警告: MEGA 下载失败，但 skip-on-failure 模式已启用，继续执行...")
-        print("::warning::MEGA 下载失败，已跳过")
-        return
-    
     print("下载失败，重试次数用尽")
     sys.exit(1)
 
@@ -359,16 +347,12 @@ def delete_from_mega():
         return
     
     print("正在清空 MEGA 回收站以彻底释放空间...")
-    result = run_mega_cmd(["rpc", "confirm", "-f"], check=False)
+    result = run_mega_cmd(["emptytrash"], check=False)
     
     if result.returncode == 0:
         print("回收站已清空，空间已彻底释放")
     else:
-        result = run_mega_cmd(["emptytrash"], check=False)
-        if result.returncode == 0:
-            print("回收站已清空，空间已彻底释放")
-        else:
-            print("清空回收站失败（但文件已删除）")
+        print("清空回收站失败（但文件已删除）")
 
 
 def main():
@@ -376,16 +360,12 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
     
     parser_upload = subparsers.add_parser("upload", help="上传源码压缩包到 MEGA")
-    parser_upload.add_argument("--skip-on-failure", action="store_true", 
-                                help="上传失败时跳过而不是退出")
     parser_upload.add_argument("--error-log", dest="error_log", 
                                 help="错误日志输出路径")
     
     parser_download = subparsers.add_parser("download", help="从 MEGA 下载源码压缩包")
     parser_download.add_argument("remote_folder", help="MEGA 远程文件夹名")
     parser_download.add_argument("dest_dir", help="本地目标目录")
-    parser_download.add_argument("--skip-on-failure", action="store_true", 
-                                  help="下载失败时跳过而不是退出")
     parser_download.add_argument("--error-log", dest="error_log", 
                                   help="错误日志输出路径")
     
@@ -396,11 +376,11 @@ def main():
     if args.command == "upload":
         if hasattr(args, 'error_log') and args.error_log:
             os.environ["MEGA_ERROR_LOG"] = args.error_log
-        upload_to_mega(skip_on_failure=getattr(args, 'skip_on_failure', False))
+        upload_to_mega()
     elif args.command == "download":
         if hasattr(args, 'error_log') and args.error_log:
             os.environ["MEGA_ERROR_LOG"] = args.error_log
-        download_from_mega(args, skip_on_failure=getattr(args, 'skip_on_failure', False))
+        download_from_mega(args)
     elif args.command == "delete":
         delete_from_mega()
 
