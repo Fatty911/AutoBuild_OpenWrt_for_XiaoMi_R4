@@ -401,11 +401,30 @@ jobs:
           git push origin HEAD:main || { echo "::error::Push failed"; exit 1; }
           echo "Track 3 修复成功并已推送"
           
-          # ── 重触发原来失败的工作流 ──
+          # ── 重触发工作流（根据失败类型决定重触发Phase1还是Phase2）──
           FAILED_WORKFLOW="${{ github.event.workflow_run.name || inputs.failed_workflow_name }}"
           FAILED_RUN_ID="${{ github.event.workflow_run.id || inputs.failed_run_id }}"
           WORKFLOW_PATH="${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}"
           WORKFLOW_FILENAME=$(basename "$WORKFLOW_PATH")
-          echo "重触发工作流: $FAILED_WORKFLOW (文件: $WORKFLOW_FILENAME) 以应用修复"
-          gh workflow run "$WORKFLOW_FILENAME" --ref main || echo "重触发失败，可手动触发"
+          
+          # 从last_error.log检测失败类型
+          RETRIGGER_TYPE="self"
+          if grep -qi "Phase 1 上传失败\|phase1-upload\|需修复 MEGA 上传逻辑" last_error.log 2>/dev/null; then
+            RETRIGGER_TYPE="phase1"
+          fi
+          
+          if [ "$RETRIGGER_TYPE" = "phase1" ]; then
+            # Phase1上传失败 → 修复后应重触发Phase1让它重新上传
+            PHASE1_WORKFLOW=""
+            case "$WORKFLOW_FILENAME" in
+              Build_OpenWRT.org_2_for_XIAOMI_R4.yml) PHASE1_WORKFLOW="Build_OpenWRT.org_1_for_XIAOMI_R4.yml" ;;
+              Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml) PHASE1_WORKFLOW="Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml" ;;
+              *) PHASE1_WORKFLOW="$WORKFLOW_FILENAME" ;;
+            esac
+            echo "根因是Phase1上传失败，重触发Phase1: $PHASE1_WORKFLOW"
+            gh workflow run "$PHASE1_WORKFLOW" --ref main || echo "重触发Phase1失败，可手动触发"
+          else
+            echo "重触发原失败工作流: $FAILED_WORKFLOW (文件: $WORKFLOW_FILENAME)"
+            gh workflow run "$WORKFLOW_FILENAME" --ref main || echo "重触发失败，可手动触发"
+          fi
 
