@@ -106,6 +106,16 @@ jobs:
           MEGA_ERROR_LOG: /tmp/mega_error.log
         run: |
           python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --error-log /tmp/mega_error.log
+          
+          # mega-get 下载的是文件夹，文件位于 /workdir/${{ env.SOURCE }}/${{ env.SOURCE }}.tar.gz
+          # 需要将文件移动到预期位置 /workdir/${{ env.SOURCE }}.tar.gz
+          if [ -f "/workdir/${{ env.SOURCE }}/${{ env.SOURCE }}.tar.gz" ]; then
+            echo "MEGA 下载的是文件夹，正在移动文件到预期位置..."
+            mv "/workdir/${{ env.SOURCE }}/${{ env.SOURCE }}.tar.gz" "/workdir/${{ env.SOURCE }}.tar.gz"
+            # 删除空文件夹
+            rm -rf "/workdir/${{ env.SOURCE }}"
+          fi
+          
           if [ ! -f "/workdir/${{ env.SOURCE }}.tar.gz" ]; then
             echo "::error::MEGA 下载失败，正在诊断失败原因..."
             # 诊断：用 mega-ls 检查 Phase 1 是否上传了文件
