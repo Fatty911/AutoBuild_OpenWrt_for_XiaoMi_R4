@@ -1,0 +1,91 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
+
+  "runtime_fallback": {
+    "enabled": true,
+    "retry_on_errors": [400, 429, 500, 502, 503, 504, 529],
+    "max_fallback_attempts": 5,
+    "cooldown_seconds": 60,
+    "timeout_seconds": 30,
+    "notify_on_fallback": true
+  },
+
+  "agents": {
+    "sisyphus": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback_models": [
+        "deepseek/deepseek-v4-pro",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "volcengine-coding/kimi-k2.6",
+        "bltcy/gpt-5.5"
+      ]
+    },
+
+    "plan": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback_models": [
+        "deepseek/deepseek-v4-pro",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "volcengine-coding/kimi-k2.6",
+        "bltcy/claude-sonnet-4-6"
+      ]
+    },
+
+    "build": {
+      "fallback_models": [
+        "deepseek/deepseek-v4-pro",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "volcengine-coding/kimi-k2.6",
+        "bltcy/gpt-5.5"
+      ]
+    },
+
+    "sisyphus-junior": {
+      "fallback_models": [
+        "deepseek/deepseek-v4-flash",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "volcengine-coding/deepseek-v3.2",
+        "unicom-coding-plan/DeepSeek-V4-Flash"
+      ]
+    },
+
+    "oracle": {
+      "fallback_models": [
+        "deepseek/deepseek-v4-pro",
+        "volcengine-coding/kimi-k2.6",
+        "bltcy/claude-sonnet-4-6"
+      ]
+    }
+  },
+
+  "categories": {
+    "unspecified-high": {
+      "fallback_models": [
+        "deepseek/deepseek-v4-pro",
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "volcengine-coding/kimi-k2.6"
+      ]
+    },
+
+    "unspecified-low": {
+      "fallback_models": [
+        "deepseek/deepseek-v4-flash",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "volcengine-coding/deepseek-v3.2"
+      ]
+    }
+  },
+
+  "model_fallback": false,
+
+  "background_task": {
+    "defaultConcurrency": 5
+  },
+
+  "sisyphus_agent": {
+    "planner_enabled": true,
+    "replace_plan": true
+  },
+
+  "auto_update": true
+}
