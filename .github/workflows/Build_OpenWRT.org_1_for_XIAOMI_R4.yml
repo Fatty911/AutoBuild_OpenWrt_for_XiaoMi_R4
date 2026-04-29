@@ -50,15 +50,17 @@ jobs:
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
-            root-reserve-mb: 2048
-            temp-reserve-mb: 512
-            swap-size-mb: 1024
+            root-reserve-mb: 512
+            temp-reserve-mb: 1024
+            swap-size-mb: 2048
             build-mount-path: /workdir
             remove-dotnet: 'true'
             remove-android: 'true'
             remove-haskell: 'true'
             remove-codeql: 'true'
             remove-docker-images: 'true'
+            remove-google-chrome: 'true'
+            remove-firefox: 'true'
             
       - name: Checkout
         uses: actions/checkout@main
@@ -348,7 +350,7 @@ jobs:
           echo "清理前磁盘空间："
           df -hT
           
-          echo "=== 优化归档：保留可复用产物 ==="
+          echo "=== 优化归档：保留可复用产物，删除中间文件 ==="
           
           # 删除编译日志
           rm -f *.log
@@ -367,13 +369,23 @@ jobs:
           # 【删除】toolchain 编译中间文件 - staging_dir/toolchain 已足够
           rm -rf build_dir/toolchain-*
           
-          # 【保留】target 编译产物 - .o .a 文件用于增量编译
-          # find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
-          # find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
+          # 【新增】删除 target 编译中间文件 (.o .a) - 大幅节省空间
+          echo "删除 target 编译中间文件..."
+          find build_dir/target-* -name "*.o" -type f -delete 2>/dev/null || true
+          find build_dir/target-* -name "*.a" -type f -delete 2>/dev/null || true
+          find build_dir/target-* -name "*.pyc" -type f -delete 2>/dev/null || true
+          find build_dir/target-* -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+          
+          # 【新增】删除 staging_dir/target 中的静态库（保留动态库）
+          echo "清理 staging_dir/target 静态库..."
+          find staging_dir/target-* -name "*.a" -type f -delete 2>/dev/null || true
           
           # 【删除】临时文件
           rm -rf tmp
           rm -rf .git
+          
+          # 【新增】清理 ccache 缓存（已单独缓存）
+          rm -rf .ccache 2>/dev/null || true
           
           echo "归档内容预览："
           du -sh dl staging_dir build_dir 2>/dev/null || true
