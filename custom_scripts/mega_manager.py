@@ -21,6 +21,7 @@ import argparse
 import calendar
 import time
 import tempfile
+import re
 
 
 def run_mega_cmd(args, check=True, capture_output=True, timeout=None):
@@ -225,7 +226,43 @@ def upload_to_mega():
         result = run_mega_cmd(["put", local_file, f"{remote_path}/"], check=False, timeout=1800)
         
         if result.returncode == 0:
-            print("上传完成")
+            print("上传命令完成，正在验证文件...")
+            
+            # 验证：检查文件是否存在于 MEGA 网盘
+            ls_result = run_mega_cmd(["ls", remote_path], check=False, capture_output=True)
+            if ls_result.returncode != 0 or target_filename not in ls_result.stdout:
+                print(f"验证失败: 文件 {target_filename} 不在 MEGA:{remote_path}/ 中")
+                print(f"mega-ls 输出: {ls_result.stdout}")
+                last_error = "Upload verification failed: file not found on MEGA"
+                if attempt < max_retries - 1:
+                    print(f"等待 {retry_delay} 秒后重试...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2
+                continue
+            
+            # 验证：检查 MEGA 网盘使用量是否增加
+            du_result = run_mega_cmd(["du"], check=False, capture_output=True)
+            if du_result.returncode == 0:
+                print(f"MEGA 网盘使用量: {du_result.stdout.strip()}")
+                # 检查是否包含合理的存储使用量（至少 1GB）
+                if "Total storage used:" in du_result.stdout:
+                    # 提取存储量数值
+                    import re
+                    match = re.search(r'Total storage used:\s*(\d+)', du_result.stdout)
+                    if match:
+                        storage_bytes = int(match.group(1))
+                        expected_bytes = int(file_size_mb * 1024 * 1024)
+                        # 允许 10% 的误差（MEGA 可能压缩）
+                        if storage_bytes < expected_bytes * 0.5:
+                            print(f"警告: MEGA 存储量 ({storage_bytes} bytes) 远小于预期 ({expected_bytes} bytes)")
+                            last_error = f"Storage mismatch: {storage_bytes} < {expected_bytes * 0.5}"
+                            if attempt < max_retries - 1:
+                                print(f"等待 {retry_delay} 秒后重试...")
+                                time.sleep(retry_delay)
+                                retry_delay *= 2
+                            continue
+            
+            print("上传验证通过")
             return
         
         last_error = result.stderr or result.stdout or "Unknown error"
