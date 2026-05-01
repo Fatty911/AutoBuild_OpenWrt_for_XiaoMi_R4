@@ -1,0 +1,429 @@
+#
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# Description: Build OpenWrt using GitHub Actions
+#
+
+name: Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4
+
+on:
+  repository_dispatch:
+    types: Lienol Source Code Update
+  workflow_dispatch:
+  push:
+    branches: 
+      - master
+      - main
+    paths:
+      - 'custom_scripts/diy-part1.sh'
+      - 'custom_scripts/diy-part2.sh'
+      - 'custom_scripts/replace_wifi_config.sh'
+      - 'custom_scripts/extract_last_error.py'
+      - 'custom_scripts/validate_build_output.py'
+      - 'custom_scripts/mega_manager.py'
+      - 'custom_configs/**'
+      - .github/workflows/Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml
+      - package/luci-app-autoupdate/**
+
+concurrency:
+  group: lienol1-phase1-${{ github.ref }}-${{ (endsWith(format('{0}', github.run_number), '0') || endsWith(format('{0}', github.run_number), '2') || endsWith(format('{0}', github.run_number), '4') || endsWith(format('{0}', github.run_number), '6') || endsWith(format('{0}', github.run_number), '8')) && 'even' || 'odd' }}
+  cancel-in-progress: true
+
+env:
+  REPO_URL: https://github.com/Lienol/openwrt
+  REPO_BRANCH: main
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: custom_configs/config_for_Lienol
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  SOURCE: Lienol
+  # 自动更新插件配置
+  AUTOPDATE_GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
+  AUTOPDATE_WORKFLOW: Lienol
+  AUTOPDATE_SUBSCRIPTION: ${{ secrets.SUBSCRIPTION_URL }}
+  AUTOPDATE_PROXY_PORT: 1080
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    outputs:
+      mega_upload: ${{ steps.build_job_outputs.outputs.mega_upload }}
+    steps:
+    
+    - name: Maximize build space
+      uses: easimon/maximize-build-space@master
+      with:
+          root-reserve-mb: 2048
+          temp-reserve-mb: 512
+          swap-size-mb: 1024
+          build-mount-path: /workdir
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+          
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost
+        sudo -E apt-get -qq update
+        sudo apt install -y perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-pip rsync bc wget ccache flex bison libelf-dev jq parallel pigz
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo chown -R $USER:$GROUPS /workdir
+        sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
+        mkdir -p /workdir/pip-cache /workdir/go-cache /workdir/go-mod-cache
+        pip install --cache-dir /workdir/pip-cache "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" || exit 1
+        curl -fsSL https://mega.nz/keys/MEGA_signing.key | sudo gpg --dearmor -o /usr/share/keyrings/meganz-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/meganz-archive-keyring.gpg] https://mega.nz/linux/repo/xUbuntu_22.04/ ./" | sudo tee /etc/apt/sources.list.d/mega.list
+        sudo apt update && sudo apt install -y megacmd
+        echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
+        echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
+        echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
+      
+        
+    - name: Clone source code
+      working-directory: /workdir
+      run: |
+        sudo chown -R $USER:$GROUPS /workdir
+        df -hT
+        
+        # 获取 OpenWrt 官方最新稳定版本号
+        echo "获取 OpenWrt 官方最新稳定版本..."
+        STABLE_VERSION=$(curl -s https://downloads.openwrt.org/releases/ | grep -oP 'href="\K[\d.]+' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+        echo "完整版本号: $STABLE_VERSION"
+        
+        # 提取主版本号（如 25.12.0 -> 25.12）
+        MAJOR_VERSION=$(echo "$STABLE_VERSION" | cut -d'.' -f1,2)
+        echo "主版本号: $MAJOR_VERSION"
+        
+        # 构建分支列表：同时尝试主版本号和完整版本号
+        BRANCHES=(
+          "main"
+          "master"
+          "$MAJOR_VERSION"
+          "$STABLE_VERSION"
+          "openwrt-${MAJOR_VERSION}"
+          "openwrt-${STABLE_VERSION}"
+        )
+        echo "尝试分支列表: ${BRANCHES[*]}"
+        
+        # 尝试每个分支
+        for branch in "${BRANCHES[@]}"; do
+          echo "尝试分支: $branch"
+          if git clone ${{ env.REPO_URL }} -b "$branch" openwrt 2>/dev/null; then
+            echo "成功克隆分支: $branch"
+            echo "REPO_BRANCH=$branch" >> $GITHUB_ENV
+            break
+          else
+            echo "分支 $branch 不存在"
+            rm -rf openwrt 2>/dev/null || true
+          fi
+        done
+        
+        if [ ! -d "openwrt" ]; then
+          echo "错误: 所有分支尝试失败"
+          exit 1
+        fi
+        
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+    - name: Load custom feeds
+      run: |
+        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
+
+    - name: Update and Install feeds
+      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+
+    - name: Load custom configuration
+      run: |
+        [ -e files ] && mv files openwrt/files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
+
+    - name: Apply WiFi configuration
+      env:
+        WIFI_SSID: ${{ secrets.WIFI_SSID }}
+        WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+      run: |
+        chmod +x $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh
+        $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh openwrt/files/etc/config/wireless
+
+    - name: Download package
+      id: download
+      run: |
+        cd openwrt
+        make defconfig
+        make download -j$(nproc) V=s
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+        
+    - name: Check space usage after download
+      if: (!cancelled())
+      run: df -hT
+    
+    - name: Compile tools
+      id: compile_tools
+      env:
+        TERM: dumb
+      run: |
+        cd openwrt
+        make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
+
+    - name: Compile toolchain
+      id: compile_toolchain
+      run: |
+        cd openwrt
+        make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
+
+    - name: Compile kernel
+      id: compile_kernel
+      run: |
+        cd openwrt
+        make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
+
+    - name: Compile packages by feeds
+      id: compile_packages
+      run: |
+        cd openwrt
+        # 保护根目录 Makefile
+        cp Makefile Makefile.bak
+
+        # 修复 base-files 版本（Lienol1 专用）
+        echo "=== Lienol1: 修复 base-files 版本 ==="
+        if [ -f "package/base-files/Makefile" ]; then
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1-r1/' package/base-files/Makefile || true
+          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=1-r1/' package/base-files/Makefile || true
+          echo "base-files PKG_RELEASE 已设为 1-r1"
+        fi
+        # 逐行读取 feeds.conf.default 并编译
+        while IFS= read -r line; do
+          [[ -z "$line" || "$line" =~ ^# ]] && continue
+          FEED=$(echo "$line" | awk '{print $2}')
+          echo "处理 feed: $FEED 于 $(date)"
+          PACKAGES=$(ls package/feeds/$FEED 2>/dev/null | grep -v Makefile || true)
+          if [ -z "$PACKAGES" ]; then
+            echo "警告: $FEED 下没有找到软件包，跳过"
+            continue
+          fi
+          for pkg in $PACKAGES; do
+            case "$pkg" in
+              wireguard-tools|openvpn-easy-rsa) echo "跳过小组件: $pkg (留给Phase2)"; continue ;;
+            esac
+            echo "编译软件包: $pkg 于 $(date)"
+             if make package/$pkg/compile V=s > packages.log 2>&1 || make -j1 package/$pkg/compile V=s > packages.log 2>&1; then
+              echo "软件包 $pkg 编译成功"
+            else
+              retry_count=$((retry_count + 1))
+              echo "尝试第 $retry_count 次修复..."
+              if grep -q "PKG_VERSION.*error" packages.log; then
+                echo "Fixing PKG_VERSION formats..."
+                find ./package ./feeds -type f \( -name "Makefile" -o -name "*.mk" \) 2>/dev/null | while read -r makefile; do
+                  if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
+                    echo "Found target in $makefile"
+                    sed -i.bak -E 's/PKG_VERSION:=([0-9]+\.[0-9]+\.[0-9]+)-([0-9]+)/PKG_VERSION:=\1\nPKG_RELEASE:=\2/' "$makefile" || exit 1
+                    echo "已修改$makefile:"
+                    grep -E "PKG_VERSION|PKG_RELEASE" "$makefile"
+                  fi
+                done
+              elif grep -q "DEPENDS.*error" packages.log; then
+                echo "Fixing dependency duplicates..."
+                find ./package ./feeds -type f \( -name "Makefile" -o -name "*.mk" \) -exec sh -c '
+                  makefile="$1"
+                  awk '\''BEGIN { FS = "[[:space:]]+" }
+                  /^[[:space:]]*(DEPENDS|EXTRA_DEPENDS|LUCI_DEPENDS|LUCI_EXTRA_DEPENDS):=/ {
+                      split($0, deps, " ")
+                      seen_versioned = ""
+                      seen_bare = ""
+                      result = $1
+                      for (i = 2; i <= length(deps); i++) {
+                          dep = deps[i]
+                          if (dep ~ /\$\(/) {
+                              result = result " " dep
+                          }
+                      }
+                          print result
+                  }'\'' "$makefile" > "$makefile.tmp" && mv "$makefile.tmp" "$makefile"
+                ' sh {} \; 2>/dev/null
+              fi
+            fi
+          done
+          echo "Feed $FEED 编译完成 于 $(date)"
+        done < feeds.conf.default
+        if [ ! -s Makefile ]; then
+          echo "警告: Makefile 被清空，从备份恢复"
+          cp Makefile.bak Makefile
+        fi
+        rm -f Makefile.bak
+
+    - name: List main packages
+      run: |
+        cd openwrt
+        find package/ -type d -name src -prune -o -type f -name Makefile -not -path 'package/feeds/*' -exec dirname {} \; > main_packages.txt
+        echo "Main packages to compile:"
+        cat main_packages.txt
+
+    - name: Compile main packages
+      id: compile_main_packages
+      run: |
+        cd openwrt
+        while read -r pkg; do
+          echo "编译 $pkg at $(date)"
+          { make $pkg/compile -j2 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || { make $pkg/compile -j1 V=s > "$pkg.log" 2>&1 && echo "在$(date) 成功编译 $pkg ";} || {
+            echo "编译 $pkg 失败，查看编译此包时的日志"
+            cat "$pkg.log"
+          }
+        done < main_packages.txt
+
+    - name: 查看日志结尾300行
+      if: always()
+      run: |
+        cd openwrt
+        if [ "${{ steps.compile_tools.outcome }}" = "failure" ]; then             
+          echo "Compile tools failed. Showing last 300 lines of tools.log:"             
+          tail -300 tools.log           
+        elif [ "${{ steps.compile_toolchain.outcome }}" = "failure" ]; then             
+          echo "Compile toolchain failed. Showing last 300 lines of toolchain.log:"             
+          tail -300 toolchain.log           
+        elif [ "${{ steps.compile_kernel.outcome }}" = "failure" ]; then             
+          echo "Compile kernel failed. Showing last 300 lines of kernel.log:"             
+          tail -300 kernel.log           
+        elif [ "${{ steps.compile_packages.outcome }}" = "failure" ]; then             
+          echo "Compile packages failed. Showing last 300 lines of packages.log:"           
+          tail -300 packages.log
+        else             
+          echo "All steps completed successfully. No log to show."           
+        fi
+
+
+    - name: 归档
+      run: |
+        echo "=== 归档前清理（保留可复用产物）==="
+        cd /workdir/openwrt
+        
+        # 删除日志
+        rm -f *.log
+        
+        # 【保留】dl 目录 - Lienol2 可以复用源码包，避免重新下载
+        # rm -rf dl  # 不再删除
+        
+        # 【保留】staging_dir/host - Lienol2 需要用于生成固件
+        # rm -rf staging_dir/host staging_dir/hostpkg  # 不删除
+        
+        # 【删除】编译中间文件
+        rm -rf build_dir/host build_dir/hostpkg-*
+        rm -rf build_dir/toolchain-*
+        
+        # 【删除】临时文件
+        rm -rf tmp .git
+        
+        # 【保留】target 编译产物 - .o .a 文件用于增量编译
+        # find build_dir/target-* -name "*.o" -delete 2>/dev/null || true
+        # find build_dir/target-* -name "*.a" -delete 2>/dev/null || true
+        
+        echo "归档内容预览："
+        du -sh dl staging_dir build_dir 2>/dev/null || true
+        echo "归档前磁盘空间："
+        df -hT
+        
+        cd /workdir
+        tar -cf - openwrt/ | pigz > ${{ env.SOURCE }}.tar.gz
+        
+        # 检查归档是否成功
+        if [ ! -f "${{ env.SOURCE }}.tar.gz" ]; then
+          echo "::error::归档失败，未创建 ${{ env.SOURCE }}.tar.gz"
+          exit 1
+        fi
+        
+        FILE_SIZE=$(stat -c%s "${{ env.SOURCE }}.tar.gz" 2>/dev/null || stat -f%z "${{ env.SOURCE }}.tar.gz" 2>/dev/null)
+        if [ "$FILE_SIZE" -lt 1000000 ]; then
+          echo "::error::归档文件太小 (${FILE_SIZE} bytes)，可能损坏"
+          exit 1
+        fi
+        
+        echo "归档后磁盘空间："
+        df -hT
+        ls -lh ${{ env.SOURCE }}.tar.gz
+        # 保持文件在 /workdir，避免占用根分区空间
+    
+    
+      
+    
+    
+    - name: Upload to MEGA
+      working-directory: /workdir
+      env:
+        MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+        MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        MEGA_ERROR_LOG: /tmp/mega_error.log
+      run: |
+        # 检查文件是否存在
+        if [ ! -f "${{ env.SOURCE }}.tar.gz" ]; then
+          echo "::error::归档文件 ${{ env.SOURCE }}.tar.gz 不存在"
+          exit 1
+        fi
+        
+        echo "准备上传文件:"
+        ls -lh ${{ env.SOURCE }}.tar.gz
+        
+        # 上传到 MEGA，失败直接终止（Phase 2 依赖此产物）
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py upload --error-log /tmp/mega_error.log
+
+    - name: Record build job outputs
+      id: build_job_outputs
+      if: success()
+      run: echo "mega_upload=true" >> $GITHUB_OUTPUT
+
+    - name: Validate build output
+      if: success()
+      env:
+        MEGA_UPLOAD_SUCCESS: ${{ env.MEGA_UPLOAD_SUCCESS }}
+        SOURCE: Lienol
+      run: python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
+
+    - name: Extract Error Log
+      if: failure() || hashFiles('/tmp/mega_error.log') != ''
+      run: |
+        cd $GITHUB_WORKSPACE
+        # 先检查 MEGA 上传错误
+        if [ -f "/tmp/mega_error.log" ]; then
+          echo "检测到 MEGA 上传错误日志"
+          cp /tmp/mega_error.log last_error.log
+        else
+          # 否则从编译日志提取错误
+          python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
+        fi
+
+    - name: Upload Error Log Artifact
+      uses: actions/upload-artifact@main
+      if: failure()
+      with:
+        name: error-log
+        path: last_error.log
+        retention-days: 1
+    - name: Delete workflow runs
+      if: always()
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        retain_days: 0
+        keep_minimum_runs: 2

@@ -1,0 +1,79 @@
+name: Auto Merge PR With AI Conflict Resolver
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout base repository
+        uses: actions/checkout@main
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@main
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pyyaml --quiet
+
+      - name: Auto resolve conflicts and merge PR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          ZHIPU_MODEL_LIST: ${{ secrets.ZHIPU_MODEL_LIST }}
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          BAILIAN_MODEL_LIST: ${{ secrets.BAILIAN_MODEL_LIST }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          MOONSHOT_MODEL_LIST: ${{ secrets.MOONSHOT_MODEL_LIST }}
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_MODEL_LIST: ${{ secrets.DEEPSEEK_MODEL_LIST }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
+          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
+          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          NVIDIA_NIM_MODEL_LIST: ${{ secrets.NVIDIA_NIM_MODEL_LIST }}
+          QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
+          QINIU_MODEL_LIST: ${{ secrets.QINIU_MODEL_LIST }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_MODEL_LIST: ${{ secrets.XAI_MODEL_LIST }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL_LIST: ${{ secrets.OPENAI_MODEL_LIST }}
+          CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
+          CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
+          ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
+          BAILIAN_BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+          MOONSHOT_BASE_URL: "https://api.moonshot.cn/v1"
+          DEEPSEEK_BASE_URL: "https://api.deepseek.com/v1"
+          SILICONFLOW_BASE_URL: "https://api.siliconflow.cn/v1"
+          MODELSCOPE_BASE_URL: "https://api.modelscope.cn/v1"
+          ATOMGIT_BASE_URL: "https://api-ai.gitcode.com/v1"
+          NVIDIA_NIM_BASE_URL: "https://integrate.api.nvidia.com/v1"
+          QINIU_BASE_URL: "https://api.qnaigc.com/v1"
+          MINIMAX_BASE_URL: "https://api.minimax.chat/v1"
+        run: |
+          python custom_scripts/resolve_pr_conflicts_with_ai.py

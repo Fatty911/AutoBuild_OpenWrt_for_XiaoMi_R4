@@ -1,0 +1,114 @@
+#
+# Copyright (c) 2019-2021 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# File: .github/workflows/update-checker.yml
+# Description: Source code update checker
+#
+
+name: Update Checker for Lienol
+
+concurrency:
+  group: update-checker-lienol
+  cancel-in-progress: true
+
+env:
+  REPO_URL: https://github.com/Lienol/openwrt
+
+on:
+  workflow_dispatch:
+  schedule:
+   - cron: 0 */18 * * *
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Get Commit Hash
+      id: getHash
+      run: |
+        # 获取 OpenWrt 官方最新稳定版本号
+        echo "获取 OpenWrt 官方最新稳定版本..."
+        STABLE_VERSION=$(curl -s https://downloads.openwrt.org/releases/ | grep -oP 'href="\K[\d.]+' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
+        echo "完整版本号: $STABLE_VERSION"
+        
+        # 提取主版本号（如 25.12.0 -> 25.12）
+        MAJOR_VERSION=$(echo "$STABLE_VERSION" | cut -d'.' -f1,2)
+        echo "主版本号: $MAJOR_VERSION"
+        
+        # 构建分支列表：同时尝试主版本号和完整版本号
+        BRANCHES=(
+          "main"
+          "master"
+          "$MAJOR_VERSION"
+          "$STABLE_VERSION"
+          "openwrt-${MAJOR_VERSION}"
+          "openwrt-${STABLE_VERSION}"
+        )
+        
+        echo "尝试分支列表: ${BRANCHES[*]}"
+        
+        # 尝试每个分支
+        for branch in "${BRANCHES[@]}"; do
+          echo "尝试分支: $branch"
+          if git clone --depth 1 $REPO_URL -b "$branch" . 2>/dev/null; then
+            echo "成功克隆分支: $branch"
+            SELECTED_BRANCH="$branch"
+            echo "REPO_BRANCH=$branch" >> $GITHUB_ENV
+            break
+          else
+            echo "分支 $branch 不存在或克隆失败"
+            find . -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+          fi
+        done
+        
+        # 检查是否成功克隆
+        if [ ! -d ".git" ]; then
+          echo "错误: 所有分支尝试失败"
+          echo "尝试获取远程分支列表..."
+          git ls-remote --heads $REPO_URL | awk '{print $2}' | sed 's|refs/heads/||'
+          exit 1
+        fi
+        
+        echo "commitHash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
+        echo "repo_branch=$SELECTED_BRANCH" >> $GITHUB_OUTPUT
+        echo "使用的分支: $SELECTED_BRANCH"
+        echo "commitHash为: $(git rev-parse HEAD)"
+
+    - name: Compare Commit Hash
+      id: cacheHash
+      uses: actions/cache@main
+      with:
+        path: .commitHash
+        key: HEAD-${{ steps.getHash.outputs.commitHash }}
+
+    - name: Save New Commit Hash
+      if: steps.cacheHash.outputs.cache-hit != 'true'
+      run: |
+        echo ${{ steps.getHash.outputs.commitHash }} | tee .commitHash
+
+    - name: Trigger build
+      if: steps.cacheHash.outputs.cache-hit != 'true'
+      uses: peter-evans/repository-dispatch@main
+      with:
+        token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+        event-type: Lienol Source Code Update
+        client-payload: '{"repo_url": "${{ env.REPO_URL }}", "branch": "${{ steps.getHash.outputs.repo_branch }}"}'
+
+  cleanup:
+    needs: check
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Delete workflow runs
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        retain_days: 0
+        keep_minimum_runs: 1

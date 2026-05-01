@@ -1,0 +1,118 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-opencode.schema.json",
+
+  "runtime_fallback": {
+    "enabled": true,
+    "retry_on_errors": [
+      400, 408, 409, 423, 425, 429,
+      500, 501, 502, 503, 504, 505, 506, 507, 508, 509, 510, 511,
+      520, 521, 522, 523, 524, 525, 526, 527, 529, 530
+    ],
+    "max_fallback_attempts": 7,
+    "cooldown_seconds": 60,
+    "timeout_seconds": 30,
+    "notify_on_fallback": true
+  },
+
+  "agents": {
+    "sisyphus": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback_models": [
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "kimi-coding-plan/kimi-k2.6",
+        "volcengine-coding/kimi-k2.6",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-pro",
+        "bltcy/gpt-5.5"
+      ]
+    },
+
+    "plan": {
+      "model": "qianfan-coding-plan/glm-5",
+      "fallback_models": [
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "kimi-coding-plan/kimi-k2.6",
+        "volcengine-coding/kimi-k2.6",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-pro",
+        "bltcy/claude-sonnet-4-6"
+      ]
+    },
+
+    "build": {
+      "fallback_models": [
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "kimi-coding-plan/kimi-k2.6",
+        "volcengine-coding/kimi-k2.6",
+        "alibaba-tokenplan/deepseek-v3.2",
+        "deepseek/deepseek-v4-pro",
+        "bltcy/gpt-5.5"
+      ]
+    },
+
+    "sisyphus-junior": {
+      "fallback_models": [
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "kimi-coding-plan/kimi-k2.6",
+        "volcengine-coding/deepseek-v3.2",
+        "alibaba-tokenplan/deepseek-v3.2",
+        "deepseek/deepseek-v4-flash",
+        "bltcy/gpt-5.5"
+      ]
+    },
+
+    "oracle": {
+      "fallback_models": [
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "kimi-coding-plan/kimi-k2.6",
+        "volcengine-coding/kimi-k2.6",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-pro",
+        "bltcy/claude-sonnet-4-6"
+      ]
+    }
+  },
+
+  "categories": {
+    "unspecified-high": {
+      "fallback_models": [
+        "unicom-coding-plan/DeepSeek-V4-Pro",
+        "qianfan-coding-plan/deepseek-v3.2",
+        "kimi-coding-plan/kimi-k2.6",
+        "volcengine-coding/kimi-k2.6",
+        "alibaba-tokenplan/qwen3.6-plus",
+        "deepseek/deepseek-v4-pro",
+        "bltcy/gpt-5.5"
+      ]
+    },
+
+    "unspecified-low": {
+      "fallback_models": [
+        "unicom-coding-plan/DeepSeek-V4-Flash",
+        "qianfan-coding-plan/qwen3.5-397b-a17b",
+        "kimi-coding-plan/kimi-k2.6",
+        "volcengine-coding/deepseek-v3.2",
+        "alibaba-tokenplan/deepseek-v3.2",
+        "deepseek/deepseek-v4-flash"
+      ]
+    }
+  },
+
+  "model_fallback": false,
+
+  "background_task": {
+    "defaultConcurrency": 5
+  },
+
+  "sisyphus_agent": {
+    "planner_enabled": true,
+    "replace_plan": true
+  },
+
+  "auto_update": true
+}

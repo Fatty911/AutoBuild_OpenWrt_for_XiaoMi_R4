@@ -1,0 +1,75 @@
+#
+# Copyright (c) 2019-2021 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# File: .github/workflows/update-checker.yml
+# Description: Source code update checker
+#
+
+name: Update Checker for OpenWrt.org
+
+concurrency:
+  group: update-checker-openwrt-org
+  cancel-in-progress: true
+
+env:
+  # REPO_URL: https://github.com/coolsnowwolf/lede
+  REPO_URL: https://github.com/openwrt/openwrt
+  REPO_BRANCH: main
+
+on:
+  workflow_dispatch:
+  schedule:
+   - cron: 0 */10 * * *
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+
+    - name: Get Commit Hash
+      id: getHash
+      run: |
+        git clone --depth 1 $REPO_URL -b $REPO_BRANCH .
+        #echo "::set-output name=commitHash::$(git rev-parse HEAD)"
+        #echo "{commitHash}={$(git rev-parse HEAD)}" >> $GITHUB_OUTPUT
+        COMMIT_HASH=$(git rev-parse HEAD)
+        echo "commitHash=$COMMIT_HASH" >> $GITHUB_OUTPUT
+        echo "commitHash为：$COMMIT_HASH"
+
+    - name: Compare Commit Hash
+      id: cacheHash
+      uses: actions/cache@main
+      with:
+        path: .commitHash
+        key: HEAD-${{ steps.getHash.outputs.commitHash }}
+
+    - name: Save New Commit Hash
+      if: steps.cacheHash.outputs.cache-hit != 'true'
+      run: |
+        echo ${{ steps.getHash.outputs.commitHash }} | tee .commitHash
+
+    - name: Trigger build
+      if: steps.cacheHash.outputs.cache-hit != 'true'
+      uses: peter-evans/repository-dispatch@main
+      with:
+        token: ${{ secrets.ACTIONS_TRIGGER_PAT }}
+        event-type: Openwrt.org Source Code Update
+        client-payload: '{"repo_url": "${{ env.REPO_URL }}"}' # 传递源码仓库的URL
+
+  cleanup:
+    needs: check
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Delete workflow runs
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        retain_days: 0
+        keep_minimum_runs: 1

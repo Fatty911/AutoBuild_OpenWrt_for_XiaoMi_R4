@@ -1,0 +1,696 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "autoupdate": false,
+  "model": "qianfan-coding-plan/glm-5",
+  "small_model": "qianfan-coding-plan/kimi-k2.5",
+  "snapshot": false,
+  "disabled_providers": [
+    "alibaba",
+    "alibaba-cn",
+    "anthropic",
+    "atomgit_glm5",
+    "google",
+    "groq",
+    "minimax",
+    "minimax-cn",
+    "minimax-cn-coding-plan",
+    "minimax-coding-plan",
+    "modal",
+    "modal_glm5",
+    "openrouter",
+    "proxy_amazon-bedrock",
+    "proxy_anthropic",
+    "proxy_openrouter",
+    "siliconflow",
+    "tencent-tokenplan",
+    "xai",
+    "zen",
+    "zhipu"
+  ],
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "threshold": 0.85
+  },
+  "provider": {
+    "qianfan-coding-plan": {
+      "name": "Baidu Qianfan CodingPlan",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://qianfan.baidubce.com/v2/coding",
+        "apiKey": "bce-v3/ALTAKSP-6ujhXlhKgBHMbqLtCaNkT/74e9f1bb2fa8357520cc7d9c2d3c92ac838befbe"
+      },
+      "models": {
+        "glm-5": {
+          "id": "glm-5",
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        },
+        "kimi-k2.5": {
+          "id": "kimi-k2.5",
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        "deepseek-v3.2": {
+          "id": "deepseek-v3.2",
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        },
+        "qwen3.5-397b-a17b": {
+          "id": "qwen3.5-397b-a17b",
+          "limit": {
+            "context": 262144,
+            "output": 81920
+          }
+        }
+      },
+      "whitelist": [
+        "glm-5",
+        "kimi-k2.5",
+        "deepseek-v3.2",
+        "qwen3.5-397b-a17b"
+      ]
+    },
+    "proxy_anthropic": {
+      "npm": "@ai-sdk/anthropic",
+      "options": {
+        "baseURL": "https://anthropicgateway.jiucai.eu.org"
+      },
+      "models": {
+        "claude-sonnet-4-6": {
+          "limit": {
+            "context": 1000000,
+            "input": 900000,
+            "output": 100000
+          }
+        }
+      },
+      "whitelist": [
+        "claude-sonnet-4-6"
+      ]
+    },
+    "alibaba-cn": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Alibaba Qwen",
+      "options": {
+        "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      },
+      "models": {
+        "qwen3.6-max-preview": {
+          "id": "qwen3.6-max-preview",
+          "limit": {
+            "context": 262144,
+            "input": 229376,
+            "output": 65536
+          }
+        }
+      },
+      "whitelist": [
+        "qwen3.6-max-preview"
+      ]
+    },
+    "alibaba-tokenplan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Alibaba TokenPlan",
+      "options": {
+        "baseURL": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
+      },
+      "models": {
+        "qwen3.6-plus": {
+          "id": "qwen3.6-plus",
+          "limit": {
+            "context": 1000000,
+            "output": 65536
+          }
+        },
+        "glm-5": {
+          "id": "glm-5",
+          "limit": {
+            "context": 200000,
+            "output": 64000
+          }
+        },
+        "deepseek-v3.2": {
+          "id": "deepseek-v3.2",
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        }
+      },
+      "whitelist": [
+        "qwen3.6-plus",
+        "glm-5",
+        "deepseek-v3.2"
+      ]
+    },
+    "zhipu": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Zhipu AI",
+      "options": {
+        "baseURL": "https://open.bigmodel.cn/api/paas/v4/"
+      },
+      "models": {
+        "glm-5.1": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          },
+          "thinking": {
+            "type": "enabled"
+          }
+        }
+      },
+      "whitelist": [
+        "glm-5.1"
+      ]
+    },
+    "proxy_google": {
+      "npm": "@ai-sdk/google",
+      "options": {
+        "baseURL": "https://geminigateway.jiucai.eu.org"
+      },
+      "models": {
+        "gemini-3.1-pro-preview": {
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "gemini-3-flash": {
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        }
+      },
+      "whitelist": [
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash"
+      ]
+    },
+    "modal": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Modal GLM5-FP8",
+      "options": {
+        "baseURL": "https://api.us-west-2.modal.direct/v1/"
+      },
+      "models": {
+        "zai-org/GLM-5.1-FP8": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          },
+          "thinking": {
+            "type": "enabled",
+            "budgetTokens": 12000
+          }
+        }
+      },
+      "whitelist": [
+        "zai-org/GLM-5.1-FP8"
+      ]
+    },
+    "atomgit_glm5": {
+      "name": "AtomGit GLM5",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://api-ai.gitcode.com/v1/"
+      },
+      "models": {
+        "zai-org/GLM-5": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          },
+          "thinking": {
+            "type": "enabled",
+            "budgetTokens": 8000
+          }
+        }
+      },
+      "whitelist": [
+        "zai-org/GLM-5"
+      ]
+    },
+    "modelscope-GLM5": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "ModelScope GLM-5",
+      "options": {
+        "baseURL": "https://api-inference.modelscope.cn/v1"
+      },
+      "models": {
+        "ZhipuAI/GLM-5": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        }
+      },
+      "whitelist": [
+        "ZhipuAI/GLM-5"
+      ]
+    },
+    "proxy_openrouter": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenRouter",
+      "options": {
+        "baseURL": "https://openroutergateway.jiucai.eu.org"
+      },
+      "models": {
+        "openrouter-gemini-3.1-pro": {
+          "id": "google/gemini-3.1-pro-preview",
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "openrouter-gemini-3-flash": {
+          "id": "google/gemini-3-flash-preview",
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        }
+      },
+      "whitelist": [
+        "openrouter-gemini-3.1-pro",
+        "openrouter-gemini-3-flash"
+      ]
+    },
+    "bltcy": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://api.bltcy.ai/v1"
+      },
+      "models": {
+        "gpt-5.5": {
+          "limit": {
+            "context": 1050000,
+            "output": 128000
+          }
+        },
+        "claude-sonnet-4-6": {
+          "limit": {
+            "context": 1000000,
+            "output": 64000
+          }
+        },
+        "gemini-3.1-pro-preview": {
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "gemini-3-flash": {
+          "limit": {
+            "context": 1048576,
+            "output": 65536
+          }
+        },
+        "grok-4.2": {
+          "limit": {
+            "context": 2000000,
+            "output": 2000000
+          }
+        }
+      },
+      "whitelist": [
+        "gpt-5.5",
+        "claude-sonnet-4-6",
+        "gemini-3.1-pro-preview",
+        "gemini-3-flash",
+        "grok-4.2"
+      ]
+    },
+    "proxy_xai": {
+      "npm": "@ai-sdk/xai",
+      "options": {
+        "baseURL": "https://xaigateway.jiucai.eu.org/"
+      },
+      "models": {
+        "grok-4.20-beta-0309-reasoning": {
+          "limit": {
+            "context": 2000000,
+            "output": 2000000
+          }
+        }
+      },
+      "whitelist": [
+        "grok-4.20-beta-0309-reasoning"
+      ]
+    },
+    "proxy_amazon-bedrock": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "region": "ap-southeast-1",
+        "baseURL": "https://awsbedrockgateway.jiucai.eu.org"
+      },
+      "models": {
+        "global.anthropic.claude-sonnet-4-6": {
+          "limit": {
+            "context": 1000000,
+            "output": 64000
+          }
+        }
+      },
+      "whitelist": [
+        "global.anthropic.claude-sonnet-4-6"
+      ]
+    },
+    "deepseek": {
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "https://api.deepseek.com/v1"
+      },
+      "models": {
+        "deepseek-v4-pro": {
+          "id": "deepseek-v4-pro",
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          },
+          "variants": {
+            "max": {}
+          }
+        },
+        "deepseek-v4-flash": {
+          "id": "deepseek-v4-flash",
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          }
+        }
+      },
+      "whitelist": [
+        "deepseek-v4-pro",
+        "deepseek-v4-flash"
+      ]
+    },
+    "copilot": {
+      "whitelist": [
+        "copilot.gpt-4o",
+        "copilot.gpt-4.1",
+        "copilot.o4-mini"
+      ]
+    },
+    "opencode": {
+      "whitelist": [
+        "opencode-gemini-3-flash-preview",
+        "opencode-gemini-3.1-pro-preview",
+        "opencode-gpt-5.5",
+        "opencode-claude-4.6-sonnet",
+        "opencode-claude-4.7-opus",
+        "opencode-grok-4.20",
+        "opencode-deepseek-v4",
+        "opencode-qwen3.6-plus",
+        "opencode-kimi-k2.6"
+      ],
+      "models": {}
+    },
+    "amazon-bedrock": {
+      "whitelist": [
+        "bedrock.claude-sonnet-4"
+      ]
+    },
+    "volcengine-coding": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Volcano Ark Coding Plan",
+      "options": {
+        "baseURL": "https://ark.cn-beijing.volces.com/api/coding/v3"
+      },
+      "models": {
+        "kimi-k2.5": {
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        "kimi-k2.6": {
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        "deepseek-v3.2": {
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        },
+        "glm-5.1": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        }
+      },
+      "whitelist": [
+        "kimi-k2.6",
+        "deepseek-v3.2",
+        "glm-5.1"
+      ]
+    },
+    "tencent-tokenplan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Tencent Cloud TokenPlan",
+      "options": {
+        "baseURL": "https://api.lkeap.cloud.tencent.com/plan/v3"
+      },
+      "models": {
+        "kimi-k2.6": {
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        "glm-5.1": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        }
+      },
+      "whitelist": [
+        "kimi-k2.6",
+        "glm-5.1"
+      ]
+    },
+    "mimo-tokenplan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Xiaomi MiMo TokenPlan",
+      "options": {
+        "baseURL": "https://token-plan-cn.xiaomimimo.com/v1"
+      },
+      "models": {
+        "mimo-v2.5-pro": {
+          "id": "mimo-v2.5-pro",
+          "limit": {
+            "context": 1048576,
+            "output": 131072
+          }
+        }
+      },
+      "whitelist": [
+        "mimo-v2.5-pro"
+      ]
+    },
+    "kimi-coding-plan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Kimi Coding Plan",
+      "options": {
+        "baseURL": "https://api.kimi.com/coding/v1"
+      },
+      "models": {
+        "kimi-k2.6": {
+          "id": "kimi-k2.6",
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        }
+      },
+      "whitelist": [
+        "kimi-k2.6"
+      ]
+    },
+    "unicom-coding-plan": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Unicom Cloud Coding Plan",
+      "options": {
+        "baseURL": "https://aigw-gzgy2.cucloud.cn:8443/v1",
+        "apiKey": "sk-sp-qHTE9Xi5C8lAkxE0aaErpFc6nWZDsuHB"
+      },
+      "models": {
+        "DeepSeek-V4-Pro": {
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          }
+        },
+        "DeepSeek-V4-Flash": {
+          "limit": {
+            "context": 1000000,
+            "input": 616000,
+            "output": 384000
+          }
+        },
+        "glm-5.1": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        },
+        "glm-5": {
+          "limit": {
+            "context": 200000,
+            "output": 131072
+          }
+        },
+        "kimi-k2.5": {
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          }
+        },
+        "Qwen3.5-397B-A17B": {
+          "limit": {
+            "context": 262144,
+            "output": 81920
+          }
+        },
+        "DeepSeek-V3.1": {
+          "limit": {
+            "context": 128000,
+            "output": 12800
+          }
+        },
+        "Qwen3-235B-A22B": {
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "MiniMax-M2.5": {
+          "limit": {
+            "context": 256000,
+            "output": 32768
+          }
+        }
+      },
+      "whitelist": [
+        "DeepSeek-V4-Pro",
+        "DeepSeek-V4-Flash",
+        "glm-5.1"
+      ]
+    },
+    "nvidia": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Nvidia",
+      "options": {},
+      "models": {},
+      "whitelist": [
+        "mistralai/mistral-large",
+        "mistralai/mistral-large-3-675b-instruct-2512",
+        "mistralai/devstral-2-123b-instruct-2512",
+        "abacusai/dracarys-llama-3.1-70b-instruct",
+        "google/codegemma-1.1-7b",
+        "google/codegemma-7b",
+        "google/gemma-2-2b-it",
+        "google/gemma-2b",
+        "google/gemma-3-12b-it",
+        "google/gemma-3-27b-it",
+        "google/gemma-3-4b-it",
+        "google/gemma-3n-e2b-it",
+        "google/gemma-3n-e4b-it",
+        "google/gemma-4-31b-it",
+        "google/recurrentgemma-2b",
+        "meta/codellama-70b",
+        "meta/llama-3.1-405b-instruct",
+        "meta/llama-3.1-70b-instruct",
+        "meta/llama-3.1-8b-instruct",
+        "meta/llama-3.2-11b-vision-instruct",
+        "meta/llama-3.2-1b-instruct",
+        "meta/llama-3.2-3b-instruct",
+        "meta/llama-3.2-90b-vision-instruct",
+        "meta/llama-3.3-70b-instruct",
+        "meta/llama-4-maverick-17b-128e-instruct",
+        "meta/llama-guard-4-12b",
+        "meta/llama2-70b",
+        "mistralai/codestral-22b-instruct-v0.1",
+        "mistralai/magistral-small-2506",
+        "mistralai/ministral-14b-instruct-2512",
+        "mistralai/mistral-7b-instruct-v0.3",
+        "mistralai/mistral-large-2-instruct",
+        "mistralai/mistral-medium-3-instruct",
+        "mistralai/mistral-nemotron",
+        "mistralai/mistral-small-4-119b-2603",
+        "mistralai/mixtral-8x22b-instruct-v0.1",
+        "mistralai/mixtral-8x22b-v0.1",
+        "mistralai/mixtral-8x7b-instruct-v0.1",
+        "nv-mistralai/mistral-nemo-12b-instruct",
+        "nvidia/llama-3.1-nemoguard-8b-content-safety",
+        "nvidia/llama-3.1-nemoguard-8b-topic-control",
+        "nvidia/llama-3.1-nemotron-51b-instruct",
+        "nvidia/llama-3.1-nemotron-70b-instruct",
+        "nvidia/llama-3.1-nemotron-nano-8b-v1",
+        "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+        "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+        "nvidia/llama-3.1-nemotron-ultra-253b-v1",
+        "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1",
+        "nvidia/llama-3.2-nemoretriever-300m-embed-v1",
+        "nvidia/llama-3.2-nv-embedqa-1b-v1",
+        "nvidia/llama-3.2-nv-embedqa-1b-v2",
+        "nvidia/llama-3.3-nemotron-super-49b-v1",
+        "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+        "nvidia/llama-nemotron-embed-1b-v2",
+        "nvidia/llama-nemotron-embed-vl-1b-v2",
+        "nvidia/llama3-chatqa-1.5-70b",
+        "nvidia/mistral-nemo-minitron-8b-8k-instruct",
+        "nvidia/nemotron-3-content-safety",
+        "nvidia/nemotron-3-nano-30b-a3b",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/nemotron-4-340b-instruct",
+        "nvidia/nemotron-4-340b-reward",
+        "nvidia/nemotron-content-safety-reasoning-4b",
+        "nvidia/nemotron-mini-4b-instruct",
+        "nvidia/nemotron-nano-12b-v2-vl",
+        "nvidia/nemotron-nano-3-30b-a3b",
+        "nvidia/nemotron-parse",
+        "nvidia/nv-embedqa-mistral-7b-v2",
+        "nvidia/nvidia-nemotron-nano-9b-v2"
+      ]
+    }
+  },
+  "agent": {
+    "build": {
+      "steps": 999
+    },
+    "plan": {
+      "model": "qianfan-coding-plan/glm-5",
+      "steps": 45
+    },
+    "title": {
+      "model": "qianfan-coding-plan/glm-5"
+    },
+    "summary": {
+      "model": "qianfan-coding-plan/glm5"
+    },
+    "compaction": {
+      "model": "proxy_xai/grok-4.20-beta-0309-reasoning"
+    }
+  },
+  "plugin": [
+    "oh-my-openagent"
+  ]
+}
