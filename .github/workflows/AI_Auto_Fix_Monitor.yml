@@ -1,0 +1,444 @@
+name: AI Auto Fix Monitor
+run-name: "AI Fix for ${{ github.event.workflow_run.name || inputs.failed_workflow_name }} (#${{ github.event.workflow_run.run_number || inputs.failed_run_id }})"
+
+on:
+  workflow_run:
+    workflows: [
+      "Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4",
+      "Build Lienol 2 packages and fixes for XIAOMI_R4",
+      "Build OpenWrt Firmware for Xiaomi Mi Router 4"
+    ]
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      failed_run_id:
+        description: 'Failed Run ID'
+        required: true
+        type: string
+      failed_workflow_name:
+        description: 'Failed Workflow Name'
+        required: true
+        type: string
+
+jobs:
+  ai_fix:
+    name: "AI Fix → ${{ github.event.workflow_run.name || inputs.failed_workflow_name }}"
+    if: ${{ (github.event_name == 'workflow_dispatch') || (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.name != 'AI Auto Fix Monitor') }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@main
+
+      - name: Download error log artifact
+        env:
+          GITHUB_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name || inputs.failed_workflow_name }}
+        run: |
+          echo "检测到工作流 [$WORKFLOW_NAME] 运行失败！"
+          echo "正在下载错误日志 (Run ID: $RUN_ID)..."
+          gh run download $RUN_ID -n error-log || echo "未找到 error-log 产物，可能错误过早发生或未被提取。"
+          ls -la
+
+      - name: Setup Node.js
+        uses: actions/setup-node@main
+        with:
+          node-version: '22'
+
+      - name: Setup Python
+        uses: actions/setup-python@main
+        with:
+          python-version: '3.12'
+          
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests beautifulsoup4 pyyaml
+          
+      - name: Download Error Log Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@main
+        with:
+          name: error-log
+          github-token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          run-id: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
+
+      - name: Run AI Auto Fix (Track 2)
+        id: track2
+        continue-on-error: true
+        env:
+          FAILED_RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          CLAUDE_PROXY_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
+          CLAUDE_PROXY_URL: ${{ secrets.CLAUDE_PROXY_URL }}
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
+          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
+          MINIMAX_MODEL_LIST: ${{ secrets.MINIMAX_MODEL_LIST }}
+          MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
+          MODAL_MODEL_LIST: ${{ secrets.MODAL_MODEL_LIST }}
+          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
+          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          ZHIPU_MODEL_LIST: ${{ secrets.ZHIPU_MODEL_LIST }}
+          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
+          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          NVIDIA_NIM_MODEL_LIST: ${{ secrets.NVIDIA_NIM_MODEL_LIST }}
+          QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
+          QINIU_MODEL_LIST: ${{ secrets.QINIU_MODEL_LIST }}
+          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
+          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}
+        run: |
+          if [ -f "last_error.log" ]; then
+            echo "=== 找到 last_error.log ==="
+            cat last_error.log
+            python custom_scripts/auto_fix_with_AI_LLM.py
+          else
+            echo "没有找到 last_error.log，无法执行 AI 修复。"
+            exit 1
+          fi
+
+      - name: Setup OpenCode & OhMyOpenCode (Track 3)
+        if: steps.track2.outcome == 'failure'
+        run: |
+          echo "=== Track 2 失败，启动 OpenCode 深度修复 ==="
+          # 安装 Bun（omo install 需要）
+          curl -fsSL https://bun.sh/install | bash
+          export PATH="$HOME/.bun/bin:$PATH"
+          # 安装 opencode 和 omo
+          npm install -g opencode-ai oh-my-openagent
+          # 复制配置文件到正确位置
+          mkdir -p $HOME/.config/opencode
+          cp opencode.json $HOME/.config/opencode/
+          cp oh-my-openagent.json $HOME/.config/opencode/
+          # 运行 omo 安装程序注册插件
+          oh-my-opencode install --no-tui --claude=no --gemini=no --copilot=no --skip-auth
+
+      - name: Run OpenCode Agent
+        id: track3
+        timeout-minutes: 45
+        if: steps.track2.outcome == 'failure'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ZEN_API_KEY: ${{ secrets.ZEN_API_KEY }}
+          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
+          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
+          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
+          QIANFAN_CODING_API_KEY: ${{ secrets.QIANFAN_CODING_API_KEY }}
+          ALIYUN_TOKENPLAN_API_KEY: ${{ secrets.ALIYUN_TOKENPLAN_API_KEY }}
+          MIMO_TOKENPLAN_API_KEY: ${{ secrets.MIMO_TOKENPLAN_API_KEY }}
+          VOLCANO_CODINGPLAN_API_KEY: ${{ secrets.VOLCANO_CODINGPLAN_API_KEY }}
+          ATOMGIT_BASE_URL: "https://api-ai.gitcode.com/v1"
+          ZHIPU_BASE_URL: "https://open.bigmodel.cn/api/paas/v4/"
+          NVIDIA_NIM_BASE_URL: "https://integrate.api.nvidia.com/v1"
+          QINIU_BASE_URL: "https://api.qnaigc.com/v1"
+          BAILIAN_BASE_URL: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+          MOONSHOT_BASE_URL: "https://api.moonshot.cn/v1"
+          DEEPSEEK_BASE_URL: "https://api.deepseek.com/v1"
+          MINIMAX_BASE_URL: "https://api.minimax.chat/v1"
+          MODELSCOPE_BASE_URL: "https://api.modelscope.cn/v1"
+          SILICONFLOW_BASE_URL: "https://api.siliconflow.cn/v1"
+          GLM_PROXY_BASE_URL: ${{ secrets.GLM_PROXY_URL }}
+          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
+          CLAUDE_MODEL_LIST: ${{ secrets.CLAUDE_PROXY_MODEL_LIST }}
+          OPENROUTER_MODEL_LIST: ${{ secrets.OPENROUTER_MODEL_LIST }}
+          OPENAI_MODEL_LIST: ${{ secrets.OPENAI_MODEL_LIST }}
+          XAI_MODEL_LIST: ${{ secrets.XAI_MODEL_LIST }}
+          DEEPSEEK_MODEL_LIST: ${{ secrets.DEEPSEEK_MODEL_LIST }}
+          BAILIAN_MODEL_LIST: ${{ secrets.BAILIAN_MODEL_LIST }}
+          MOONSHOT_MODEL_LIST: ${{ secrets.MOONSHOT_MODEL_LIST }}
+          SILICONFLOW_MODEL_LIST: ${{ secrets.SILICONFLOW_MODEL_LIST }}
+          MODELSCOPE_MODEL_LIST: ${{ secrets.MODELSCOPE_MODEL_LIST }}
+          ATOMGIT_MODEL_LIST: ${{ secrets.ATOMGIT_MODEL_LIST }}
+          ZHIPU_MODEL_LIST: ${{ secrets.ZHIPU_MODEL_LIST }}
+          NVIDIA_NIM_MODEL_LIST: ${{ secrets.NVIDIA_NIM_MODEL_LIST }}
+          QINIU_MODEL_LIST: ${{ secrets.QINIU_MODEL_LIST }}
+          GLM_MODEL_LIST: ${{ secrets.GLM_MODEL_LIST }}
+          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+        run: |
+          set -euo pipefail
+          git config --local --unset-all http.https://github.com/.extraheader || true
+          
+          git fetch origin main
+          git checkout main || git checkout -b main
+          git reset --hard origin/main
+          git clean -fd
+          
+          if [ ! -f "last_error.log" ]; then
+            echo "Track 3: 未找到 last_error.log，尝试使用 gh CLI 提取原始日志..."
+            gh run download ${{ github.event.workflow_run.id || inputs.failed_run_id }} -n error-log || echo "日志下载彻底失败，将由大模型自行探索"
+          fi
+
+          BEST_MODEL=$(python custom_scripts/pick_best_model.py)
+          SMALL_MODEL=$(python custom_scripts/pick_best_model.py --small)
+          echo "Track 3 选定模型: $BEST_MODEL (轻量: $SMALL_MODEL)"
+          
+          if [ "$BEST_MODEL" = "NO_MODEL_AVAILABLE" ]; then
+            echo "::error::无可用模型，Track 3 终止"
+            exit 1
+          fi
+          
+          # ── 提取 transplant 步骤上下文（用于 DTS/phandle 报错）──
+          TRANSPLANT_CONTEXT=""
+          WORKFLOW_YML="${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}"
+          if [ -f "$WORKFLOW_YML" ]; then
+            TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
+          fi
+          
+          # ── 获取可用的所有提供商及模型 ──
+          echo "==== 收集备用/旧版 Provider 的兜底模型（优先使用）===="
+          # 如果 pick_best_model.py 未报错则提取一个 fallback_model
+          BEST_FALLBACK=$(python custom_scripts/pick_best_model.py 2>/dev/null)
+          if [ "$BEST_FALLBACK" != "NO_MODEL_AVAILABLE" ] && [ -n "$BEST_FALLBACK" ]; then
+            echo "$BEST_FALLBACK" > fallback_models.txt
+          else
+            touch fallback_models.txt
+          fi
+          
+          echo "==== 收集 DMXAPI 实时可用的高阶免费模型 ===="
+          python custom_scripts/dmxapi_meta_router.py --list > dmxapi_models.txt 2>/dev/null || true
+          
+          # fallback 模型放在最前面（优先使用），DMXAPI 模型作为备选
+          cat fallback_models.txt dmxapi_models.txt | awk '!x[$0]++' > models_to_try.txt
+          
+          echo "将要尝试的模型优先级列表:"
+          cat models_to_try.txt
+          
+          cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
+          
+          # ── 保护关键文件：AI 运行前备份，防止 AI 误删 ──
+          PROTECTED_FILES="opencode.json oh-my-openagent.json AGENTS.md"
+          for f in $PROTECTED_FILES; do
+            [ -f "$f" ] && cp "$f" "${f}.protected_backup"
+          done
+          
+          # ── 循环尝试每个 Provider 的模型，最多尝试3个 ──
+          FIX_SUCCEEDED=false
+          MAX_MODEL_TRIES=3
+          MODEL_TRIES=0
+          while read -r FULL_MODEL; do
+            [ -z "$FULL_MODEL" ] && continue
+            
+            # 限制最大尝试次数
+            MODEL_TRIES=$((MODEL_TRIES + 1))
+            if [ "$MODEL_TRIES" -gt "$MAX_MODEL_TRIES" ]; then
+              echo "已尝试 $MAX_MODEL_TRIES 个模型，停止继续尝试"
+              break
+            fi
+            
+            PROVIDER=$(echo "$FULL_MODEL" | cut -d '/' -f 1)
+            MODEL_NAME=$(echo "$FULL_MODEL" | cut -d '/' -f 2-)
+            
+            echo "=========================================================="
+            echo "🔥 当前尝试使用提供商/模型: $FULL_MODEL"
+            echo "=========================================================="
+            
+            # 生成本次尝试所用的配置
+            if [ "$PROVIDER" = "dmxapi" ]; then
+               python custom_scripts/dmxapi_meta_router.py --config-opencode "$PROVIDER" "$MODEL_NAME" > opencode.json
+               mkdir -p ~/.config/opencode
+               python custom_scripts/dmxapi_meta_router.py --config-omo > ~/.config/opencode/oh-my-openagent.json
+            else
+               python custom_scripts/pick_best_model.py --opencode-config-for "$PROVIDER" "$MODEL_NAME" > opencode.json
+               mkdir -p ~/.config/opencode
+               python custom_scripts/dmxapi_meta_router.py --config-omo-generic "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-openagent.json
+            fi
+            
+            # 同步 opencode.json 到 ~/.config/opencode/ 供 oh-my-opencode 读取
+            cp opencode.json ~/.config/opencode/opencode.json
+            
+            # 验证生成的 opencode.json 是否合法 JSON
+            if ! python3 -c "import json; json.load(open('opencode.json'))" 2>/dev/null; then
+              echo "::warning::opencode.json 不是合法 JSON，跳过此模型"
+              cat opencode.json
+              continue
+            fi
+            
+             # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
+             FAILURE_TYPE="build"
+             if grep -qi "Phase 1 上传失败\|phase1-upload\|需修复 MEGA 上传逻辑" last_error.log 2>/dev/null; then
+               FAILURE_TYPE="phase1-upload"
+             elif grep -qi "Phase 2 下载失败\|mega-download\|需修复 MEGA 下载逻辑" last_error.log 2>/dev/null; then
+               FAILURE_TYPE="mega-download"
+             fi
+             echo "检测到失败类型: $FAILURE_TYPE"
+             
+             if [ "$FAILURE_TYPE" = "phase1-upload" ]; then
+               echo "Phase 1 编译成功但 MEGA 上传失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的上传逻辑（upload_to_mega 函数），找出上传失败的根本原因并修复。常见问题：mega-rpc 命令不存在、mega-put 超时、登录失败、存储满等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+             elif [ "$FAILURE_TYPE" = "mega-download" ]; then
+               echo "Phase 1 已成功上传到 MEGA，但 Phase 2 下载失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的下载逻辑（download_from_mega 函数），找出下载失败的根本原因并修复。常见问题：mega-get 超时、登录失败、文件路径错误等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+             elif grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
+              echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
+            else
+              echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
+            fi
+            
+            # ── 尝试 oh-my-opencode（必须使用 --agent build），单次最多10分钟 ──
+            echo "尝试 oh-my-opencode run --agent build..."
+            timeout 600 oh-my-opencode run --agent build "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+            if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
+              echo "::warning::oh-my-opencode 超时（10分钟），准备尝试下一个模型..."
+              continue
+            elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
+              echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
+            else
+              FIX_SUCCEEDED=true
+            fi
+            
+            if [ "$FIX_SUCCEEDED" = "false" ]; then
+              echo "尝试 opencode run（最多10分钟）..."
+              timeout 600 opencode run "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+              if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
+                echo "::warning::opencode 超时（10分钟），准备尝试下一个模型..."
+                continue
+              elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
+                echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
+              else
+                FIX_SUCCEEDED=true
+              fi
+            fi
+            rm -f prompt.txt opencode_output.log
+            
+            # 如果某次循环成功产生了代码修改，立刻退出循环并提交
+            if [ "$FIX_SUCCEEDED" = "true" ]; then
+              # 判断是否真正修改了代码（除了自动生成的缓存文件）
+              git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+              git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+              git add .
+              git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+              
+              if ! git diff --cached --quiet; then
+                echo "✅ 成功利用 $FULL_MODEL 完成修复，退出模型循环。"
+                break
+              else
+                echo "⚠️ 模型 $FULL_MODEL 运行结束，但没有产生有效的代码修改，将继续尝试更强模型..."
+                FIX_SUCCEEDED=false
+              fi
+            fi
+          done < models_to_try.txt
+          
+          # ── 检查是否最终修复成功 ──
+          if [ "$FIX_SUCCEEDED" != "true" ]; then
+            echo "::error::所有模型尝试完毕，Track 3 AI 修复彻底失败，不提交任何更改"
+            exit 1
+          fi
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # ── 恢复被 AI 误删的关键文件 ──
+          for f in $PROTECTED_FILES; do
+            if [ ! -f "$f" ] && [ -f "${f}.protected_backup" ]; then
+              echo "⚠️ AI 删除了 $f，正在恢复..."
+              cp "${f}.protected_backup" "$f"
+            fi
+          done
+          rm -f *.protected_backup 2>/dev/null || true
+          
+          # ── 清理临时文件，但不删除 last_error.log（评审还需要用）──
+          rm -f prompt.txt opencode.json 2>/dev/null || true
+          
+          # 排除自动生成的缓存文件和运行时临时文件
+          git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+          git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+          
+          git add .
+          
+          # 再次确保缓存文件和临时文件不被提交
+          git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+          
+          if git diff --cached --quiet; then
+            echo "::error::AI 运行完成但未产生任何代码更改，修复可能无效"
+            exit 1
+          fi
+          
+          # === 推送前语法校验 ===
+          echo "=== 🔍 推送前语法校验 ==="
+          python custom_scripts/validate_syntax.py
+          VALIDATION_EXIT=$?
+          if [ $VALIDATION_EXIT -ne 0 ]; then
+            echo "::error::❌ 语法校验失败，拒绝推送，回滚修改"
+            git checkout -- .
+            git clean -fd
+            exit 1
+          fi
+          echo "✅ 语法校验通过，准备提交"
+          
+          # === 多模型共识评审：5个模型评审，3/5通过才放行（只执行一次）===
+          echo "=== 🔍 多模型共识评审 ==="
+          ERROR_LOG_CONTENT=$(cat last_error.log 2>/dev/null || echo "No error log")
+          REVIEW_OUTPUT=$(python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG_CONTENT" 2>&1)
+          REVIEW_EXIT=$?
+          echo "$REVIEW_OUTPUT"
+          if echo "$REVIEW_OUTPUT" | grep -q "RESULT: FAIL"; then
+            echo "::error::❌ 多模型共识评审未通过，回滚修改"
+            git checkout -- .
+            git clean -fd
+            exit 1
+          fi
+          echo "✅ 多模型共识评审通过，准备提交"
+          
+          # 评审通过后才删除 last_error.log
+          rm -f last_error.log
+          
+          git commit -m "Auto-fix build error with OpenCode Deep Repair"
+          git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${{ github.repository }}.git
+          
+          # 拉取最新的提交以避免冲突 (rebase 模式)
+          git pull --rebase origin main || true
+          
+          git push origin HEAD:main || { echo "::error::Push failed"; exit 1; }
+          echo "Track 3 修复成功并已推送"
+          
+          # ── 重触发工作流（根据失败类型决定重触发Phase1还是Phase2）──
+          FAILED_WORKFLOW="${{ github.event.workflow_run.name || inputs.failed_workflow_name }}"
+          FAILED_RUN_ID="${{ github.event.workflow_run.id || inputs.failed_run_id }}"
+          WORKFLOW_PATH="${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}"
+          WORKFLOW_FILENAME=$(basename "$WORKFLOW_PATH")
+          
+          # 从last_error.log检测失败类型
+          RETRIGGER_TYPE="self"
+          if grep -qi "Phase 1 上传失败\|phase1-upload\|需修复 MEGA 上传逻辑" last_error.log 2>/dev/null; then
+            RETRIGGER_TYPE="phase1"
+          fi
+          
+          if [ "$RETRIGGER_TYPE" = "phase1" ]; then
+            # Phase1上传失败 → 修复后应重触发Phase1让它重新上传
+            PHASE1_WORKFLOW=""
+            case "$WORKFLOW_FILENAME" in
+              Build_OpenWRT.org_2_for_XIAOMI_R4.yml) PHASE1_WORKFLOW="Build_OpenWRT.org_1_for_XIAOMI_R4.yml" ;;
+              Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml) PHASE1_WORKFLOW="Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml" ;;
+              *) PHASE1_WORKFLOW="$WORKFLOW_FILENAME" ;;
+            esac
+            echo "根因是Phase1上传失败，重触发Phase1: $PHASE1_WORKFLOW"
+            gh workflow run "$PHASE1_WORKFLOW" --ref main || echo "重触发Phase1失败，可手动触发"
+          else
+            echo "重触发原失败工作流: $FAILED_WORKFLOW (文件: $WORKFLOW_FILENAME)"
+            gh workflow run "$WORKFLOW_FILENAME" --ref main || echo "重触发失败，可手动触发"
+          fi
+
