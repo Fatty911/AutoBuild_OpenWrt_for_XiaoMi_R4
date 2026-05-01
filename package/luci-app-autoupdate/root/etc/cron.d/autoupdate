@@ -1,0 +1,3 @@
+# Auto firmware update checker
+# Runs at 3:30 AM daily (override via LuCI check_interval setting)
+30 3 * * * /usr/bin/autoupdate.sh check >> /var/log/autoupdate.log 2>&1

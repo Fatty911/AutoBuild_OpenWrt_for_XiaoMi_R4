@@ -1,0 +1,14 @@
+#!/bin/sh /etc/rc.common
+
+START=99
+
+start() {
+	mkdir -p /var/log
+	touch /var/log/autoupdate.log
+	/etc/init.d/cron enable
+	/etc/init.d/cron start 2>/dev/null
+}
+
+stop() {
+	:
+}

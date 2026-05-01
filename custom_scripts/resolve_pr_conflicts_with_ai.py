@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""
+自动解析 PR 冲突并尝试自动合并。
+仅处理同仓库分支 PR（fork PR 默认跳过）。
+"""
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+import requests
+
+
+def run(cmd, check=True):
+    print("+", " ".join(cmd))
+    p = subprocess.run(cmd, check=check, text=True, capture_output=True)
+    if p.stdout:
+        print(p.stdout.strip())
+    if p.stderr:
+        print(p.stderr.strip())
+    return p
+
+
+def call_openai_compatible(base_url, api_key, model, prompt):
+    url = base_url.rstrip("/")
+    if not url.endswith("/chat/completions"):
+        if url.endswith("/v1"):
+            url = f"{url}/chat/completions"
+        else:
+            url = f"{url}/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2,
+        "max_tokens": 8192,
+    }
+    resp = requests.post(url, headers=headers, json=payload, timeout=180)
+    if resp.status_code != 200:
+        raise RuntimeError(f"LLM API failed ({resp.status_code}): {resp.text[:300]}")
+    return resp.json()["choices"][0]["message"]["content"].strip()
+
+
+def get_model_chain():
+    def split_models(env_name, default_csv):
+        raw = os.getenv(env_name, "").strip()
+        src = raw if raw else default_csv
+        return [x.strip() for x in src.split(",") if x.strip()]
+
+    chain = []
+    zen_key = os.getenv("ZEN_API_KEY", "").strip()
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
+    xai_key = os.getenv("XAI_API_KEY", "").strip()
+    minimax_key = os.getenv("MINIMAX_API_KEY", "").strip()
+    zhipu_key = os.getenv("ZHIPU_API_KEY", "").strip()
+    bailian_key = os.getenv("BAILIAN_API_KEY", "").strip()
+
+    # 1) 智谱 GLM-5.1 (高性价比优先) - $2.15/1M, 智能指数51, 主要决策模型
+    if zhipu_key:
+        chain.append(("https://open.bigmodel.cn/api/paas/v4/", zhipu_key, split_models("ZHIPU_MODEL_LIST", "GLM-5.1")))
+
+    # 2) 百炼 Qwen3.6-Plus (备用高性价比) - $1.13/1M, 智能指数50
+    if bailian_key:
+        chain.append(("https://dashscope.aliyuncs.com/compatible-mode/v1", bailian_key, split_models("BAILIAN_MODEL_LIST", "qwen3.6-plus")))
+
+    # 3) OPENCODE ZEN (免费模型)
+    if zen_key:
+        chain.append(("https://opencode.ai/zen", zen_key, ["mimo-v2-pro-free"]))
+
+    # 4) GLM via OpenRouter (备用)
+    if openrouter_key:
+        chain.append(("https://openrouter.ai/api/v1", openrouter_key, split_models("GLM_MODEL_LIST", "glm-5")))
+
+    # 5) MiniMax-M2.7 (低成本简单任务) - $0.53/1M, 注意：意图理解能力差
+    if minimax_key:
+        chain.append(("https://api.minimax.chat", minimax_key, split_models("MINIMAX_MODEL_LIST", "MiniMax-M2.7")))
+
+    # 6) Grok-4.2 (仅压缩任务) - $3.00/1M, 用户要求仅用于压缩
+    if xai_key:
+        chain.append(("https://api.x.ai/v1", xai_key, split_models("GROK_MODEL_LIST", "grok-4.2")))
+
+    # 7) 昂贵的模型 - 用户要求暂时不使用，仅在其他模型都不可用时作为后备
+    # Claude (OpenRouter) - $10.00/1M
+    if openrouter_key:
+        chain.append(
+            ("https://openrouter.ai/api/v1", openrouter_key, split_models("CLAUDE_MODEL_LIST", "anthropic/claude-sonnet-4"))
+        )
+        chain.append(
+            ("https://openrouter.ai/api/v1", openrouter_key, split_models("GEMINI_MODEL_LIST", "google/gemini-2.5-pro-preview"))
+        )
+    if openai_key:
+        chain.append(
+            ("https://api.openai.com/v1", openai_key, split_models("OPENAI_MODEL_LIST", "gpt-4.1,gpt-4o"))
+        )
+    elif openrouter_key:
+        chain.append(
+            ("https://openrouter.ai/api/v1", openrouter_key, split_models("OPENAI_MODEL_LIST", "openai/gpt-4.1,openai/gpt-4o"))
+        )
+    return chain
+
+
+def resolve_file_with_ai(path: Path):
+    content = path.read_text(encoding="utf-8", errors="ignore")
+    prompt = (
+        "You are resolving a git merge conflict for a pull request.\n"
+        "Rules:\n"
+        "1) Fix ONLY conflict regions marked by <<<<<<<, =======, >>>>>>>.\n"
+        "2) Keep all non-conflict code unchanged.\n"
+        "3) Do not delete unrelated logic.\n"
+        "4) 【AI协作与防幻觉】必须确认所用包或方法的准确性。若是框架/库相关，请务必保证不是你训练数据里的幻觉，不臆造虚假模块。\n"
+        "5) Return ONLY the final full file content, no markdown.\n\n"
+        f"File: {path}\n\n"
+        f"{content}"
+    )
+    for base_url, key, models in get_model_chain():
+        for model in models:
+            try:
+                print(f"Trying model {model} on {path}")
+                fixed = call_openai_compatible(base_url, key, model, prompt)
+                fixed = fixed.strip().removeprefix("```").removesuffix("```").strip()
+                if "<<<<<<<" in fixed or "=======" in fixed or ">>>>>>>" in fixed:
+                    continue
+                path.write_text(fixed + "\n", encoding="utf-8")
+                return True
+            except Exception as e:
+                print(f"Model {model} failed: {e}")
+                continue
+    return False
+
+
+def gh_api(method, url, token, payload=None):
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github+json",
+    }
+    resp = requests.request(method, url, headers=headers, json=payload, timeout=30)
+    return resp
+
+
+def main():
+    token = os.getenv("GITHUB_TOKEN", "").strip()
+    repo = os.getenv("GITHUB_REPOSITORY", "").strip()
+    pr_number = os.getenv("PR_NUMBER", "").strip()
+    if not token or not repo or not pr_number:
+        print("Missing GITHUB_TOKEN / GITHUB_REPOSITORY / PR_NUMBER")
+        sys.exit(1)
+
+    pr_url = f"https://api.github.com/repos/{repo}/pulls/{pr_number}"
+    pr = gh_api("GET", pr_url, token)
+    if pr.status_code != 200:
+        print(f"Failed to get PR: {pr.status_code} {pr.text[:300]}")
+        sys.exit(1)
+    prj = pr.json()
+    if prj.get("head", {}).get("repo", {}).get("full_name") != repo:
+        print("PR from fork, skip auto conflict resolution for security.")
+        return
+
+    base_ref = prj["base"]["ref"]
+    head_ref = prj["head"]["ref"]
+
+    run(["git", "fetch", "origin", base_ref, head_ref])
+    run(["git", "checkout", "-B", f"pr-{pr_number}", f"origin/{head_ref}"])
+    merged = run(
+        ["git", "merge", f"origin/{base_ref}", "--no-commit", "--no-ff"], check=False
+    )
+    if merged.returncode == 0:
+        print("No merge conflicts, nothing to resolve.")
+    else:
+        conflicted = run(
+            ["git", "diff", "--name-only", "--diff-filter=U"], check=True
+        ).stdout.splitlines()
+        if not conflicted:
+            print("Merge returned non-zero, but no conflicted files found. 将尝试直接调用 GitHub merge API。")
+            run(["git", "merge", "--abort"], check=False)
+        else:
+            print("Conflicted files:", conflicted)
+            for file in conflicted:
+                p = Path(file)
+                if not p.exists():
+                    continue
+                ok = resolve_file_with_ai(p)
+                if not ok:
+                    print(f"AI failed to resolve {file}")
+                    sys.exit(1)
+
+    run(["git", "add", "."])
+    diff = subprocess.run(["git", "diff", "--cached", "--quiet"])
+    if diff.returncode != 0:
+        # 多模型共识评审：5个模型评审，3/5通过才放行
+        review_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "multi_agent_review.py")
+        if os.path.exists(review_script):
+            review_result = subprocess.run(
+                [sys.executable, review_script, "review"],
+                capture_output=True, text=True,
+            )
+            print(review_result.stdout)
+            if review_result.stderr:
+                print(review_result.stderr, file=sys.stderr)
+            if "RESULT: PASS" not in review_result.stdout:
+                print("❌ 多模型共识评审未通过，放弃合并")
+                run(["git", "merge", "--abort"], check=False)
+                sys.exit(1)
+            print("✅ 多模型共识评审通过，继续合并")
+
+        best_model = os.getenv("BEST_MODEL", "AI")
+        run(["git", "commit", "-m", f"Auto resolve PR #{pr_number} conflicts with AI (Model: {best_model})"])
+        run(["git", "push", "origin", f"HEAD:{head_ref}"])
+
+    merge_resp = gh_api(
+        "PUT",
+        f"https://api.github.com/repos/{repo}/pulls/{pr_number}/merge",
+        token,
+        payload={"merge_method": "squash"},
+    )
+    if merge_resp.status_code == 200:
+        print(f"PR #{pr_number} merged.")
+        return
+    # 常见可重试/受保护分支状态：不作为脚本错误退出，避免误报失败。
+    if merge_resp.status_code in (405, 409, 422):
+        print(
+            f"Auto merge not completed now (HTTP {merge_resp.status_code}). "
+            "可能是分支保护、检查未完成或 PR 状态暂不可合并，先跳过。"
+        )
+        print(merge_resp.text[:300])
+        return
+    print(f"Auto merge failed: {merge_resp.status_code} {merge_resp.text[:300]}")
+    sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

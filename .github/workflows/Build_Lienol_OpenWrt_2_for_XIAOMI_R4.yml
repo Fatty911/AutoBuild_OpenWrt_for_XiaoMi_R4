@@ -1,0 +1,476 @@
+#
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# Description: Build OpenWrt using GitHub Actions
+#
+
+name: Build Lienol 2 packages and fixes for XIAOMI_R4
+run-name: "Lienol Phase 2 ← ${{ github.event.workflow_run.name || github.event_name }} (#${{ github.event.workflow_run.run_number || github.run_number }})"
+
+on:
+  workflow_run:
+    workflows: ["Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4"]  # 工作流 1 的名称
+    types:
+      - completed  # 当工作流 1 完成时触发
+  workflow_dispatch:
+  push:
+    branches: 
+      - master
+      - main
+    paths:
+      - 'custom_scripts/diy-part1.sh'
+      - 'custom_scripts/diy-part2.sh'
+      - 'custom_scripts/compile_with_retry.py'
+      - 'custom_scripts/extract_last_error.py'
+      - 'custom_scripts/fix_dts_nvmem_layout.py'
+      - 'custom_scripts/clean_invalid_releases.py'
+      - 'custom_scripts/validate_build_output.py'
+      - 'custom_scripts/mega_manager.py'
+      - 'custom_configs/**'
+      - .github/workflows/Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml
+      - package/luci-app-autoupdate/**
+
+concurrency:
+  group: lienol2-phase2
+  cancel-in-progress: true
+
+env:
+  REPO_URL: https://github.com/Lienol/openwrt
+  REPO_BRANCH: main
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: custom_configs/config_for_Lienol
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  SOURCE: Lienol
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') || github.event_name == 'push' }}
+    steps:
+
+    - name: Maximize build space
+      uses: easimon/maximize-build-space@master
+      with:
+          root-reserve-mb: 4096
+          temp-reserve-mb: 1024
+          swap-size-mb: 1024
+          build-mount-path: /workdir
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -y purge azure-cli* docker* ghc* zulu* hhvm* llvm* firefox* google* dotnet* aspnetcore* powershell* openjdk* adoptopenjdk* mysql* php* mongodb* moby* snap* || true
+        sudo -E apt-get -qq update
+        sudo apt install -y perl build-essential libncurses5-dev gawk git subversion libssl-dev gettext unzip zlib1g-dev file python3 python3-pip rsync bc wget ccache flex bison libelf-dev jq parallel pigz
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo chown -R $USER:$GROUPS /workdir
+        sudo chown -R $USER:$GROUPS $GITHUB_WORKSPACE
+        pip install "tenacity>=8.0.0" "pycryptodome>=3.9.6" "requests" "pathlib" || exit 1
+        curl -fsSL https://mega.nz/keys/MEGA_signing.key | sudo gpg --dearmor -o /usr/share/keyrings/meganz-archive-keyring.gpg
+        echo "deb [signed-by=/usr/share/keyrings/meganz-archive-keyring.gpg] https://mega.nz/linux/repo/xUbuntu_22.04/ ./" | sudo tee /etc/apt/sources.list.d/mega.list
+        sudo apt update && sudo apt install -y megacmd
+
+    - name: Download from MEGA
+      id: mega_download
+      env:
+        MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+        MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+        MEGA_ERROR_LOG: /tmp/mega_error.log
+      run: |
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py download ${{ env.SOURCE }} /workdir --error-log /tmp/mega_error.log
+        
+        # mega-get 下载的是文件夹，文件位于 /workdir/${{ env.SOURCE }}/${{ env.SOURCE }}.tar.gz
+        # 需要将文件移动到预期位置 /workdir/${{ env.SOURCE }}.tar.gz
+        if [ -f "/workdir/${{ env.SOURCE }}/${{ env.SOURCE }}.tar.gz" ]; then
+          echo "MEGA 下载的是文件夹，正在移动文件到预期位置..."
+          mv "/workdir/${{ env.SOURCE }}/${{ env.SOURCE }}.tar.gz" "/workdir/${{ env.SOURCE }}.tar.gz"
+          # 删除空文件夹
+          rm -rf "/workdir/${{ env.SOURCE }}"
+        fi
+        
+        if [ ! -f "/workdir/${{ env.SOURCE }}.tar.gz" ]; then
+          echo "::error::MEGA 下载失败，正在诊断失败原因..."
+          mega-ls /${{ env.SOURCE }} 2>/dev/null || true
+          MEGA_LS_OUTPUT=$(mega-ls /${{ env.SOURCE }} 2>/dev/null || echo "LS_FAILED")
+          if echo "$MEGA_LS_OUTPUT" | grep -qi "${{ env.SOURCE }}.tar.gz"; then
+            echo "FAILURE_TYPE=mega-download" >> $GITHUB_ENV
+            echo "::error::Phase 1 已上传文件到 MEGA，但 Phase 2 下载失败 → 需修复 MEGA 下载逻辑"
+          else
+            echo "FAILURE_TYPE=phase1-upload" >> $GITHUB_ENV
+            echo "::error::MEGA 上不存在 ${{ env.SOURCE }}.tar.gz → Phase 1 上传失败，需修复 MEGA 上传逻辑"
+          fi
+          exit 1
+        fi
+        TARBALL_SIZE=$(stat -c%s "/workdir/${{ env.SOURCE }}.tar.gz" 2>/dev/null || echo 0)
+        if [ "$TARBALL_SIZE" -lt 1000000 ]; then
+          echo "::error::MEGA 下载的文件损坏或不完整 (大小: $TARBALL_SIZE bytes)"
+          echo "FAILURE_TYPE=mega-download" >> $GITHUB_ENV
+          rm -f "/workdir/${{ env.SOURCE }}.tar.gz"
+          exit 1
+        fi
+        echo "MEGA 下载成功，文件大小: $(numfmt --to=iec $TARBALL_SIZE)"
+    
+    - name: 解压文件
+      run: |
+        echo "解压前磁盘空间："
+        df -hT
+        cd /workdir
+        
+        echo "清理旧的 openwrt 目录..."
+        rm -rf openwrt
+        
+        TAR_FILE="${{ env.SOURCE }}.tar.gz"
+        
+        if [ ! -f "$TAR_FILE" ]; then
+          TAR_FILE=$(ls -t *.tar.gz 2>/dev/null | head -1)
+        fi
+        
+        if [ -z "$TAR_FILE" ] || [ ! -f "$TAR_FILE" ]; then
+          echo "::error::未找到任何 .tar.gz 文件，MEGA下载可能失败"
+          echo "当前目录内容:"
+          ls -la
+          exit 1
+        fi
+        
+        echo "找到下载文件: $TAR_FILE"
+        echo "文件大小: $(du -h "$TAR_FILE" | cut -f1)"
+        tar -xzf "$TAR_FILE"
+        rm -f "$TAR_FILE"
+        
+        echo "解压后的目录结构:"
+        ls -la
+        
+        if [ ! -d "openwrt" ]; then
+          echo "::error::解压后未找到 openwrt 目录"
+          echo "当前目录内容:"
+          ls -la
+          exit 1
+        fi
+        
+        echo "openwrt 目录内容:"
+        ls -la openwrt/ | head -20
+        
+        echo "清理旧文件..."
+        rm -rf openwrt/.git
+        rm -rf openwrt/build_dir/toolchain-*
+        rm -rf openwrt/build_dir/host
+        rm -rf openwrt/build_dir/hostpkg-*
+        rm -rf openwrt/staging_dir/toolchain-*
+        rm -rf openwrt/staging_dir/host
+        rm -rf openwrt/staging_dir/hostpkg
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+        
+        # 验证符号链接和 Makefile
+        echo "验证符号链接:"
+        ls -la $GITHUB_WORKSPACE/openwrt
+        echo "检查 Makefile:"
+        if [ -f "$GITHUB_WORKSPACE/openwrt/Makefile" ]; then
+          echo "Makefile 存在"
+          head -20 $GITHUB_WORKSPACE/openwrt/Makefile
+        else
+          echo "::error::Makefile 不存在！"
+          exit 1
+        fi
+        
+        echo "解压后磁盘空间："
+        df -hT
+
+    - name: Sync OpenWrt config
+      run: |
+        cd openwrt
+        make defconfig
+        echo "=== defconfig 完成 ==="
+
+    - name: Try compiling the firmware
+      id: compile_attempt
+      run: |
+        set -euo pipefail
+        cd openwrt
+        make defconfig
+        [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
+        echo "开始执行修复后重试编译..."
+        LOG_FILE="compile.log"
+        echo "=== 先构建 root filesystem ==="
+        make target/compile V=s > rootfs_compile.log 2>&1 || true
+        echo "=== root filesystem 构建完成，开始完整固件编译 ==="
+        {
+          make -j1 V=s > compile.log 2>&1 || {
+            echo "首次固件编译失败，尝试运行修复脚本..."
+            python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+          }
+        } || true
+        echo "=== firmware 初始编译步骤结束 ==="
+        # 提取最后一个失败组件的日志
+        python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+        if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+          echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
+          echo "检测到 firmware 编译失败，已记录错误日志"
+        fi
+
+    - name: Detect firmware build failure
+      id: detect_firmware_failure
+      run: |
+        if [ "$FIRMWARE_BUILD_FAILED" = "true" ]; then
+          echo "检测到 firmware 编译失败，准备提取错误信息..."
+          cd openwrt
+          python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          echo "failure_detected=true" >> $GITHUB_OUTPUT
+        else
+          echo "failure_detected=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Check for .bin file after initial compilation
+      id: check_bin_initial
+      run: |
+        BIN_FOUND=false
+        for file in openwrt/bin/targets/*/*/*.bin; do
+          if [ -f "$file" ] && [[ ! "$file" =~ initramfs ]]; then
+            BIN_FOUND=true
+            echo "存在.bin固件: $file"
+            break
+          fi
+        done
+        if [ "$BIN_FOUND" = "true" ]; then
+          echo "BIN_EXISTS=true" >> $GITHUB_ENV
+          echo "bin_status=success" >> $GITHUB_ENV
+        else
+          echo "BIN_EXISTS=false" >> $GITHUB_ENV
+        fi
+
+    - name: Perform manual porting for Xiaomi Mi Router 4
+      id: transplant
+      if: env.BIN_EXISTS == 'false'
+      run: |
+        cd openwrt
+        echo "Performing manual porting for Xiaomi Mi Router 4..."
+        git clone https://github.com/coolsnowwolf/lede lede-source
+        cp lede-source/target/linux/ramips/dts/mt7621_xiaomi_mi-router-4.dts target/linux/ramips/dts/
+        rm -rf lede-source
+
+        echo "修复 DTS nvmem-layout 兼容性..."
+        python3 $GITHUB_WORKSPACE/custom_scripts/fix_dts_nvmem_layout.py .
+
+        echo "isFixed=true" >> $GITHUB_OUTPUT"
+        
+    - name: Compile the firmware with fixes
+      id: compile
+      if: env.BIN_EXISTS == 'false' && steps.transplant.outputs.isFixed == 'true'
+      run: |
+        set -euo pipefail
+        cd openwrt
+        make defconfig
+        echo "=== 先构建 root filesystem ==="
+        make target/compile V=s > rootfs_compile.log 2>&1 || true
+        echo "=== root filesystem 构建完成，开始完整固件编译 ==="
+        {
+          make -j1 V=s > compile.log 2>&1 || {
+            echo "修复后编译固件仍失败，尝试运行修复脚本..."
+            python $GITHUB_WORKSPACE/custom_scripts/compile_with_retry.py --max-retry 1 "make -j1 V=s" "compile.log"
+          }
+        } || true
+        echo "=== 固件编译步骤结束 ==="
+        # 提取最后一个失败组件的日志
+        python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output last_error.log --max-chars 8000 || true
+        if [ -f last_error.log ] && grep -q "error\|failed\|Error" last_error.log 2>/dev/null; then
+          echo "FIXED_BUILD_FAILED=true" >> $GITHUB_ENV
+          echo "检测到固件编译失败，已记录错误日志"
+        fi
+        echo "bin_status=success" >> $GITHUB_ENV
+
+    - name: Detect fixed firmware build failure
+      id: detect_fixed_failure
+      run: |
+        if [ "$FIXED_BUILD_FAILED" = "true" ]; then
+          echo "检测到固件编译失败，准备提取错误信息..."
+          cd openwrt
+          python $GITHUB_WORKSPACE/custom_scripts/extract_last_error.py --log-dir . --output ../last_error.log --max-chars 8000 || true
+          echo "failure_detected=true" >> $GITHUB_OUTPUT
+        else
+          echo "failure_detected=false" >> $GITHUB_OUTPUT
+        fi
+        
+    - name: "Gate: Ensure .bin exists before release"
+      id: gate_bin
+      run: |
+        cd openwrt
+        echo "=== 检查 .bin 固件是否存在 ==="
+        BIN_COUNT=$(ls bin/targets/*/*/*.bin 2>/dev/null | grep -v initramfs | wc -l)
+        echo "找到 $BIN_COUNT 个 .bin 固件（排除 initramfs）"
+        if [ "$BIN_COUNT" -eq 0 ]; then
+          echo "::error::没有找到任何 .bin 固件，终止工作流"
+          echo "BUILD_GATE_FAILED=true" >> $GITHUB_ENV
+          exit 1
+        fi
+        echo "BUILD_GATE_PASSED=true" >> $GITHUB_ENV
+        
+    - name: Check for .bin file after final compilation
+      id: check_bin_final
+      run: |
+        BIN_FOUND=false
+        for file in openwrt/bin/targets/*/*/*.bin; do
+          if [ -f "$file" ] && [[ ! "$file" =~ initramfs ]]; then
+            BIN_FOUND=true
+            echo "存在.bin固件: $file"
+            break
+          fi
+        done
+        if [ "$BIN_FOUND" = "true" ]; then
+          echo "FINAL_BIN_EXISTS=true" >> $GITHUB_ENV
+        else
+          echo "FINAL_BIN_EXISTS=false" >> $GITHUB_ENV
+          echo "没找到.bin固件（排除initramfs后）"
+        fi
+
+    - name: Cleanup invalid releases (no .bin)
+      if: env.FINAL_BIN_EXISTS == 'false'
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        echo "没有找到 .bin 固件，清理可能存在的无效 Release..."
+        python $GITHUB_WORKSPACE/custom_scripts/clean_invalid_releases.py || echo "清理脚本执行失败或不存在，跳过"
+
+    - name: Build Quality Gate
+      id: build_quality_gate
+      run: |
+        python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py --gate
+      env:
+        SOURCE: ${{ env.SOURCE }}
+
+    - name: Upload debug logs on failure
+      if: env.BUILD_QUALITY_GATE == 'fail'
+      run: |
+        cd openwrt
+        echo "=== 调试信息 ===" > debug.log
+        echo "BIN_EXISTS=$BIN_EXISTS" >> debug.log
+        echo "FINAL_BIN_EXISTS=$FINAL_BIN_EXISTS" >> debug.log
+        echo "isFixed=${{ steps.transplant.outputs.isFixed }}" >> debug.log
+        echo "" >> debug.log
+        echo "=== openwrt/bin/targets 目录结构 ===" >> debug.log
+        ls -la bin/targets/*/* 2>/dev/null || echo "目录不存在" >> debug.log
+        echo "" >> debug.log
+        echo "=== .config 最后50行 ===" >> debug.log
+        tail -50 .config >> debug.log 2>/dev/null || echo ".config不存在" >> debug.log
+        echo "" >> debug.log
+        echo "=== feed目录 ===" >> debug.log
+        ls -la feeds/ 2>/dev/null >> debug.log || echo "feeds目录不存在" >> debug.log
+        cat feeds.conf.default >> debug.log 2>/dev/null || echo "feeds.conf.default不存在" >> debug.log
+        echo "" >> debug.log
+        echo "=== build日志 ===" >> debug.log
+        tail -100 build.log >> debug.log 2>/dev/null || echo "build.log不存在" >> debug.log
+        echo "调试信息已保存到 debug.log"
+        cat debug.log
+      shell: bash
+
+    - name: Upload debug artifact
+      if: env.BUILD_QUALITY_GATE == 'fail'
+      uses: actions/upload-artifact@main
+      with:
+        name: debug-logs-Lienol-2
+        path: openwrt/debug.log
+
+    - name: Set environment variables
+      id: setEnv
+      run: |
+        cd openwrt
+        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
+        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
+        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        echo "TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+        echo "TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
+        echo "TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')" >> $GITHUB_ENV
+        echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
+        KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+')
+        echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
+        echo "set_env_variables=true" >> $GITHUB_OUTPUT
+
+    - name: Upload bin directory
+      uses: actions/upload-artifact@main
+      with:
+        name: OpenWrt_${{ env.SOURCE }}_bin_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+        path: |
+          openwrt/bin
+          openwrt/.config
+
+    - name: Organize files
+      id: organize
+      run: |
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
+        echo "firmware_path=$(pwd)" >> $GITHUB_ENV
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware directory
+      uses: actions/upload-artifact@main
+      with:
+        name: OpenWrt_${{ env.SOURCE }}_firmware_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+        path: ${{ env.firmware_path }}
+
+    - name: Generate release tag
+      id: generate_release_tag
+      run: |
+        echo "release_tag=Lienol_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        echo "release_tag_status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@master
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      with:
+          token: ${{ github.token }}
+          files: |
+            openwrt/bin/targets/**/*.bin
+          name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
+          tag_name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
+
+    - name: Delete temporary files from MEGA
+      env:
+        MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
+        MEGA_PASSWORD: ${{ secrets.MEGA_PASSWORD }}
+      run: |
+        python $GITHUB_WORKSPACE/custom_scripts/mega_manager.py delete
+
+    - name: Validate build output
+      run: |
+        python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
+
+    - name: Extract Error Log
+      if: failure()
+      run: |
+        cd $GITHUB_WORKSPACE
+        python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
+
+    - name: Upload Error Log Artifact
+      uses: actions/upload-artifact@main
+      if: failure()
+      with:
+        name: error-log
+        path: last_error.log
+        retention-days: 1
+    - name: Delete workflow runs
+      if: always()
+      uses: Mattraks/delete-workflow-runs@main
+      with:
+        token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        retain_days: 0
+        keep_minimum_runs: 2
