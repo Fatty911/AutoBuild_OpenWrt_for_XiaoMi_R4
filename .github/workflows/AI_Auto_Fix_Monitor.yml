@@ -442,3 +442,10 @@ jobs:
             gh workflow run "$WORKFLOW_FILENAME" --ref main || echo "重触发失败，可手动触发"
           fi
 
+      - name: Delete workflow runs
+        if: always()
+        run: |
+          echo "Workflow runs are cleaned up centrally by cleanup-workflow-runs.yml"
+          echo "This workflow keeps the latest 2 successful and 2 failed runs"
+          echo "Daily cleanup runs at 3 AM UTC (11 AM China time)"
+

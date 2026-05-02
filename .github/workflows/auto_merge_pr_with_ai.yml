@@ -77,3 +77,10 @@ jobs:
           MINIMAX_BASE_URL: "https://api.minimax.chat/v1"
         run: |
           python custom_scripts/resolve_pr_conflicts_with_ai.py
+
+      - name: Delete workflow runs
+        if: always()
+        run: |
+          echo "Workflow runs are cleaned up centrally by cleanup-workflow-runs.yml"
+          echo "This workflow keeps the latest 2 successful and 2 failed runs"
+          echo "Daily cleanup runs at 3 AM UTC (11 AM China time)"
