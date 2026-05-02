@@ -442,6 +442,14 @@ jobs:
           name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
           tag_name: OpenWRT_${{ steps.generate_release_tag.outputs.release_tag }}
 
+    - name: Cleanup old releases
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Only delete releases created by this workflow (matching tag prefix)
+        TAG_PREFIX="OpenWRT_Lienol_${{ env.DEVICE_NAME }}_Kernel_"
+        python3 custom_scripts/cleanup_releases.py --prefix "$TAG_PREFIX" --keep 3
+
     - name: Delete temporary files from MEGA
       env:
         MEGA_USERNAME: ${{ secrets.MEGA_USERNAME }}
