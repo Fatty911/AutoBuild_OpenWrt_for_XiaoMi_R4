@@ -1,0 +1,72 @@
+name: Cleanup Workflow Runs
+
+on:
+  schedule:
+    # Run daily at 3 AM UTC (11 AM China time)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      keep_per_conclusion:
+        description: 'Number of runs to keep per conclusion type'
+        default: '2'
+        required: false
+      dry_run:
+        description: 'Dry run (no deletion)'
+        type: boolean
+        default: false
+      workflow_only:
+        description: 'Only clean specific workflow (partial match)'
+        required: false
+        default: ''
+
+env:
+  # Set timezone for consistent scheduling
+  TZ: Asia/Shanghai
+
+jobs:
+  cleanup-workflow-runs:
+    name: Cleanup Workflow Runs (per workflow)
+    runs-on: ubuntu-latest
+    permissions:
+      # Need delete permission for workflow runs
+      actions: write
+      # Note: Repository admin may need to grant additional permissions
+      # or use a PAT with appropriate scope in secrets
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          
+      - name: Install GitHub CLI
+        run: |
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+          sudo apt update
+          sudo apt install -y gh
+          
+      - name: Authenticate GitHub CLI
+        run: |
+          gh auth status || gh auth login --with-token <<< "${{ secrets.GITHUB_TOKEN }}"
+          gh repo view
+        
+      - name: Run workflow cleanup script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 custom_scripts/cleanup_workflow_runs.py \
+            --keep ${{ inputs.keep_per_conclusion || '2' }} \
+            --exclude-workflow "openwrt-builder" \
+            --exclude-workflow "cleanup" \
+            --exclude-workflow "AI_Auto_Fix_Monitor" \
+            --exclude-workflow "auto_merge_pr_with_ai" \
+            ${{ inputs.dry_run && '--dry-run' || '' }} \
+            ${{ inputs.workflow_only && format('--workflow-only {0}', inputs.workflow_only) || '' }}
+            
+      - name: Summary
+        run: |
+          echo "Cleanup workflow runs completed successfully."
+          echo "Each workflow now retains ${{ inputs.keep_per_conclusion || '2' }} runs per conclusion type (success/failure)."

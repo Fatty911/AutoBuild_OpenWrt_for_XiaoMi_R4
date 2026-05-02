@@ -21,7 +21,9 @@
 
 ## 工作流保护
 - **绝对禁止**修改、删除以下关键步骤：`Generate release tag`、`Upload firmware to release`、`Auto fix with AI on failure`、`Delete workflow runs`。
+  - 说明：`Delete workflow runs` 步骤必须保留，但其内容可以改为指向集中式清理的说明性消息。
 - 必须使用集中式 `AI_Auto_Fix_Monitor.yml` + `custom_scripts/auto_fix_with_AI_LLM.py`，不允许在每个单独编译工作流里重复复制 AI 逻辑。
+- 工作流运行记录清理使用集中式 `cleanup-workflow-runs.yml` + `custom_scripts/cleanup_workflow_runs.py`，按工作流分别保留最新2个成功和2个失败的运行记录。
 
 ## 模型与 API 选择
 - opencode 用什么模型必须根据用户提供的 secrets 环境变量读取 key，可选 `_proxy_url` 和 `_model_list`，此要求全局生效。

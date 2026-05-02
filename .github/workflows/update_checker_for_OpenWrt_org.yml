@@ -67,9 +67,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        token: ${{ github.token }}
-        repository: ${{ github.repository }}
-        retain_days: 0
-        keep_minimum_runs: 1
+      if: always()
+      run: |
+        echo "Workflow runs are cleaned up centrally by cleanup-workflow-runs.yml"
+        echo "This workflow keeps the latest 2 successful and 2 failed runs"
+        echo "Daily cleanup runs at 3 AM UTC (11 AM China time)"
