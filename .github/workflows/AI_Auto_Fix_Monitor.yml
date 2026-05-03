@@ -102,7 +102,7 @@ jobs:
           QINIU_MODEL_LIST: ${{ secrets.QINIU_MODEL_LIST }}
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-          WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}
+          WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWrt_Firmware.yml' }}
         run: |
           if [ -f "last_error.log" ]; then
             echo "=== 找到 last_error.log ==="
@@ -205,7 +205,7 @@ jobs:
           
           # ── 提取 transplant 步骤上下文（用于 DTS/phandle 报错）──
           TRANSPLANT_CONTEXT=""
-          WORKFLOW_YML="${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}"
+          WORKFLOW_YML="${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWrt_Firmware.yml' }}"
           if [ -f "$WORKFLOW_YML" ]; then
             TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
           fi
@@ -418,7 +418,7 @@ jobs:
           # ── 重触发工作流（根据失败类型决定重触发Phase1还是Phase2）──
           FAILED_WORKFLOW="${{ github.event.workflow_run.name || inputs.failed_workflow_name }}"
           FAILED_RUN_ID="${{ github.event.workflow_run.id || inputs.failed_run_id }}"
-          WORKFLOW_PATH="${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWRT.org_2_for_XIAOMI_R4.yml' }}"
+          WORKFLOW_PATH="${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWrt_Firmware.yml' }}"
           WORKFLOW_FILENAME=$(basename "$WORKFLOW_PATH")
           
           # 从last_error.log检测失败类型
@@ -431,7 +431,7 @@ jobs:
             # Phase1上传失败 → 修复后应重触发Phase1让它重新上传
             PHASE1_WORKFLOW=""
             case "$WORKFLOW_FILENAME" in
-              Build_OpenWRT.org_2_for_XIAOMI_R4.yml) PHASE1_WORKFLOW="Build_OpenWRT.org_1_for_XIAOMI_R4.yml" ;;
+              Build_OpenWrt_Firmware.yml) PHASE1_WORKFLOW="$WORKFLOW_FILENAME" ;;  # standalone build, no Phase1
               Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml) PHASE1_WORKFLOW="Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml" ;;
               *) PHASE1_WORKFLOW="$WORKFLOW_FILENAME" ;;
             esac
