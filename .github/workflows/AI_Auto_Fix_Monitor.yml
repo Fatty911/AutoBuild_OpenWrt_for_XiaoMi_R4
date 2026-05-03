@@ -358,7 +358,34 @@ jobs:
               cp "${f}.protected_backup" "$f"
             fi
           done
-          rm -f *.protected_backup 2>/dev/null || true
+           rm -f *.protected_backup 2>/dev/null || true
+          
+          # ── 文件数量异常检测（防 gh repo sync --force 等意外大规模删除）──
+          echo "=== 📊 文件数量异常检测 ==="
+          WF_COUNT_BEFORE=$(git rev-parse HEAD:./.github/workflows/ 2>/dev/null)
+          if [ -n "$WF_COUNT_BEFORE" ]; then
+            WORKFLOW_BEFORE=$(git ls-tree HEAD -- .github/workflows/ | wc -l)
+          else
+            WORKFLOW_BEFORE=8
+          fi
+          SCRIPTS_BEFORE=$(git ls-tree HEAD -- custom_scripts/ | wc -l)
+          WORKFLOW_AFTER=$(find .github/workflows/ -name "*.yml" | wc -l)
+          SCRIPTS_AFTER=$(find custom_scripts/ -type f 2>/dev/null | wc -l)
+          
+          echo "工作流文件: ${WORKFLOW_BEFORE} → ${WORKFLOW_AFTER}"
+          echo "脚本文件:   ${SCRIPTS_BEFORE} → ${SCRIPTS_AFTER}"
+          
+          WF_PCT=$(( (WORKFLOW_BEFORE - WORKFLOW_AFTER) * 100 / (WORKFLOW_BEFORE + 1) ))
+          SC_PCT=$(( (SCRIPTS_BEFORE - SCRIPTS_AFTER) * 100 / (SCRIPTS_BEFORE + 1) ))
+          
+          if [ "$WF_PCT" -ge 20 ] || [ "$SC_PCT" -ge 20 ]; then
+            echo "::error::❌ 文件数量异常减少 ≥20%！可能发生了大规模误删（如 gh repo sync --force）。回滚修改并报告异常。"
+            echo "::error::工作流: ${WORKFLOW_BEFORE}→${WORKFLOW_AFTER} (${WF_PCT}%)，脚本: ${SCRIPTS_BEFORE}→${SCRIPTS_AFTER} (${SC_PCT}%)"
+            git checkout -- .
+            git clean -fd
+            exit 1
+          fi
+          echo "✅ 文件数量正常"
           
           # ── 清理临时文件，但不删除 last_error.log（评审还需要用）──
           rm -f prompt.txt opencode.json 2>/dev/null || true

@@ -25,6 +25,12 @@
 - 必须使用集中式 `AI_Auto_Fix_Monitor.yml` + `custom_scripts/auto_fix_with_AI_LLM.py`，不允许在每个单独编译工作流里重复复制 AI 逻辑。
 - 工作流运行记录清理使用集中式 `cleanup-workflow-runs.yml` + `custom_scripts/cleanup_workflow_runs.py`，按工作流分别保留最新2个成功和2个失败的运行记录。
 
+## 仓库同步保护（防误删）
+- **绝对禁止** `gh repo sync --force`。本仓库历史上已因该命令导致 28+ 文件被上游模板 `P3TERX/Actions-OpenWrt` 覆盖丢失（2026-05-01 事故）。
+- 如需同步上游更新，必须手动选择文件 diff 合并，**绝不**使用 `--force` 全量覆盖。
+- AI Fix Monitor 包含文件数量异常检测：当 `.github/workflows/` 或 `custom_scripts/` 目录文件数变化 ≥ 20% 时，自动拒绝修改并报告异常。
+- 建议在 GitHub 仓库 Settings 中断开 Template 关联，彻底断绝误操作路径。
+
 ## 模型与 API 选择
 - opencode 用什么模型必须根据用户提供的 secrets 环境变量读取 key，可选 `_proxy_url` 和 `_model_list`，此要求全局生效。
 - opencode Zen 对 mimo-v2-pro 已不再免费，不要优先选择它。
