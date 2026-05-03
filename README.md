@@ -22,6 +22,17 @@ A template for building OpenWrt with GitHub Actions
 - It may take a long time to create a `.config` file and build the OpenWrt firmware. Thus, before create repository to build your own firmware, you may check out if others have already built it which meet your needs by simply [search `Actions-Openwrt` in GitHub](https://github.com/search?q=Actions-openwrt).
 - Add some meta info of your built firmware (such as firmware architecture and installed packages) to your repository introduction, this will save others' time.
 
+## 本项目自定义
+
+- **AI 自动修复**：构建失败时 `AI_Auto_Fix_Monitor.yml` 自动触发多模型 AI 修复并推送
+- **多源编译**：支持 Lienol、OpenWrt.org（通过 `Build_OpenWrt_Firmware.yml`）
+- **自动清理**：`cleanup-workflow-runs.yml` 每日清理构建历史
+
+> ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
+
+### 断开模板关联（推荐）
+在 GitHub 仓库 Settings → 页面底部找到 "Template repository" → 删除模板来源。断开后 `gh repo sync` 将不再可用，从根本上杜绝误操作。
+
 ## Credits
 
 - [Microsoft Azure](https://azure.microsoft.com)
