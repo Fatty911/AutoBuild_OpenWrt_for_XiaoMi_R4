@@ -294,16 +294,16 @@ jobs:
              elif grep -qi "Phase 2 下载失败\|mega-download\|需修复 MEGA 下载逻辑" last_error.log 2>/dev/null; then
                FAILURE_TYPE="mega-download"
              fi
-             echo "检测到失败类型: $FAILURE_TYPE"
-             
-             if [ "$FAILURE_TYPE" = "phase1-upload" ]; then
-               echo "Phase 1 编译成功但 MEGA 上传失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的上传逻辑（upload_to_mega 函数），找出上传失败的根本原因并修复。常见问题：mega-rpc 命令不存在、mega-put 超时、登录失败、存储满等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
-             elif [ "$FAILURE_TYPE" = "mega-download" ]; then
-               echo "Phase 1 已成功上传到 MEGA，但 Phase 2 下载失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的下载逻辑（download_from_mega 函数），找出下载失败的根本原因并修复。常见问题：mega-get 超时、登录失败、文件路径错误等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
-             elif grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
-              echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
+              echo "检测到失败类型: $FAILURE_TYPE"
+              
+              if [ "$FAILURE_TYPE" = "phase1-upload" ]; then
+                echo "Phase 1 编译成功但 MEGA 上传失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的上传逻辑（upload_to_mega 函数），找出上传失败的根本原因并修复。常见问题：mega-rpc 命令不存在、mega-put 超时、登录失败、存储满等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+              elif [ "$FAILURE_TYPE" = "mega-download" ]; then
+                echo "Phase 1 已成功上传到 MEGA，但 Phase 2 下载失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的下载逻辑（download_from_mega 函数），找出下载失败的根本原因并修复。常见问题：mega-get 超时、登录失败、文件路径错误等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+              elif grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
+               echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
             else
-              echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码（修改 custom_scripts、配置文件、工作流 transplant 步骤等）。请不要删除关键步骤：Generate release tag、Upload firmware to release、Delete workflow runs。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
+               echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release、Delete workflow runs）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
             fi
             
             # ── 尝试 oh-my-opencode（必须使用 --agent build），单次最多10分钟 ──
@@ -377,6 +377,18 @@ jobs:
             fi
           done
            rm -f *.protected_backup 2>/dev/null || true
+          
+          # ── 防止 AI 改到其他工作流文件 ──
+          echo "=== 🔒 工作流文件隔离检查 ==="
+          TARGET_WF="$(basename "$WORKFLOW_YML")"
+          git diff --cached --name-only | grep "\.github/workflows/" | while read -r wf; do
+            wf_name=$(basename "$wf")
+            if [ "$wf_name" != "$TARGET_WF" ] && [ -f "$wf" ]; then
+              echo "⚠️ AI 意外修改了非目标工作流: $wf_name → 正在恢复"
+              git checkout HEAD -- "$wf"
+              git reset HEAD "$wf" 2>/dev/null || true
+            fi
+          done
           
           # ── 文件数量异常检测（防 gh repo sync --force 等意外大规模删除）──
           echo "=== 📊 文件数量异常检测 ==="
