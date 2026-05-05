@@ -198,9 +198,8 @@ jobs:
     - name: Sync OpenWrt config
       run: |
         cd openwrt
-        # Fix recursive dependency: luci-app-kodexplorer select PACKAGE_php8 causes cycle with PHP8_DOM
-        find feeds -path '*kodexplorer*' -name 'Config.in' -exec sed -i 's/\bselect PACKAGE_php8\b/depends on PACKAGE_php8/' {} \; 2>/dev/null || true
-        make defconfig
+        # Auto-fix recursive Kconfig dependencies (generic, handles any component)
+        python3 ../custom_scripts/fix_kconfig_cycle.py || true
         echo "=== defconfig 完成 ==="
 
     - name: Try compiling the firmware
