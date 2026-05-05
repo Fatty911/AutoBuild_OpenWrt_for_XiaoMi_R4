@@ -98,6 +98,18 @@ def get_error_signature(log_content):
         else:
             return f"apk_add_invalid_dep_format:{invalid_package}"
 
+    # APK Unable to Select Packages (version mismatch in world dependency) - often base-files
+    apk_select_error_match = re.search(
+        r"ERROR: unable to select packages:.*?breaks: world\[([^\]]+)\]",
+        log_content,
+        re.DOTALL,
+    )
+    if apk_select_error_match:
+        world_dep = apk_select_error_match.group(1)
+        if "base-files" in world_dep:
+            return "apk_add_base_files"
+        return f"apk_select_package_error:{world_dep}"
+
     # Out Of Memory (OOM)
     if re.search(r"Killed|signal 9|Error 137", log_content):
         return "oom_detected"
