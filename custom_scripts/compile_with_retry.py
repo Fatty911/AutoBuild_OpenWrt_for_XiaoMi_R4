@@ -489,143 +489,18 @@ def fix_base_files_version(log_content):
                 )
                 print("✅ 强制重新编译 base-files 完成")
             except Exception as e:
-                print(f"❌ 重新编译 base-files 时出错: {e}")
+                print(f"重新编译 base-files 时出错: {e}")
 
-        # 全局暴力替换项目中所有 ~unknown / -unknown
+        # Rebuild APK package index to sync base-files version change
         try:
             subprocess.run(
-                "sed -i 's/~unknown/1-r1/g' include/version.mk 2>/dev/null || true",
+                "make package/index V=s -j1",
                 shell=True,
+                check=False,
             )
-            subprocess.run(
-                "sed -i 's/-unknown/1-r1/g' include/version.mk 2>/dev/null || true",
-                shell=True,
-            )
-            subprocess.run(
-                "sed -i 's/~unknown/1-r1/g' scripts/getver.sh 2>/dev/null || true",
-                shell=True,
-            )
-            subprocess.run(
-                "sed -i 's/-unknown/1-r1/g' scripts/getver.sh 2>/dev/null || true",
-                shell=True,
-            )
-            subprocess.run(
-                "sed -i 's/~unknown/1-r1/g' include/package.mk 2>/dev/null || true",
-                shell=True,
-            )
-            subprocess.run(
-                "sed -i 's/-unknown/1-r1/g' include/package.mk 2>/dev/null || true",
-                shell=True,
-            )
-            subprocess.run(
-                "sed -i 's/~unknown/1-r1/g' include/package-defaults.mk 2>/dev/null || true",
-                shell=True,
-            )
-            subprocess.run(
-                "sed -i 's/-unknown/1-r1/g' include/package-defaults.mk 2>/dev/null || true",
-                shell=True,
-            )
-            print("✅ 全局 ~unknown / -unknown 替换完成")
-        except Exception as shell_err:
-            print(f"⚠️ 全局替换脚本执行失败: {shell_err}")
-
-        return True
-
-    except Exception as e:
-        print(f"❌ 修复 base-files 版本时出错: {e}")
-        return False
-
-    fixed_any = False
-
-    try:
-        with open(base_files_mk, "r") as f:
-            mk_content = f.read()
-
-        new_content = mk_content
-
-        # 核心修复：将 ~ 替换为 - （apk 不接受 ~ 在版本字符串中）
-        if "~" in new_content:
-            new_content = new_content.replace("~", "-")
-            if new_content != mk_content:
-                with open(base_files_mk, "w") as f:
-                    f.write(new_content)
-                print("✅ 已将 package/base-files/Makefile 中的 ~ 替换为 -")
-                fixed_any = True
-
-        # 确保 PKG_RELEASE 是确定的数字（非 $(COMMITCOUNT)）
-        if "$(COMMITCOUNT)" in new_content:
-            new_content = new_content.replace("$(COMMITCOUNT)", "1")
-            with open(base_files_mk, "w") as f:
-                f.write(new_content)
-            print("✅ 已将 PKG_RELEASE:=$(COMMITCOUNT) 替换为 PKG_RELEASE:=1")
-            fixed_any = True
-
-        # 如果 VERSION 行仍包含 ~，强制覆盖
-        with open(base_files_mk, "r") as f:
-            mk_content = f.read()
-        if "~" in mk_content:
-            mk_content = mk_content.replace("~", "-")
-            with open(base_files_mk, "w") as f:
-                f.write(mk_content)
-            print("✅ 二次扫描：替换残余 ~")
-            fixed_any = True
-
-        # 同时修复 include/version.mk 中的全局变量
-        version_mk = Path("include/version.mk")
-        if version_mk.exists():
-            with open(version_mk, "r") as f2:
-                v_content = f2.read()
-            v_new = v_content.replace("~", "-")
-            if v_new != v_content:
-                with open(version_mk, "w") as f2:
-                    f2.write(v_new)
-                print("✅ 连带修复了 include/version.mk 全局变量")
-                fixed_any = True
-
-        # 清理 staging_dir 中缓存的 base-files.version
-        import subprocess, glob
-
-        cached_version_files = glob.glob("staging_dir/target-*/base-files.version")
-        for vf in cached_version_files:
-            try:
-                os.remove(vf)
-                print(f"✅ 删除缓存版本文件: {vf}")
-                fixed_any = True
-            except OSError:
-                pass
-
-        # 清理 base-files 的构建缓存，强制重新打包
-        stamp_files = glob.glob("staging_dir/target-*/stamp/.base-files_installed")
-        for sf in stamp_files:
-            try:
-                os.remove(sf)
-                print(f"✅ 删除安装标记: {sf}")
-                fixed_any = True
-            except OSError:
-                pass
-
-        build_stamp = glob.glob("build_dir/target-*/linux-*/base-files/.built")
-        for bs in build_stamp:
-            try:
-                os.remove(bs)
-                print(f"✅ 删除构建标记: {bs}")
-                fixed_any = True
-            except OSError:
-                pass
-
-        if fixed_any:
-            print(
-                "⏳ 由于清除了 base-files 缓存，强制重新编译 base-files 以生成 version 文件..."
-            )
-            try:
-                subprocess.run(
-                    "make package/base-files/compile V=s || make package/base-files/install V=s",
-                    shell=True,
-                    check=False,
-                )
-                print("✅ 强制重新编译 base-files 完成")
-            except Exception as e:
-                print(f"❌ 重新编译 base-files 时出错: {e}")
+            print("已重建 APK 包索引 (同步 base-files 版本)")
+        except Exception as e:
+            print(f"重建包索引失败: {e}")
 
         # 全量暴力替换项目中所有 ~unknown
         try:
@@ -3234,6 +3109,18 @@ def main():
                     f"❌ base-files 预编译失败，返回码: {pre_status} (日志: {pre_log_file})，继续尝试主编译..."
                 )
             needs_base_files_precompute = False  # Reset flag regardless of outcome
+
+            # Rebuild APK package index to sync version changes
+            try:
+                subprocess.run(
+                    "make package/index V=s -j1",
+                    shell=True,
+                    check=False,
+                    timeout=120,
+                )
+                print("已重建 APK 包索引 (同步 base-files 预编译版本)")
+            except Exception as e:
+                print(f"重建包索引失败: {e}")
 
         # --- Main Compile Step ---
         current_run_log = f"{args.log_file}.run.{retry}.log"
