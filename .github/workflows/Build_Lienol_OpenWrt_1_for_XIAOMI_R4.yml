@@ -171,8 +171,17 @@ jobs:
       id: download
       run: |
         cd openwrt
-        # Auto-fix recursive Kconfig dependencies (generic, handles any component)
-        python3 ../custom_scripts/fix_kconfig_cycle.py || true
+        # Run make defconfig with auto-fix for recursive Kconfig deps
+        for i in 1 2 3 4 5; do
+          output=$(make defconfig 2>&1) && break
+          if echo "$output" | grep -q "recursive dependency detected"; then
+            echo "Recursive dependency detected, attempting auto-fix..."
+            echo "$output" | python3 ../custom_scripts/fix_kconfig_cycle.py --once || true
+          else
+            echo "$output"
+            exit 1
+          fi
+        done
         make download -j$(nproc) V=s
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
