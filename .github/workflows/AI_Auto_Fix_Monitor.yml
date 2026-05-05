@@ -241,17 +241,25 @@ jobs:
           FIX_SUCCEEDED=false
           MAX_MODEL_TRIES=3
           MODEL_TRIES=0
+          DMXAPI_BROKEN=false  # DMXAPI 证书过期时标记不可用
           while read -r FULL_MODEL; do
             [ -z "$FULL_MODEL" ] && continue
             
-            # 限制最大尝试次数
+            PROVIDER=$(echo "$FULL_MODEL" | cut -d '/' -f 1)
+            
+            # DMXAPI 证书过期 → 跳过所有 DMXAPI 模型，fallback 到其他 provider
+            if [ "$DMXAPI_BROKEN" = "true" ] && [ "$PROVIDER" = "dmxapi" ]; then
+              echo "⏭️ DMXAPI 已标记不可用，跳过: $FULL_MODEL"
+              continue
+            fi
+            
+            # 限制最大尝试次数（非 DMXAPI 不可用时不计入）
             MODEL_TRIES=$((MODEL_TRIES + 1))
             if [ "$MODEL_TRIES" -gt "$MAX_MODEL_TRIES" ]; then
               echo "已尝试 $MAX_MODEL_TRIES 个模型，停止继续尝试"
               break
             fi
             
-            PROVIDER=$(echo "$FULL_MODEL" | cut -d '/' -f 1)
             MODEL_NAME=$(echo "$FULL_MODEL" | cut -d '/' -f 2-)
             
             echo "=========================================================="
@@ -307,6 +315,11 @@ jobs:
               continue
             elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
               echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
+              # DMXAPI 证书过期 → 标记不可用，后续跳过所有 DMXAPI 模型
+              if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then
+                echo "⚠️ 检测到 DMXAPI 证书过期，标记 DMXAPI 不可用，后续将跳过"
+                DMXAPI_BROKEN=true
+              fi
             else
               FIX_SUCCEEDED=true
             fi
@@ -319,6 +332,10 @@ jobs:
                 continue
               elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
                 echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
+                # DMXAPI 证书过期 → 标记不可用
+                if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then
+                  DMXAPI_BROKEN=true
+                fi
               else
                 FIX_SUCCEEDED=true
               fi
