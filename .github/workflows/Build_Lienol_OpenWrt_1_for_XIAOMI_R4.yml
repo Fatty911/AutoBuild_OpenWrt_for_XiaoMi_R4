@@ -171,6 +171,8 @@ jobs:
       id: download
       run: |
         cd openwrt
+        # Fix recursive dependency: luci-app-kodexplorer select PACKAGE_php8 causes cycle with PHP8_DOM
+        find feeds -path '*kodexplorer*' -name 'Config.in' -exec sed -i 's/\bselect PACKAGE_php8\b/depends on PACKAGE_php8/' {} \; 2>/dev/null || true
         make defconfig
         make download -j$(nproc) V=s
         find dl -size -1024c -exec ls -l {} \;
