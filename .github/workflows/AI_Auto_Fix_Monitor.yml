@@ -206,6 +206,7 @@ jobs:
           # ── 提取 transplant 步骤上下文（用于 DTS/phandle 报错）──
           TRANSPLANT_CONTEXT=""
           WORKFLOW_YML="${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWrt_Firmware.yml' }}"
+          WORKFLOW_FILENAME=$(basename "$WORKFLOW_YML")
           if [ -f "$WORKFLOW_YML" ]; then
             TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
           fi
