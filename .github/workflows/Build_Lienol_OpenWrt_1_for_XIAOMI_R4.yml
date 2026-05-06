@@ -209,13 +209,12 @@ jobs:
       run: |
         cd openwrt
         # 修复 CRYPTO_DEV_EIP93_AES 内核配置冲突
-        # Lienol 内核 6.12 新增了 CRYPTO_DEV_EIP93_AES 选项但没有给默认值
+        # Lienol 内核 6.12 的 Kconfig 未给 EIP93_AES 提供默认值
         for KCFG in target/linux/ramips/mt7621/config-*; do
           [ -f "$KCFG" ] || continue
-          if grep -q "CONFIG_CRYPTO_DEV_EIP93" "$KCFG" 2>/dev/null; then
-            echo "CONFIG_CRYPTO_DEV_EIP93_AES=y" >> "$KCFG"
-            echo "修复 $KCFG: 添加 CONFIG_CRYPTO_DEV_EIP93_AES=y"
-          fi
+          grep -q "CONFIG_CRYPTO_DEV_EIP93_AES" "$KCFG" 2>/dev/null || \
+            echo "# CONFIG_CRYPTO_DEV_EIP93_AES is not set" >> "$KCFG"
+          echo "修复 $KCFG: 添加 CONFIG_CRYPTO_DEV_EIP93_AES"
         done
         make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
 
