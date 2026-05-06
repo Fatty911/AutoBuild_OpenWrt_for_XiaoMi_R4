@@ -42,7 +42,7 @@ CUSTOM_PROVIDER_INFO = {
         "api_key_env": "ATOMGIT_API_KEY",
     },
     "zhipu": {
-        "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "api_key_env": "ZHIPU_API_KEY",
     },
     "nvidia-nim": {

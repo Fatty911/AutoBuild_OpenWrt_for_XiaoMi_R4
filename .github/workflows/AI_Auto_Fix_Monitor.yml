@@ -242,6 +242,7 @@ jobs:
           FIX_SUCCEEDED=false
           MAX_MODEL_TRIES=3
           MODEL_TRIES=0
+          MODEL_TIMEOUT=1200  # 20分钟超时（从 10 分钟增加，给 Agent 足够时间分析和修复）
           DMXAPI_BROKEN=false  # DMXAPI 证书过期时标记不可用
           while read -r FULL_MODEL; do
             [ -z "$FULL_MODEL" ] && continue
@@ -310,9 +311,9 @@ jobs:
             # ── 尝试 oh-my-opencode（必须使用 --agent build），单次最多10分钟 ──
             # 跳过 SSL/TLS 证书验证以应对 DMXAPI 等 Provider 证书过期
             echo "尝试 oh-my-opencode run --agent build..."
-            NODE_TLS_REJECT_UNAUTHORIZED=0 timeout 600 oh-my-opencode run --agent build "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+            NODE_TLS_REJECT_UNAUTHORIZED=0 timeout $MODEL_TIMEOUT oh-my-opencode run --agent build "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
             if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
-              echo "::warning::oh-my-opencode 超时（10分钟），准备尝试下一个模型..."
+              echo "::warning::oh-my-opencode 超时（${MODEL_TIMEOUT}秒），准备尝试下一个模型..."
               continue
             elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
               echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
@@ -327,9 +328,9 @@ jobs:
             
             if [ "$FIX_SUCCEEDED" = "false" ]; then
               echo "尝试 opencode run（最多10分钟）..."
-              NODE_TLS_REJECT_UNAUTHORIZED=0 timeout 600 opencode run "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
-              if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
-                echo "::warning::opencode 超时（10分钟），准备尝试下一个模型..."
+            NODE_TLS_REJECT_UNAUTHORIZED=0 timeout $MODEL_TIMEOUT opencode run "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+            if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
+              echo "::warning::opencode 超时（${MODEL_TIMEOUT}秒），准备尝试下一个模型..."
                 continue
               elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
                 echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
