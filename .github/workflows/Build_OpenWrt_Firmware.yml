@@ -263,29 +263,11 @@ jobs:
         run: |
           cd openwrt
           echo "=== 修复 base-files 版本 (APK 兼容性) ==="
-          # 修复 Makefile 中的版本号
-          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || true
-          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=1/' package/base-files/Makefile || true
-          # 修复 version.mk 中的 REVISION（仅当值为 unknown 或 hash 时替换）
-          sed -i 's/REVISION:=.*unknown.*/REVISION:=1/' include/version.mk 2>/dev/null || true
-          sed -i 's/REVISION:=[a-f0-9]\{7,\}/REVISION:=1/' include/version.mk 2>/dev/null || true
-          # 清理所有缓存：旧 APK、版本文件、安装列表、构建标记
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=r1/' package/base-files/Makefile || true
+          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=r1/' package/base-files/Makefile || true
           find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
-          find bin -name 'base-files*.apk' -delete 2>/dev/null || true
-          rm -rf build_dir/target-*/base-files/ 2>/dev/null || true
-          rm -rf build_dir/target-*/linux-*/base-files/ 2>/dev/null || true
-          rm -f tmp/.packageinfo-base-files 2>/dev/null || true
-          rm -f tmp/apk_install_list 2>/dev/null || true
-          # 清理 world 依赖缓存（这个缓存了旧的版本约束）
-          rm -f tmp/.packageinfo-world 2>/dev/null || true
-          rm -f staging_dir/target-*/stamp/.world_* 2>/dev/null || true
-          # 强制重新编译 base-files APK
-          make package/base-files/compile V=s -j1 2>&1 | tail -5 || {
-            echo "重新编译 base-files 失败，尝试完整重编..."
-            make package/base-files/{clean,compile} V=s -j1 2>&1 | tail -5
-          }
-          # 重建 APK 包索引（确保版本同步）
-          make package/index V=s -j1 2>&1 | tail -3 || true
+          rm -rf build_dir/target-*/base-files/ build_dir/target-*/linux-*/base-files/ 2>/dev/null || true
+          rm -f tmp/.packageinfo-base-files tmp/apk_install_list 2>/dev/null || true
           echo "base-files APK 版本格式修复完成"'
 
       - name: Ensure python-installer is built first
