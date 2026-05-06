@@ -131,7 +131,7 @@ jobs:
 
       - name: Run OpenCode Agent
         id: track3
-        timeout-minutes: 45
+        timeout-minutes: 90
         if: steps.track2.outcome == 'failure'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.CLAUDE_PROXY_API_KEY }}
