@@ -20,7 +20,7 @@ echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.defau
 echo "=== diy-part1: 强制修复 base-files 版本 ==="
 mkdir -p package/base-files
 if [ -f "package/base-files/Makefile" ]; then
-  if grep -q "PKG_RELEASE:=$(COMMITCOUNT)" package/base-files/Makefile; then
+  if grep -q 'PKG_RELEASE:=$(COMMITCOUNT)' package/base-files/Makefile; then
     sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile
     echo "已修复 package/base-files/Makefile 中的 PKG_RELEASE"
   else

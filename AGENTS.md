@@ -55,3 +55,9 @@
 - `oh-my-opencode run` 必须指定 `--agent build`，否则默认使用不存在的 "Sisyphus - Ultraworker" agent 导致报错。`opencode run` 不需要 `--agent` 参数（使用默认 primary agent）。
 - 必须安装 opencode 本体和 oh-my-openagent 插件（npm 包名 `oh-my-openagent`，CLI 命令名仍为 `oh-my-opencode`）。
 - oh-my-openagent 的多 agent 协同效果更好，优先使用。
+
+## 近期修复记录
+- 2026-05-07: 修复 `diy-part1.sh` bash 双引号导致 `$(COMMITCOUNT)` 被误解析为命令的问题。
+- 2026-05-07: 修复 `Build_OpenWrt_Firmware.yml` base-files 版本覆盖逻辑，移除非法 `VERSION:=r1`，改为仅修复 `PKG_RELEASE:=1`，避免 APK `package version is invalid`。
+- 2026-05-07: 修复 `Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml` 内核配置，补充 `CONFIG_CRYPTO_DEV_EIP93_DES=y`，解决 Lienol 6.12 syncconfig 交互失败。
+- 2026-05-07: 修复 `auto_fix_with_AI_LLM.py` API URL 拼接逻辑，兼容 Zhipu `/v4` 端点。

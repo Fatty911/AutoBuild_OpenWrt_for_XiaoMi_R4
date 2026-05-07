@@ -263,8 +263,7 @@ jobs:
         run: |
           cd openwrt
           echo "=== 修复 base-files 版本 (APK 兼容性) ==="
-          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=r1/' package/base-files/Makefile || true
-          sed -i 's/^[[:space:]]*VERSION:=.*/  VERSION:=r1/' package/base-files/Makefile || true
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || true
           find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
           rm -rf build_dir/target-*/base-files/ build_dir/target-*/linux-*/base-files/ 2>/dev/null || true
           rm -f tmp/.packageinfo-base-files tmp/apk_install_list 2>/dev/null || true

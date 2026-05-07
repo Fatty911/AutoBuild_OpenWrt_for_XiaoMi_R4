@@ -27,6 +27,10 @@ A template for building OpenWrt with GitHub Actions
 - **AI 自动修复**：构建失败时 `AI_Auto_Fix_Monitor.yml` 自动触发多模型 AI 修复并推送
 - **多源编译**：支持 Lienol、OpenWrt.org（通过 `Build_OpenWrt_Firmware.yml`）
 - **自动清理**：`cleanup-workflow-runs.yml` 每日清理构建历史
+- **已知修复**：
+  - base-files APK 版本兼容（`diy-part1.sh` 与 workflow 双重修复，避免 `package version is invalid`）
+  - Lienol 内核 6.12 `CRYPTO_DEV_EIP93_AES/DES` syncconfig 交互失败自动注入配置
+  - Track 2 Zhipu API URL 拼接兼容 `/v4` 端点
 
 > ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
 
