@@ -63,3 +63,6 @@
 - 2026-05-07: 修复 `auto_fix_with_AI_LLM.py` API URL 拼接逻辑，兼容 Zhipu `/v4` 端点。
 - 2026-05-07: 优化 `pick_best_model.py` 新增 `--ranked` 标志，支持输出多提供商优先列表，提升 Track 3 模型 fallback 成功率。
 - 2026-05-07: 优化 `AI_Auto_Fix_Monitor.yml` Track 3 配置生成逻辑，避免 `oh-my-opencode install` 无 provider 警告；使用 `--ranked` 构建 fallback 模型列表。
+- 2026-05-07: 优化 `AI_Auto_Fix_Monitor.yml` artifact 下载逻辑：增加 `gh run view` 和 `gh run download` 兜底提取，避免 error-log 缺失导致 AI Fix 中断。
+- 2026-05-07: 优化 `AI_Auto_Fix_Monitor.yml` Track 3 模型策略：MODEL_TIMEOUT 从 1200s 降至 600s，MAX_MODEL_TRIES 从 3 增至 5。
+- 2026-05-07: 优化 Build 工作流：当 `extract_last_error.py` 失败时，自动从 openwrt/*.log 创建兜底 last_error.log。

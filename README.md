@@ -34,6 +34,9 @@ A template for building OpenWrt with GitHub Actions
 - **AI 优化**：
   - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮
   - `AI_Auto_Fix_Monitor.yml` Track 3 安装步骤避免无 provider 警告
+  - AI Fix artifact 下载增加 `gh run view` / `gh run download` 兜底，避免 error-log 缺失中断修复
+  - Track 3 模型超时从 20min 降至 10min，最大尝试数从 3 增至 5
+  - Build 工作流增加 `last_error.log` 兜底生成逻辑
 
 > ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
 

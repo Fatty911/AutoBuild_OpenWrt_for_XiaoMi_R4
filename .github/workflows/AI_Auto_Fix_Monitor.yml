@@ -41,7 +41,21 @@ jobs:
         run: |
           echo "检测到工作流 [$WORKFLOW_NAME] 运行失败！"
           echo "正在下载错误日志 (Run ID: $RUN_ID)..."
-          gh run download $RUN_ID -n error-log || echo "未找到 error-log 产物，可能错误过早发生或未被提取。"
+          if gh run download $RUN_ID -n error-log 2>/dev/null; then
+            echo "成功下载 error-log artifact"
+          else
+            echo "未找到 error-log 产物，尝试通过 gh CLI 提取失败日志..."
+            gh run view $RUN_ID --log-failed 2>/dev/null | tail -n 500 > last_error.log || true
+            if [ -s last_error.log ]; then
+              echo "已从 gh run view 提取日志到 last_error.log"
+            else
+              echo "gh run view 也未获取到日志，尝试下载完整日志..."
+              gh run download $RUN_ID --dir /tmp/failed_run_logs 2>/dev/null || true
+              if [ -d /tmp/failed_run_logs ]; then
+                find /tmp/failed_run_logs -name "*.txt" -exec cat {} \; | grep -iE "error|failed|fatal|make: \*\*\*" | tail -n 200 > last_error.log || true
+              fi
+            fi
+          fi
           ls -la
 
       - name: Setup Node.js
@@ -237,11 +251,10 @@ jobs:
             [ -f "$f" ] && cp "$f" "${f}.protected_backup"
           done
           
-          # ── 循环尝试每个 Provider 的模型，最多尝试3个 ──
           FIX_SUCCEEDED=false
-          MAX_MODEL_TRIES=3
+          MAX_MODEL_TRIES=5
           MODEL_TRIES=0
-          MODEL_TIMEOUT=1200  # 20分钟超时（从 10 分钟增加，给 Agent 足够时间分析和修复）
+          MODEL_TIMEOUT=600
           DMXAPI_BROKEN=false  # DMXAPI 证书过期时标记不可用
           while read -r FULL_MODEL; do
             [ -z "$FULL_MODEL" ] && continue

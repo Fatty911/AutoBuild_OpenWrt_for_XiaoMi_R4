@@ -383,6 +383,18 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE
           python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log --max-chars 8000 || true
+          if [ ! -s last_error.log ]; then
+            echo "extract_last_error.py 未生成有效日志，创建兜底日志..."
+            echo "=== 兜底错误日志 ===" > last_error.log
+            echo "提取脚本失败或日志目录不存在。请检查上游编译步骤的失败输出。" >> last_error.log
+            for f in openwrt/*.log; do
+              if [ -f "$f" ]; then
+                echo "" >> last_error.log
+                echo "=== $f (last 100 lines) ===" >> last_error.log
+                tail -n 100 "$f" >> last_error.log
+              fi
+            done
+          fi
 
       - name: Upload Error Log Artifact
         uses: actions/upload-artifact@main
