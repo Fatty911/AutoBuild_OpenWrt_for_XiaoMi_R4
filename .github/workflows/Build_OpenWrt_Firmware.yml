@@ -268,7 +268,7 @@ jobs:
           find staging_dir -name 'base-files.version' -delete 2>/dev/null || true
           rm -rf build_dir/target-*/base-files/ build_dir/target-*/linux-*/base-files/ 2>/dev/null || true
           rm -f tmp/.packageinfo-base-files tmp/apk_install_list 2>/dev/null || true
-          echo "base-files APK 版本格式修复完成"'
+          echo "base-files APK 版本格式修复完成"
 
       - name: Ensure python-installer is built first
         run: |
