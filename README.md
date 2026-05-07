@@ -31,6 +31,9 @@ A template for building OpenWrt with GitHub Actions
   - base-files APK 版本兼容（`diy-part1.sh` 与 workflow 双重修复，避免 `package version is invalid`）
   - Lienol 内核 6.12 `CRYPTO_DEV_EIP93_AES/DES` syncconfig 交互失败自动注入配置
   - Track 2 Zhipu API URL 拼接兼容 `/v4` 端点
+- **AI 优化**：
+  - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮
+  - `AI_Auto_Fix_Monitor.yml` Track 3 安装步骤避免无 provider 警告
 
 > ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
 

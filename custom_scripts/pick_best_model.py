@@ -480,6 +480,82 @@ def pick_model():
     return "", "", "", []
 
 
+def pick_ranked_models(limit=10):
+    top20 = fetch_leaderboard_top20()
+    if top20:
+        print(f"[pick_best_model] 排行榜前20: {top20}", file=sys.stderr)
+    else:
+        print("[pick_best_model] 排行榜抓取失败，不过滤模型", file=sys.stderr)
+
+    keys = {
+        "zhipu": os.getenv("ZHIPU_API_KEY", "").strip(),
+        "bailian": os.getenv("BAILIAN_API_KEY", "").strip(),
+        "moonshot": os.getenv("MOONSHOT_API_KEY", "").strip(),
+        "openrouter": os.getenv("OPENROUTER_API_KEY", "").strip(),
+        "siliconflow": os.getenv("SILICONFLOW_API_KEY", "").strip(),
+        "atomgit": os.getenv("ATOMGIT_API_KEY", "").strip(),
+        "nvidia-nim": os.getenv("NVIDIA_NIM_API_KEY", "").strip(),
+        "qiniu": os.getenv("QINIU_API_KEY", "").strip(),
+        "minimax": os.getenv("MINIMAX_API_KEY", "").strip(),
+        "deepseek": os.getenv("DEEPSEEK_API_KEY", "").strip(),
+        "modelscope": os.getenv("MODELSCOPE_API_KEY", "").strip(),
+        "glm-proxy": os.getenv("GLM_PROXY_URL", "").strip(),
+        "xai": os.getenv("XAI_API_KEY", "").strip(),
+        "anthropic": os.getenv("ANTHROPIC_API_KEY", "").strip(),
+        "openai": os.getenv("OPENAI_API_KEY", "").strip(),
+        "zen": os.getenv("ZEN_API_KEY", "").strip(),
+    }
+
+    model_map = {
+        "zhipu": ("ZHIPU_MODEL_LIST", "GLM-5.1"),
+        "bailian": ("BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max"),
+        "moonshot": ("MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k"),
+        "openrouter": ("OPENROUTER_HIGHVALUE_MODEL_LIST", "moonshotai/kimi-k2.5,z-ai/glm-5.1"),
+        "siliconflow": ("SILICONFLOW_MODEL_LIST", "zai-org/GLM-5,zai-org/GLM-5.1"),
+        "atomgit": ("ATOMGIT_MODEL_LIST", "zai-org/GLM-5,Qwen/Qwen3.5-397B-A17B"),
+        "nvidia-nim": ("NVIDIA_NIM_MODEL_LIST", "moonshotai/kimi-k2.5"),
+        "qiniu": ("QINIU_MODEL_LIST", "nvidia/nemotron-3-super-120b-a12b-free"),
+        "minimax": ("MINIMAX_MODEL_LIST", "MiniMax-M2.7"),
+        "deepseek": ("DEEPSEEK_MODEL_LIST", "deepseek-v3.2-exp-thinking,deepseek-v3.2"),
+        "modelscope": ("MODELSCOPE_MODEL_LIST", "ZhipuAI/GLM-4.7"),
+        "glm-proxy": ("GLM_MODEL_LIST", "GLM-5,GLM-5.1"),
+        "xai": ("XAI_MODEL_LIST", "grok-4.2,grok-4.1"),
+        "anthropic": ("CLAUDE_MODEL_LIST", "claude-sonnet-4.6,claude-opus-4.6"),
+        "openai": ("OPENAI_MODEL_LIST", "gpt-5.4,gpt-4.1"),
+    }
+
+    result = []
+    for provider, key in keys.items():
+        if not key:
+            continue
+        if provider == "zen":
+            zen_models = get_zen_free_models(top20)
+            if zen_models:
+                result.append(("opencode", zen_models[0], zen_models[-1], zen_models))
+            continue
+        if provider == "openrouter":
+            or_models = split_env(
+                "OPENROUTER_HIGHVALUE_MODEL_LIST",
+                "moonshotai/kimi-k2.5,z-ai/glm-5.1",
+            )
+            if or_models:
+                result.append(("openrouter", or_models[0], or_models[-1], or_models))
+            qwen_free = split_env(
+                "OPENROUTER_QWEN_FREE_MODEL_LIST",
+                "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.6-plus-preview:free",
+            )
+            if qwen_free:
+                result.append(("openrouter", qwen_free[0], qwen_free[-1], qwen_free))
+            continue
+        env_name, default = model_map.get(provider, (None, None))
+        if env_name:
+            models = split_env(env_name, default)
+            if models:
+                result.append((provider, models[0], models[-1], models))
+
+    return result[:limit]
+
+
 def generate_opencode_config(target_provider, target_model, target_small=None):
     """生成 opencode.json 配置（JSON格式），供 oh-my-opencode/opencode 使用。
     
@@ -573,8 +649,14 @@ if __name__ == "__main__":
             "small_model": f"{provider}/{small}",
         }
         print(json.dumps(config, indent=2))
+    elif "--ranked" in args:
+        ranked = pick_ranked_models()
+        if not ranked:
+            print("NO_MODEL_AVAILABLE", file=sys.stderr)
+            sys.exit(1)
+        for provider, model, small, models_list in ranked:
+            print(f"{provider}/{model}")
     else:
-        # 默认：仅输出 provider/model 字符串
         provider, model, small, models_list = pick_model()
         if not model:
             print("NO_MODEL_AVAILABLE")

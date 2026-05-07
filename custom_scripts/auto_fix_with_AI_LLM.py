@@ -143,7 +143,8 @@ def call_api(proxy_url, api_key, model, prompt):
         proxy_url = f"https://{proxy_url}"
 
     base = proxy_url.rstrip("/")
-    if base.endswith(("/v1", "/v2", "/v3", "/v4")):
+    import re
+    if re.search(r"/v\d+(/|$)", base):
         url = f"{base}/chat/completions"
     else:
         url = f"{base}/v1/chat/completions"

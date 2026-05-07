@@ -122,11 +122,13 @@ jobs:
           export PATH="$HOME/.bun/bin:$PATH"
           # 安装 opencode 和 omo
           npm install -g opencode-ai oh-my-openagent
-          # 复制配置文件到正确位置
           mkdir -p $HOME/.config/opencode
-          cp opencode.json $HOME/.config/opencode/
-          cp oh-my-openagent.json $HOME/.config/opencode/
-          # 运行 omo 安装程序注册插件
+          if [ -f opencode.json ]; then
+            cp opencode.json $HOME/.config/opencode/
+          else
+            echo '{"provider":{}}' > $HOME/.config/opencode/opencode.json
+          fi
+          cp oh-my-openagent.json $HOME/.config/opencode/ 2>/dev/null || true
           oh-my-opencode install --no-tui --claude=no --gemini=no --copilot=no --skip-auth
 
       - name: Run OpenCode Agent
@@ -213,11 +215,8 @@ jobs:
           
           # ── 获取可用的所有提供商及模型 ──
           echo "==== 收集备用/旧版 Provider 的兜底模型（优先使用）===="
-          # 如果 pick_best_model.py 未报错则提取一个 fallback_model
-          BEST_FALLBACK=$(python custom_scripts/pick_best_model.py 2>/dev/null)
-          if [ "$BEST_FALLBACK" != "NO_MODEL_AVAILABLE" ] && [ -n "$BEST_FALLBACK" ]; then
-            echo "$BEST_FALLBACK" > fallback_models.txt
-          else
+          python custom_scripts/pick_best_model.py --ranked > fallback_models.txt 2>/dev/null || true
+          if [ ! -s fallback_models.txt ]; then
             touch fallback_models.txt
           fi
           
