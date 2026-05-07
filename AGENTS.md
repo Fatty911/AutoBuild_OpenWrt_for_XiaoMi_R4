@@ -59,7 +59,7 @@
 ## 近期修复记录
 - 2026-05-07: 修复 `diy-part1.sh` bash 双引号导致 `$(COMMITCOUNT)` 被误解析为命令的问题。
 - 2026-05-07: 修复 `Build_OpenWrt_Firmware.yml` base-files 版本覆盖逻辑，移除非法 `VERSION:=r1`，改为仅修复 `PKG_RELEASE:=1`，避免 APK `package version is invalid`。
-- 2026-05-07: 修复 `Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml` 内核配置，补充 `CONFIG_CRYPTO_DEV_EIP93_DES=y`，解决 Lienol 6.12 syncconfig 交互失败。
+- 2026-05-07: 修复 `Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml` 内核配置，补充 `CONFIG_CRYPTO_DEV_EIP93_DES=y` 和 `CONFIG_CRYPTO_DEV_EIP93_AEAD=y`，解决 Lienol 6.12 syncconfig 交互失败。
 - 2026-05-07: 修复 `auto_fix_with_AI_LLM.py` API URL 拼接逻辑，兼容 Zhipu `/v4` 端点。
 - 2026-05-07: 优化 `pick_best_model.py` 新增 `--ranked` 标志，支持输出多提供商优先列表，提升 Track 3 模型 fallback 成功率。
 - 2026-05-07: 优化 `AI_Auto_Fix_Monitor.yml` Track 3 配置生成逻辑，避免 `oh-my-opencode install` 无 provider 警告；使用 `--ranked` 构建 fallback 模型列表。

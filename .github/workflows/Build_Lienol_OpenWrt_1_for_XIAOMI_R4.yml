@@ -215,7 +215,8 @@ jobs:
           [ -f "$KCFG" ] || continue
           echo "CONFIG_CRYPTO_DEV_EIP93_AES=y" >> "$KCFG" 2>/dev/null || true
           echo "CONFIG_CRYPTO_DEV_EIP93_DES=y" >> "$KCFG" 2>/dev/null || true
-          echo "修复 $KCFG: 添加 CONFIG_CRYPTO_DEV_EIP93_AES=y 和 CONFIG_CRYPTO_DEV_EIP93_DES=y"
+          echo "CONFIG_CRYPTO_DEV_EIP93_AEAD=y" >> "$KCFG" 2>/dev/null || true
+          echo "修复 $KCFG: 添加 CONFIG_CRYPTO_DEV_EIP93_AES/DES/AEAD=y"
         done
         make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
 

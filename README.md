@@ -29,7 +29,7 @@ A template for building OpenWrt with GitHub Actions
 - **自动清理**：`cleanup-workflow-runs.yml` 每日清理构建历史
 - **已知修复**：
   - base-files APK 版本兼容（`diy-part1.sh` 与 workflow 双重修复，避免 `package version is invalid`）
-  - Lienol 内核 6.12 `CRYPTO_DEV_EIP93_AES/DES` syncconfig 交互失败自动注入配置
+  - Lienol 内核 6.12 `CRYPTO_DEV_EIP93_AES/DES/AEAD` syncconfig 交互失败自动注入配置
   - Track 2 Zhipu API URL 拼接兼容 `/v4` 端点
 - **AI 优化**：
   - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮
