@@ -30,55 +30,65 @@ def main():
     has_mega_upload = False
     has_valid_bin_file = False
 
-    print(f"=== 构建输出验证开始 (SOURCE={source}) ===")
-    print(f"工作目录: {os.getcwd()}")
-    print(f"GITHUB_WORKSPACE: {github_workspace}")
+    try:
+        print(f"=== 构建输出验证开始 (SOURCE={source}) ===")
+        print(f"工作目录: {os.getcwd()}")
+        print(f"GITHUB_WORKSPACE: {github_workspace}")
 
-    bin_pattern = os.path.join(github_workspace, "openwrt/bin/targets/**/*.bin")
-    bin_files = glob.glob(bin_pattern, recursive=True)
-    if bin_files:
-        print(f"✓ 找到 {len(bin_files)} 个 .bin 文件，正在验证大小...")
-        
-        # 定义一个最低大小阈值：正常的 Sysupgrade 固件应该在 15-20MB 以上
-        # 我们设一个相对保守的底线：只要发现至少一个大于 5MB 的固件，就认为打包成功。
-        MIN_VALID_SIZE = 5 * 1024 * 1024  # 5MB
-        
-        valid_files = []
-        for f in bin_files:
-            try:
-                size_bytes = os.path.getsize(f)
-            except (OSError, FileNotFoundError) as e:
-                print(f"  - ⚠️ 跳过无法访问的文件: {f} ({e})")
-                continue
-            size_mb = size_bytes / (1024 * 1024)
-            if "initramfs" in f:
-                print(f"  - 跳过 initramfs: {f} ({size_mb:.2f} MB)")
-                continue
+        bin_pattern = os.path.join(github_workspace, "openwrt/bin/targets/**/*.bin")
+        print(f"搜索模式: {bin_pattern}")
+        bin_files = glob.glob(bin_pattern, recursive=True)
+        print(f"glob 结果数量: {len(bin_files)}")
+        if bin_files:
+            print(f"✓ 找到 {len(bin_files)} 个 .bin 文件，正在验证大小...")
             
-            if size_bytes > MIN_VALID_SIZE:
-                valid_files.append((f, size_mb))
-                print(f"  - ✅ 合格固件: {f} ({size_mb:.2f} MB)")
-            else:
-                print(f"  - ❌ 异常过小: {f} ({size_mb:.2f} MB) < {MIN_VALID_SIZE/(1024*1024):.1f} MB")
+            # 定义一个最低大小阈值：正常的 Sysupgrade 固件应该在 15-20MB 以上
+            # 我们设一个相对保守的底线：只要发现至少一个大于 5MB 的固件，就认为打包成功。
+            MIN_VALID_SIZE = 5 * 1024 * 1024  # 5MB
+            
+            valid_files = []
+            for f in bin_files:
+                try:
+                    size_bytes = os.path.getsize(f)
+                except (OSError, FileNotFoundError) as e:
+                    print(f"  - ⚠️ 跳过无法访问的文件: {f} ({e})")
+                    continue
+                size_mb = size_bytes / (1024 * 1024)
+                if "initramfs" in f:
+                    print(f"  - 跳过 initramfs: {f} ({size_mb:.2f} MB)")
+                    continue
                 
-        if valid_files:
-            has_valid_bin_file = True
+                if size_bytes > MIN_VALID_SIZE:
+                    valid_files.append((f, size_mb))
+                    print(f"  - ✅ 合格固件: {f} ({size_mb:.2f} MB)")
+                else:
+                    print(f"  - ❌ 异常过小: {f} ({size_mb:.2f} MB) < {MIN_VALID_SIZE/(1024*1024):.1f} MB")
+                    
+            if valid_files:
+                has_valid_bin_file = True
+            else:
+                print("❌ 所有找到的 .bin 文件大小都严重异常（疑似打包失败产生空壳固件）")
         else:
-            print("❌ 所有找到的 .bin 文件大小都严重异常（疑似打包失败产生空壳固件）")
-    else:
-        print(f"✗ 未找到 .bin 文件 (搜索: {bin_pattern})")
+            print(f"✗ 未找到 .bin 文件 (搜索: {bin_pattern})")
 
-    if (
-        os.path.exists("/workdir/.mega_upload_success")
-        or os.getenv("MEGA_UPLOAD_SUCCESS") == "true"
-    ):
-        has_mega_upload = True
-        print("✓ 检测到 MEGA 上传成功标志")
-    elif os.path.exists(f"/workdir/{source}.tar.gz"):
-        has_mega_upload = True
-        print(f"✓ 检测到 MEGA 压缩包: /workdir/{source}.tar.gz")
-    else:
-        print("✗ 未检测到 MEGA 上传成功")
+        if (
+            os.path.exists("/workdir/.mega_upload_success")
+            or os.getenv("MEGA_UPLOAD_SUCCESS") == "true"
+        ):
+            has_mega_upload = True
+            print("✓ 检测到 MEGA 上传成功标志")
+        elif os.path.exists(f"/workdir/{source}.tar.gz"):
+            has_mega_upload = True
+            print(f"✓ 检测到 MEGA 压缩包: /workdir/{source}.tar.gz")
+        else:
+            print("✗ 未检测到 MEGA 上传成功")
+    except Exception as e:
+        print(f"❌ validate_build_output.py 执行过程中发生未捕获异常: {e}")
+        import traceback
+        traceback.print_exc()
+        # 异常时保守处理：视为失败，但先尝试上传调试信息
+        has_valid_bin_file = False
+        has_mega_upload = False
 
     if has_mega_upload or has_valid_bin_file:
         print("✓ 验证通过：满足至少一项有效的输出要求")

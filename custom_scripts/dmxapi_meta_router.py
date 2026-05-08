@@ -205,6 +205,7 @@ if __name__ == "__main__":
             mod = sys.argv[3]
             config = {
                 "agents": {
+                    "build": {"model": f"{prov}/{mod}"},
                     "sisyphus": {"model": f"{prov}/{mod}"},
                     "oracle": {"model": f"{prov}/{mod}"},
                     "explore": {"model": f"{prov}/{mod}"},

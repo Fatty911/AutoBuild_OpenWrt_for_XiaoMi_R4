@@ -72,3 +72,6 @@
 - 2026-05-08: 优化 `AI_Auto_Fix_Monitor.yml` Track 3：增加生成配置脱敏打印、退出码打印、`TIMEOUT_EXIT` 重置、增强错误关键词匹配（401/Unauthorized），提升调试能力。
 - 2026-05-08: 修复 `validate_build_output.py` 在 .bin 文件为损坏符号链接时崩溃的 bug，添加异常捕获避免 Build Quality Gate 假失败。
 - 2026-05-08: 优化 `AI_Auto_Fix_Monitor.yml` Track 3：跳过 API key 为空的模型，避免浪费尝试次数；修复 prompt 生成段落的缩进不一致。
+- 2026-05-08: 增强 `validate_build_output.py`：添加全局 try/except 捕获未预期异常，确保失败时仍输出 BUILD_QUALITY_GATE=fail 并触发调试日志上传。
+- 2026-05-08: 修复 `Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml` 调试日志上传条件：`env.BUILD_QUALITY_GATE == 'fail'` → `failure()`，确保脚本崩溃时也能获取调试信息。
+- 2026-05-08: 修复 `dmxapi_meta_router.py` `--config-omo-generic`：增加 `build` agent 定义，解决 oh-my-opencode `--agent build` 找不到 agent 的问题。

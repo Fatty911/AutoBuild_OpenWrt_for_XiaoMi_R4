@@ -375,7 +375,7 @@ jobs:
         SOURCE: ${{ env.SOURCE }}
 
     - name: Upload debug logs on failure
-      if: env.BUILD_QUALITY_GATE == 'fail'
+      if: failure()
       run: |
         cd openwrt
         echo "=== 调试信息 ===" > debug.log
@@ -400,7 +400,7 @@ jobs:
       shell: bash
 
     - name: Upload debug artifact
-      if: env.BUILD_QUALITY_GATE == 'fail'
+      if: failure()
       uses: actions/upload-artifact@main
       with:
         name: debug-logs-Lienol-2
