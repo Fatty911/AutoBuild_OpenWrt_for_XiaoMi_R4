@@ -504,9 +504,10 @@ def fix_base_files_version(log_content):
                 print(f"重新编译 base-files 时出错: {e}")
 
         # Rebuild APK package index to sync base-files version change
+        # OpenWrt main/APK uses 'package/merge-index', older versions use 'package/index'
         try:
             subprocess.run(
-                "make package/index V=s -j1",
+                "grep -q 'merge-index' package/Makefile 2>/dev/null && make package/merge-index V=s -j1 || make package/index V=s -j1 || true",
                 shell=True,
                 check=False,
             )
@@ -3125,12 +3126,14 @@ def main():
             # Rebuild APK package index to sync version changes
             try:
                 subprocess.run(
-                    "make package/index V=s -j1",
+                    "grep -q 'merge-index' package/Makefile 2>/dev/null && make package/merge-index V=s -j1 || make package/index V=s -j1 || true",
                     shell=True,
                     check=False,
                     timeout=120,
                 )
                 print("已重建 APK 包索引 (同步 base-files 预编译版本)")
+            except subprocess.TimeoutExpired:
+                print("重建包索引超时，继续编译")
             except Exception as e:
                 print(f"重建包索引失败: {e}")
 
