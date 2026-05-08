@@ -52,6 +52,7 @@
 ## opencode 配置
 - opencode.json 必须使用合法 schema：`provider` 必须为 record 对象，不能用字符串或复数形式。
 - **自定义 provider（atomgit、zhipu、nvidia-nim、qiniu 等）必须包含 `npm`、`options`（含 `baseURL` + `apiKey`）、`models` 三个字段**，否则 opencode 会报 `ProviderModelNotFoundError`。内置 provider（anthropic、openai、openrouter 等）只需 `models` 字段。
+- **自定义 provider 的 `apiKey` 必须使用实际环境变量值**（通过 `os.getenv()` 在生成配置时读取并填入），禁止在 JSON 中使用 `{{env:...}}` 模板语法。opencode 不会自动展开该模板，导致 API 认证失败、请求超时或 `Unauthorized/401` 错误。
 - `oh-my-opencode run` 必须指定 `--agent build`，否则默认使用不存在的 "Sisyphus - Ultraworker" agent 导致报错。`opencode run` 不需要 `--agent` 参数（使用默认 primary agent）。
 - 必须安装 opencode 本体和 oh-my-openagent 插件（npm 包名 `oh-my-openagent`，CLI 命令名仍为 `oh-my-opencode`）。
 - oh-my-openagent 的多 agent 协同效果更好，优先使用。
@@ -67,3 +68,5 @@
 - 2026-05-07: 优化 `AI_Auto_Fix_Monitor.yml` Track 3 模型策略：MODEL_TIMEOUT 从 1200s 降至 600s，MAX_MODEL_TRIES 从 3 增至 5。
 - 2026-05-07: 优化 Build 工作流：当 `extract_last_error.py` 失败时，自动从 openwrt/*.log 创建兜底 last_error.log。
 - 2026-05-07: 修复 `Build_OpenWrt_Firmware.yml` 缓存配置：移除 `build_dir`（体积过大导致 actions/cache post-step 上传失败，造成 job 假失败）。保留 `staging_dir` 和 `ccache` 缓存。
+- 2026-05-08: 修复 `pick_best_model.py` 和 `dmxapi_meta_router.py` 中 opencode.json 的 API key 模板语法问题（`{{env:...}}` 替换为实际环境变量值），避免 oh-my-opencode 认证失败或超时。
+- 2026-05-08: 优化 `AI_Auto_Fix_Monitor.yml` Track 3：增加生成配置脱敏打印、退出码打印、`TIMEOUT_EXIT` 重置、增强错误关键词匹配（401/Unauthorized），提升调试能力。

@@ -573,11 +573,14 @@ def generate_opencode_config(target_provider, target_model, target_small=None):
             info.get("base_url_env", ""), ""
         )
         api_key_env = info["api_key_env"]
+        api_key = os.getenv(api_key_env, "")
+        if not api_key:
+            print(f"[pick_best_model] 警告: 环境变量 {api_key_env} 未设置", file=sys.stderr)
         provider_config = {
             "npm": "@ai-sdk/openai-compatible",
             "options": {
                 "baseURL": base_url,
-                "apiKey": f"{{env:{api_key_env}}}",
+                "apiKey": api_key,
             },
             "models": {target_model: {}},
         }
@@ -587,6 +590,7 @@ def generate_opencode_config(target_provider, target_model, target_small=None):
 
     config = {
         "$schema": "https://opencode.ai/config.json",
+        "autoupdate": False,
         "plugin": ["oh-my-openagent"],
         "provider": {target_provider: provider_config} if provider_config else {},
         "model": f"{target_provider}/{target_model}",
@@ -629,11 +633,14 @@ if __name__ == "__main__":
                 info.get("base_url_env", ""), ""
             )
             api_key_env = info["api_key_env"]
+            api_key = os.getenv(api_key_env, "")
+            if not api_key:
+                print(f"[pick_best_model] 警告: 环境变量 {api_key_env} 未设置", file=sys.stderr)
             provider_config = {
                 "npm": "@ai-sdk/openai-compatible",
                 "options": {
                     "baseURL": base_url,
-                    "apiKey": f"{{env:{api_key_env}}}",
+                    "apiKey": api_key,
                 },
                 "models": {m: {} for m in models_list},
             }
@@ -643,6 +650,7 @@ if __name__ == "__main__":
 
         config = {
             "$schema": "https://opencode.ai/config.json",
+            "autoupdate": False,
             "plugin": ["oh-my-openagent"],
             "provider": {provider: provider_config} if provider_config else {},
             "model": f"{provider}/{model}",

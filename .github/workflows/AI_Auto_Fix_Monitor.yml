@@ -301,6 +301,12 @@ jobs:
               continue
             fi
             
+            # 打印生成的配置（隐藏 API key）供调试
+            echo "==== 生成的 opencode.json（脱敏）===="
+            python3 -c "import json; c=json.load(open('opencode.json')); p=c.get('provider',{}); [v.update({'options':{k:(v['options'][k][:8]+'...' if k=='apiKey' and v['options'][k] else v['options'].get(k,'')) for k in v.get('options',{})}}) for v in p.values() if 'options' in v]; print(json.dumps(c, indent=2))"
+            echo "==== oh-my-openagent.json ===="
+            cat ~/.config/opencode/oh-my-openagent.json 2>/dev/null || echo "未生成"
+            
              # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
              FAILURE_TYPE="build"
              if grep -qi "Phase 1 上传失败\|phase1-upload\|需修复 MEGA 上传逻辑" last_error.log 2>/dev/null; then
@@ -316,18 +322,20 @@ jobs:
                 echo "Phase 1 已成功上传到 MEGA，但 Phase 2 下载失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的下载逻辑（download_from_mega 函数），找出下载失败的根本原因并修复。常见问题：mega-get 超时、登录失败、文件路径错误等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
               elif grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
                echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
-            else
-               echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release、Delete workflow runs）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
-            fi
+             else
+                echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release、Delete workflow runs）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
+             fi
             
             # ── 尝试 oh-my-opencode（必须使用 --agent build），单次最多10分钟 ──
             # 跳过 SSL/TLS 证书验证以应对 DMXAPI 等 Provider 证书过期
             echo "尝试 oh-my-opencode run --agent build..."
+            TIMEOUT_EXIT=0
             NODE_TLS_REJECT_UNAUTHORIZED=0 timeout $MODEL_TIMEOUT oh-my-opencode run --agent build "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+            echo "oh-my-opencode 退出码: $TIMEOUT_EXIT"
             if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
               echo "::warning::oh-my-opencode 超时（${MODEL_TIMEOUT}秒），准备尝试下一个模型..."
               continue
-            elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
+            elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401" opencode_output.log; then
               echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
               # DMXAPI 证书过期 → 标记不可用，后续跳过所有 DMXAPI 模型
               if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then
@@ -340,11 +348,13 @@ jobs:
             
             if [ "$FIX_SUCCEEDED" = "false" ]; then
               echo "尝试 opencode run（最多10分钟）..."
+              TIMEOUT_EXIT=0
             NODE_TLS_REJECT_UNAUTHORIZED=0 timeout $MODEL_TIMEOUT opencode run "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+            echo "opencode 退出码: $TIMEOUT_EXIT"
             if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
               echo "::warning::opencode 超时（${MODEL_TIMEOUT}秒），准备尝试下一个模型..."
                 continue
-              elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session" opencode_output.log; then
+              elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401" opencode_output.log; then
                 echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
                 # DMXAPI 证书过期 → 标记不可用
                 if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then

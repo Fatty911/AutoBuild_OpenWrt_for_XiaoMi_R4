@@ -138,15 +138,19 @@ def fallback_role_assignment(models):
     }
 
 def print_opencode_json(provider, main_model, api_env, base_url):
+    api_key = os.getenv(api_env, "")
+    if not api_key:
+        print(f"[DMXAPI] 警告: 环境变量 {api_env} 未设置", file=sys.stderr)
     config = {
         "$schema": "https://opencode.ai/config.json",
+        "autoupdate": False,
         "plugin": ["oh-my-openagent"],
         "provider": {
             provider: {
                 "npm": "@ai-sdk/openai-compatible",
                 "options": {
                     "baseURL": base_url,
-                    "apiKey": f"{{env:{api_env}}}"
+                    "apiKey": api_key
                 },
                 "models": {main_model: {}}
             }

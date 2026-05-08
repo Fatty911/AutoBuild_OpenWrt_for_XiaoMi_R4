@@ -210,6 +210,12 @@ jobs:
           fi
         done
         echo "=== defconfig 完成 ==="
+        for KCFG in target/linux/ramips/mt7621/config-* target/linux/generic/config-*; do
+          [ -f "$KCFG" ] || continue
+          echo "CONFIG_CRYPTO_DEV_EIP93_AES=y" >> "$KCFG" 2>/dev/null || true
+          echo "CONFIG_CRYPTO_DEV_EIP93_DES=y" >> "$KCFG" 2>/dev/null || true
+          echo "CONFIG_CRYPTO_DEV_EIP93_AEAD=y" >> "$KCFG" 2>/dev/null || true
+        done
 
     - name: Try compiling the firmware
       id: compile_attempt
@@ -222,6 +228,7 @@ jobs:
         LOG_FILE="compile.log"
         echo "=== 先构建 root filesystem ==="
         make target/compile V=s > rootfs_compile.log 2>&1 || true
+        mkdir -p build_dir/target-mipsel_24kc_musl/root-ramips
         echo "=== root filesystem 构建完成，开始完整固件编译 ==="
         {
           make -j1 V=s > compile.log 2>&1 || {
@@ -280,7 +287,7 @@ jobs:
         echo "修复 DTS nvmem-layout 兼容性..."
         python3 $GITHUB_WORKSPACE/custom_scripts/fix_dts_nvmem_layout.py .
 
-        echo "isFixed=true" >> $GITHUB_OUTPUT"
+        echo "isFixed=true" >> $GITHUB_OUTPUT
         
     - name: Compile the firmware with fixes
       id: compile
@@ -291,6 +298,7 @@ jobs:
         make defconfig
         echo "=== 先构建 root filesystem ==="
         make target/compile V=s > rootfs_compile.log 2>&1 || true
+        mkdir -p build_dir/target-mipsel_24kc_musl/root-ramips
         echo "=== root filesystem 构建完成，开始完整固件编译 ==="
         {
           make -j1 V=s > compile.log 2>&1 || {
