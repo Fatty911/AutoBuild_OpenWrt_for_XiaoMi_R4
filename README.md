@@ -33,6 +33,7 @@ A template for building OpenWrt with GitHub Actions
   - Track 2 Zhipu API URL 拼接兼容 `/v4` 端点
   - `compile_with_retry.py` 中 `make package/index` 目标不存在（OpenWrt 主分支迁移 APK 后改为 `package/merge-index`）
 - **AI 优化**：
+  - `pick_best_model.py` 支持双排行榜（Artificial Analysis + LMSYS Arena）合并抓取，并动态发现 OpenRouter 免费模型，显著扩展 Track 3 fallback 模型池
   - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮
   - `AI_Auto_Fix_Monitor.yml` Track 3 安装步骤避免无 provider 警告
   - AI Fix artifact 下载增加 `gh run view` / `gh run download` 兜底，避免 error-log 缺失中断修复

@@ -85,34 +85,34 @@ def split_env(name, default=""):
     return [m.strip() for m in (raw or default).split(",") if m.strip()]
 
 
-def load_cached_top20():
+def load_cached_leaderboard():
     """从缓存文件读取上次抓取的排行榜，返回 (set, timestamp)。不存在返回 (None, 0)。"""
     if not os.path.exists(LEADERBOARD_CACHE):
         return None, 0
     try:
         with open(LEADERBOARD_CACHE, "r") as f:
             data = json.load(f)
-        slugs = set(data.get("top20", []))
+        slugs = set(data.get("top_set", []))
         ts = data.get("timestamp", 0)
         return slugs if slugs else None, ts
     except Exception:
         return None, 0
 
 
-def save_cached_top20(top20_set):
+def save_cached_leaderboard(top_set):
     """把排行榜结果写回缓存文件，供下次抓取失败时兜底。"""
     try:
         with open(LEADERBOARD_CACHE, "w") as f:
             json.dump(
-                {"timestamp": time.time(), "top20": sorted(top20_set)}, f, indent=2
+                {"timestamp": time.time(), "top_set": sorted(top_set)}, f, indent=2
             )
     except Exception:
         pass
 
 
-def fetch_leaderboard_top20():
+def fetch_artificial_analysis_top20():
     """实时从 Artificial Analysis 抓取排行榜前 20 模型 slug。
-    成功 → 写回缓存 + 返回 set；失败 → 读缓存兜底（超14天警告）+ 返回 set 或 None。
+    成功 → 返回 set；失败 → 返回 None。
 
     注意：Artificial Analysis 的 Next.js 页面中 slug 是按出现顺序排列的，
     但 slug 的出现顺序不一定等于排行榜顺序。我们需要从 JSON 数据中
@@ -157,9 +157,8 @@ def fetch_leaderboard_top20():
                     slug_best_score.items(), key=lambda x: x[1], reverse=True
                 )
                 top20 = set(slug for slug, _ in sorted_models[:20])
-                save_cached_top20(top20)
                 print(
-                    f"[pick_best_model] 实时排行榜抓取成功({len(top20)}个，按分数排序)，已更新缓存",
+                    f"[pick_best_model] Artificial Analysis 排行榜抓取成功({len(top20)}个，按分数排序)",
                     file=sys.stderr,
                 )
                 return top20
@@ -206,42 +205,25 @@ def fetch_leaderboard_top20():
                         filtered.add(s)
 
                 top20 = set(list(filtered)[:20]) if len(filtered) > 20 else filtered
-                save_cached_top20(top20)
                 print(
-                    f"[pick_best_model] 实时排行榜抓取成功({len(top20)}个，已过滤旧模型)，已更新缓存",
+                    f"[pick_best_model] Artificial Analysis 排行榜抓取成功({len(top20)}个，已过滤旧模型)",
                     file=sys.stderr,
                 )
                 return top20
     except Exception as e:
-        print(f"[pick_best_model] 排行榜实时抓取失败: {e}", file=sys.stderr)
+        print(f"[pick_best_model] Artificial Analysis 排行榜抓取失败: {e}", file=sys.stderr)
 
-    cached, ts = load_cached_top20()
-    if cached:
-        days_old = (time.time() - ts) / 86400
-        if days_old > LEADERBOARD_STALE_DAYS:
-            print(
-                f"[pick_best_model] ⚠️ 排行榜缓存已 {days_old:.0f} 天未更新，可能包含过时模型，请尽快手动更新",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                f"[pick_best_model] 排行榜实时抓取失败，使用{days_old:.1f}天前的缓存兜底",
-                file=sys.stderr,
-            )
-        return cached
-
-    print("[pick_best_model] 排行榜实时抓取失败且无缓存，不过滤模型", file=sys.stderr)
     return None
 
 
-def is_top20_match(model_id_lower, top20_set):
-    """检查模型 ID 是否匹配排行榜前 20。top20_set 为 None 时直接放行。"""
-    if not top20_set:
+def is_leaderboard_match(model_id_lower, top_set):
+    """检查模型 ID 是否匹配排行榜前 20。top_set 为 None 时直接放行。"""
+    if not top_set:
         return True
     base = model_id_lower.replace("-free", "").replace("_free", "")
     core = base.split("/")[-1] if "/" in base else base
     core_nodot = core.replace("-", "").replace(".", "")
-    for slug in top20_set:
+    for slug in top_set:
         slug_nodot = slug.replace("-", "").replace(".", "")
         if slug_nodot in core_nodot or core_nodot in slug_nodot:
             return True
@@ -262,7 +244,7 @@ def is_minimax_allowed(model_id_lower):
     return False  # 不在白名单的 MiniMax 模型一律拒绝
 
 
-def get_zen_free_models(top20_set):
+def get_zen_free_models(top_set):
     """从 ZEN API 获取免费模型，仅保留排行榜前 20 匹配的。"""
     zen_key = os.getenv("ZEN_API_KEY", "").strip()
     if not zen_key:
@@ -276,10 +258,10 @@ def get_zen_free_models(top20_set):
             cached_models = cache_data.get("valid_models", [])
             ts = cache_data.get("timestamp", 0)
             if cached_models and (time.time() - ts) / 86400 < 3:
-                if top20_set is None:
+                if top_set is None:
                     return cached_models
                 return [
-                    m for m in cached_models if is_top20_match(m.lower(), top20_set)
+                    m for m in cached_models if is_leaderboard_match(m.lower(), top_set)
                 ]
         except Exception:
             pass
@@ -302,7 +284,7 @@ def get_zen_free_models(top20_set):
                 continue
             if not is_minimax_allowed(mid.lower()):
                 continue
-            if is_top20_match(mid.lower(), top20_set):
+            if is_leaderboard_match(mid.lower(), top_set):
                 valid.append(mid)
 
         try:
@@ -316,10 +298,151 @@ def get_zen_free_models(top20_set):
         return []
 
 
+def fetch_arena_leaderboard_top20():
+    """实时从 LMSYS Arena 排行榜 API 抓取前 20 模型，返回 set of slugs。"""
+    try:
+        import requests
+
+        url = "https://api.wulong.dev/arena-ai-leaderboards/v1/leaderboard?name=text"
+        resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            models = data.get("models", [])
+            slugs = set()
+            for item in models[:20]:
+                model_name = item.get("model", "")
+                if model_name:
+                    slugs.add(model_name.lower().strip())
+            if slugs:
+                print(
+                    f"[pick_best_model] LMSYS Arena 排行榜抓取成功({len(slugs)}个)",
+                    file=sys.stderr,
+                )
+                return slugs
+    except Exception as e:
+        print(f"[pick_best_model] LMSYS Arena 排行榜抓取失败: {e}", file=sys.stderr)
+
+    return None
+
+
+def fetch_dual_leaderboard_top_set():
+    """合并 Artificial Analysis + LMSYS Arena 双排行榜，取并集后缓存并返回。
+    若两者均失败则读缓存兜底（超14天警告）。
+    """
+    aa_set = fetch_artificial_analysis_top20()
+    arena_set = fetch_arena_leaderboard_top20()
+
+    merged = set()
+    if aa_set:
+        merged.update(aa_set)
+    if arena_set:
+        merged.update(arena_set)
+
+    if merged:
+        save_cached_leaderboard(merged)
+        print(
+            f"[pick_best_model] 双排行榜合并成功(AA={len(aa_set or [])}+Arena={len(arena_set or [])}={len(merged)}去重)，已更新缓存",
+            file=sys.stderr,
+        )
+        return merged
+
+    # 两者均失败，读缓存兜底
+    cached, ts = load_cached_leaderboard()
+    if cached:
+        days_old = (time.time() - ts) / 86400
+        if days_old > LEADERBOARD_STALE_DAYS:
+            print(
+                f"[pick_best_model] ⚠️ 排行榜缓存已 {days_old:.0f} 天未更新，可能包含过时模型，请尽快手动更新",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[pick_best_model] 双排行榜均抓取失败，使用{days_old:.1f}天前的缓存兜底",
+                file=sys.stderr,
+            )
+        return cached
+
+    print("[pick_best_model] 双排行榜抓取失败且无缓存，不过滤模型", file=sys.stderr)
+    return None
+
+
+def get_openrouter_free_models(top_set):
+    """动态查询 OpenRouter API 获取免费模型，按 top_set 过滤，1天缓存。
+    
+    返回匹配的模型 ID 列表，失败时返回空列表。
+    """
+    cache_file = ".openrouter_free_models_cache.json"
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+    if not openrouter_key:
+        return []
+
+    # 检查缓存
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, "r") as f:
+                cache_data = json.load(f)
+            cached_models = cache_data.get("valid_models", [])
+            ts = cache_data.get("timestamp", 0)
+            if cached_models and (time.time() - ts) / 86400 < 1:
+                if top_set is None:
+                    return cached_models
+                return [
+                    m for m in cached_models
+                    if is_leaderboard_match(m.lower(), top_set)
+                ]
+        except Exception:
+            pass
+
+    try:
+        import requests
+
+        resp = requests.get(
+            "https://openrouter.ai/api/v1/models",
+            headers={
+                "Authorization": f"Bearer {openrouter_key}",
+                "User-Agent": "Mozilla/5.0",
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        all_models = resp.json().get("data", [])
+
+        valid = []
+        for m in all_models:
+            mid = m.get("id", "")
+            pricing = m.get("pricing", {})
+            prompt_price = pricing.get("prompt", "0")
+            completion_price = pricing.get("completion", "0")
+            # Free if id ends with :free OR both prompt and completion are "0"
+            if not (mid.endswith(":free") or (prompt_price == "0" and completion_price == "0")):
+                continue
+            if not is_minimax_allowed(mid.lower()):
+                continue
+            if is_leaderboard_match(mid.lower(), top_set):
+                valid.append(mid)
+
+        # 写缓存
+        try:
+            with open(cache_file, "w") as f:
+                json.dump({"timestamp": time.time(), "valid_models": valid}, f, indent=2)
+        except Exception:
+            pass
+
+        if valid:
+            print(
+                f"[pick_best_model] OpenRouter 免费模型动态发现成功({len(valid)}个)",
+                file=sys.stderr,
+            )
+        return valid
+    except Exception as e:
+        print(f"[pick_best_model] OpenRouter 免费模型发现失败: {e}", file=sys.stderr)
+        return []
+
+
 def pick_model():
-    top20 = fetch_leaderboard_top20()
-    if top20:
-        print(f"[pick_best_model] 排行榜前20: {top20}", file=sys.stderr)
+    top_set = fetch_dual_leaderboard_top_set()
+    if top_set:
+        print(f"[pick_best_model] 双排行榜合并集: {top_set}", file=sys.stderr)
     else:
         print("[pick_best_model] 排行榜抓取失败，不过滤模型", file=sys.stderr)
 
@@ -381,22 +504,24 @@ def pick_model():
         print(f"[pick_best_model] AtomGit 免费: {ag_models[0]}", file=sys.stderr)
         return "atomgit", ag_models[0], ag_models[-1], ag_models
 
-    # 5. OpenRouter 免费模型 (Qwen3.6-plus:free 等)
+    # 5. OpenRouter 免费模型 (动态发现或环境变量兜底)
     if openrouter_key:
-        qwen_free = split_env(
-            "OPENROUTER_QWEN_FREE_MODEL_LIST",
-            "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.6-plus-preview:free",
-        )
-        if qwen_free:
+        or_free_models = get_openrouter_free_models(top_set)
+        if not or_free_models:
+            or_free_models = split_env(
+                "OPENROUTER_QWEN_FREE_MODEL_LIST",
+                "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.6-plus-preview:free",
+            )
+        if or_free_models:
             print(
-                f"[pick_best_model] OpenRouter Free: {qwen_free[0]}",
+                f"[pick_best_model] OpenRouter Free: {or_free_models[0]}",
                 file=sys.stderr,
             )
-            return "openrouter", qwen_free[0], qwen_free[-1], qwen_free
+            return "openrouter", or_free_models[0], or_free_models[-1], or_free_models
 
     # 6. ZEN 免费模型 (排行榜前20免费模型)
     if zen_key:
-        zen_models = get_zen_free_models(top20)
+        zen_models = get_zen_free_models(top_set)
         if zen_models:
             print(f"[pick_best_model] ZEN 免费: {zen_models}", file=sys.stderr)
             return "opencode", zen_models[0], zen_models[-1], zen_models
@@ -481,9 +606,9 @@ def pick_model():
 
 
 def pick_ranked_models(limit=10):
-    top20 = fetch_leaderboard_top20()
-    if top20:
-        print(f"[pick_best_model] 排行榜前20: {top20}", file=sys.stderr)
+    top_set = fetch_dual_leaderboard_top_set()
+    if top_set:
+        print(f"[pick_best_model] 双排行榜合并集: {top_set}", file=sys.stderr)
     else:
         print("[pick_best_model] 排行榜抓取失败，不过滤模型", file=sys.stderr)
 
@@ -529,7 +654,7 @@ def pick_ranked_models(limit=10):
         if not key:
             continue
         if provider == "zen":
-            zen_models = get_zen_free_models(top20)
+            zen_models = get_zen_free_models(top_set)
             if zen_models:
                 result.append(("opencode", zen_models[0], zen_models[-1], zen_models))
             continue
@@ -540,12 +665,14 @@ def pick_ranked_models(limit=10):
             )
             if or_models:
                 result.append(("openrouter", or_models[0], or_models[-1], or_models))
-            qwen_free = split_env(
-                "OPENROUTER_QWEN_FREE_MODEL_LIST",
-                "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.6-plus-preview:free",
-            )
-            if qwen_free:
-                result.append(("openrouter", qwen_free[0], qwen_free[-1], qwen_free))
+            or_free_models = get_openrouter_free_models(top_set)
+            if not or_free_models:
+                or_free_models = split_env(
+                    "OPENROUTER_QWEN_FREE_MODEL_LIST",
+                    "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.6-plus-preview:free",
+                )
+            if or_free_models:
+                result.append(("openrouter", or_free_models[0], or_free_models[-1], or_free_models))
             continue
         env_name, default = model_map.get(provider, (None, None))
         if env_name:

@@ -34,14 +34,14 @@
 ## 模型与 API 选择
 - opencode 用什么模型必须根据用户提供的 secrets 环境变量读取 key，可选 `_proxy_url` 和 `_model_list`，此要求全局生效。
 - opencode Zen 对 mimo-v2-pro 已不再免费，不要优先选择它。
-- 动态模型解析逻辑必须实时抓取 Artificial Analysis 排行榜数据，不能长期依赖硬编码列表。
-- **只使用当前排行榜前 20 的模型**（如 GLM-5.1、GLM-5、Kimi K2.5、Gemma 4 31B、Qwen3.5-398B、DeepSeek-V3.2 等），绝对不要使用已落榜的旧模型（如 GLM-4、Qwen2、GPT-4o、Claude 3.5 等）。保底模型也必须满足此要求。
-- **模型列表不得硬编码**，必须运行时实时从 Artificial Analysis 排行榜抓取。排行榜抓取失败时不过滤（放行所有模型），而不是退回硬编码列表。硬编码的模型列表一两个月就会过时。
+- 动态模型解析逻辑必须实时抓取 **Artificial Analysis + LMSYS Arena 双排行榜**数据，合并为统一模型池，不能长期依赖硬编码列表。
+- **只使用当前双排行榜前 30 的模型**（Artificial Analysis 前 20 + LMSYS Arena 前 20 去重合并，如 GLM-5.1、Kimi K2.6、Claude Opus 4.7、Gemma 4 31B、Qwen3.6-Plus、DeepSeek-V4-Pro 等），绝对不要使用已落榜的旧模型（如 GLM-4、Qwen2、GPT-4o、Claude 3.5 等）。保底模型也必须满足此要求。
+- **模型列表不得硬编码**，必须运行时实时从双排行榜抓取。排行榜抓取失败时不过滤（放行所有模型），而不是退回硬编码列表。硬编码的模型列表一两个月就会过时。
 - **允许缓存兜底**：实时抓取成功后必须把结果写回缓存文件（如 `.leaderboard_cache.json`），供下次抓取失败时兜底。缓存超过 14 天未更新时必须打印警告但仍可使用。无论是本地还是 GitHub Action 中，只要有自动回退机制，就可以用缓存兜底，但必须保证每一两周至少爬一次排行榜更新缓存，不能长期不更新。
-- 优先选择排行榜前 20 且有免费资源的模型。当前已知免费渠道：
+- 优先选择排行榜前 30 且有免费资源的模型。当前已知免费渠道：
   - AtomGit：`zai-org/GLM-5`、`Qwen/Qwen3.5-397B-A17B`（无限量，500次/分，端点 `https://api-ai.gitcode.com/v1`）
-  - OpenRouter：`qwen/qwen3.6-plus:free`、`qwen/qwen3.6-plus-preview:free`（1M context，429 频发）、`google/gemma-4-31b-it:free`（262K context，~27 tok/s）、`nvidia/nemotron-3-super-120b-a12b:free`（262K context，120B MoE）
-  - ZEN：排行榜前 20 的免费模型
+  - OpenRouter：动态 API 自动发现所有 `:free` 及零定价模型（如 `qwen/qwen3.6-plus:free`、`google/gemma-4-31b-it:free`、`nvidia/nemotron-3-super-120b-a12b:free` 等），不再依赖硬编码列表
+  - ZEN：排行榜前 30 的免费模型
   - NVIDIA NIM：`moonshotai/kimi-k2.5`（免费，262K context，1T MoE 32B active，Intelligence Index 46.8，强推理，端点 `https://integrate.api.nvidia.com/v1`）
   - 七牛云：`nvidia/nemotron-3-super-120b-a12b-free`（免费，1M context，120B MoE 12B active，强推理，端点 `https://api.qnaigc.com/v1`）
   - 智谱官方：`GLM-5.1`（付费，排行榜 #13）
@@ -58,6 +58,7 @@
 - oh-my-openagent 的多 agent 协同效果更好，优先使用。
 
 ## 近期修复记录
+- 2026-05-08: 升级 `pick_best_model.py` 为双排行榜（Artificial Analysis + LMSYS Arena）合并抓取，动态检测 OpenRouter 免费模型，扩展 AI Fix 可用模型池。
 - 2026-05-07: 修复 `diy-part1.sh` bash 双引号导致 `$(COMMITCOUNT)` 被误解析为命令的问题。
 - 2026-05-07: 修复 `Build_OpenWrt_Firmware.yml` base-files 版本覆盖逻辑，移除非法 `VERSION:=r1`，改为仅修复 `PKG_RELEASE:=1`，避免 APK `package version is invalid`。
 - 2026-05-07: 修复 `Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml` 内核配置，补充 `CONFIG_CRYPTO_DEV_EIP93_DES=y` 和 `CONFIG_CRYPTO_DEV_EIP93_AEAD=y`，解决 Lienol 6.12 syncconfig 交互失败。
