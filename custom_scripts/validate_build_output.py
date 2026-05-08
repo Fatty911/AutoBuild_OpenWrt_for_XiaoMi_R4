@@ -45,7 +45,11 @@ def main():
         
         valid_files = []
         for f in bin_files:
-            size_bytes = os.path.getsize(f)
+            try:
+                size_bytes = os.path.getsize(f)
+            except (OSError, FileNotFoundError) as e:
+                print(f"  - ⚠️ 跳过无法访问的文件: {f} ({e})")
+                continue
             size_mb = size_bytes / (1024 * 1024)
             if "initramfs" in f:
                 print(f"  - 跳过 initramfs: {f} ({size_mb:.2f} MB)")

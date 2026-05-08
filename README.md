@@ -40,6 +40,8 @@ A template for building OpenWrt with GitHub Actions
   - 修复 `Build_OpenWrt_Firmware.yml` 缓存配置：移除 `build_dir`，避免 actions/cache post-step 上传失败导致 job 假失败
   - 修复 `pick_best_model.py` / `dmxapi_meta_router.py` opencode.json API key 模板语法（`{{env:...}}` → 实际值），避免 Track 3 认证失败/超时
   - Track 3 增加配置脱敏打印、退出码输出、`TIMEOUT_EXIT` 重置、错误关键词匹配（401/Unauthorized）
+  - 修复 `validate_build_output.py` 在 .bin 文件为损坏符号链接时崩溃的 bug，避免 Build Quality Gate 假失败
+  - Track 3 跳过 API key 为空的模型，避免浪费尝试次数
 
 > ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
 

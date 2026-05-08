@@ -70,3 +70,5 @@
 - 2026-05-07: 修复 `Build_OpenWrt_Firmware.yml` 缓存配置：移除 `build_dir`（体积过大导致 actions/cache post-step 上传失败，造成 job 假失败）。保留 `staging_dir` 和 `ccache` 缓存。
 - 2026-05-08: 修复 `pick_best_model.py` 和 `dmxapi_meta_router.py` 中 opencode.json 的 API key 模板语法问题（`{{env:...}}` 替换为实际环境变量值），避免 oh-my-opencode 认证失败或超时。
 - 2026-05-08: 优化 `AI_Auto_Fix_Monitor.yml` Track 3：增加生成配置脱敏打印、退出码打印、`TIMEOUT_EXIT` 重置、增强错误关键词匹配（401/Unauthorized），提升调试能力。
+- 2026-05-08: 修复 `validate_build_output.py` 在 .bin 文件为损坏符号链接时崩溃的 bug，添加异常捕获避免 Build Quality Gate 假失败。
+- 2026-05-08: 优化 `AI_Auto_Fix_Monitor.yml` Track 3：跳过 API key 为空的模型，避免浪费尝试次数；修复 prompt 生成段落的缩进不一致。
