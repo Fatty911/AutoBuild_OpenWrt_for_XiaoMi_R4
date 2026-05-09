@@ -37,7 +37,7 @@ A template for building OpenWrt with GitHub Actions
   - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮
   - `AI_Auto_Fix_Monitor.yml` Track 3 安装步骤避免无 provider 警告
   - AI Fix artifact 下载增加 `gh run view` / `gh run download` 兜底，避免 error-log 缺失中断修复
-  - Track 3 模型超时从 20min 降至 10min，最大尝试数从 3 增至 5
+  - Track 3 模型超时恢复至 20min，最大尝试数 5；超时(exit 124)后检查 `git diff --cached` 保留有效修改，避免 AI 成果被丢弃
   - Build 工作流增加 `last_error.log` 兜底生成逻辑
   - 修复 `Build_OpenWrt_Firmware.yml` 缓存配置：移除 `build_dir`，避免 actions/cache post-step 上传失败导致 job 假失败
   - 修复 `pick_best_model.py` / `dmxapi_meta_router.py` opencode.json API key 模板语法（`{{env:...}}` → 实际值），避免 Track 3 认证失败/超时

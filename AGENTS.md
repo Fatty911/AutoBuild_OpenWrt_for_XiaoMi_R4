@@ -77,3 +77,4 @@
 - 2026-05-08: 修复 `Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml` 调试日志上传条件：`env.BUILD_QUALITY_GATE == 'fail'` → `failure()`，确保脚本崩溃时也能获取调试信息。
 - 2026-05-08: 修复 `dmxapi_meta_router.py` `--config-omo-generic`：增加 `build` agent 定义，解决 oh-my-opencode `--agent build` 找不到 agent 的问题。
 - 2026-05-09: 二次修复 `package/index` stub：移除 merge-index 条件门控，改为无条件创建。根因：原 stub 创建逻辑要求 `package/Makefile` 包含 `merge-index`，但 Lienol 源码不包含此目标，导致 stub 从未被创建。现 workflow 预编译阶段无条件添加 `package/index:\n\t@true` stub，`compile_with_retry.py` 新增 `package_index_not_found` 错误检测及 `fix_package_index_not_found()` 无条件修复。
+- 2026-05-09: 修复 `AI_Auto_Fix_Monitor.yml` Track 3 超时逻辑：opencode/opencode 超时(exit 124)后不再直接 `continue` 丢弃修改，改为先检查 `git diff --cached`，有有效代码修改则视为修复成功并提交。MODEL_TIMEOUT 从 600s 恢复至 1200s，给 AI 更多时间完成修复。
