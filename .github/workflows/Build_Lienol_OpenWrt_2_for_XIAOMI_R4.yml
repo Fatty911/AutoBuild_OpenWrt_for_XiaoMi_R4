@@ -175,8 +175,9 @@ jobs:
         rm -rf openwrt/build_dir/toolchain-*
         rm -rf openwrt/build_dir/host
         rm -rf openwrt/build_dir/hostpkg-*
-        rm -rf openwrt/staging_dir/toolchain-*
-        rm -rf openwrt/staging_dir/host
+        # staging_dir/host 包含 apk/fwtool/fakeroot 等 Phase 2 必须的 host 工具，不能删除
+        # staging_dir/toolchain-* 包含交叉编译器，Phase 2 编译必须，不能删除
+        # 删除这些会导致 apk: No such file or directory → manifest 空 → 固件是空壳
         rm -rf openwrt/staging_dir/hostpkg
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
         

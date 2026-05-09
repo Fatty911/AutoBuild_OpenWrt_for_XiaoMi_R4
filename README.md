@@ -32,6 +32,7 @@ A template for building OpenWrt with GitHub Actions
   - Lienol 内核 6.12 `CRYPTO_DEV_EIP93_AES/DES/AEAD` syncconfig 交互失败自动注入配置
   - Track 2 Zhipu API URL 拼接兼容 `/v4` 端点
   - `make package/index` 目标不存在（OpenWrt 主分支迁移 APK 后改为 `package/merge-index`，workflow 预编译阶段无条件添加 `@true` stub，`compile_with_retry.py` `fix_package_index_not_found()` 无条件修复）
+  - Lienol 2 `staging_dir/host` 被误删导致 `apk: No such file or directory`→固件空壳（现保留 `staging_dir/host` 和 `staging_dir/toolchain-*`，仅删源码目录；`compile_with_retry.py` `fix_missing_host_tools()` 兜底重建）
 - **AI 优化**：
   - `pick_best_model.py` 支持双排行榜（Artificial Analysis + LMSYS Arena）合并抓取，并动态发现 OpenRouter 免费模型，显著扩展 Track 3 fallback 模型池
   - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮

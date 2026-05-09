@@ -207,6 +207,14 @@ def get_error_signature(log_content):
     ):
         return "apk_wrapper_syntax"
 
+    # APK host tool missing (staging_dir/host/bin/apk doesn't exist)
+    if re.search(r"staging_dir/host/bin/apk:\s*No such file or directory", log_content):
+        return "apk_host_tool_missing"
+
+    # fwtool missing (staging_dir/host/bin/fwtool doesn't exist)
+    if re.search(r"fwtool:\s*command not found", log_content):
+        return "fwtool_host_tool_missing"
+
     # --- Specific Package/Linker Errors ---
     # Netifd linking error (missing libnl-tiny)
     if (
@@ -2710,6 +2718,58 @@ def fix_luci_lib_taskd_extra_depends():
         return False
 
 
+def fix_missing_host_tools():
+    """重建缺失的 host 工具（apk/fwtool 等 staging_dir/host/bin/ 下的程序）
+
+    根因：Phase 1 备份解压后，staging_dir/host 被 rm -rf 删除（节省空间），
+    导致 Phase 2 编译时 apk/fwtool/fakeroot 等关键 host 工具不存在。
+    修复：运行 make tools/install 重建 staging_dir/host。
+    """
+    print("🔧 检测到 host 工具缺失（apk/fwtool），尝试重建 staging_dir/host...")
+
+    staging_host_bin = Path("staging_dir/host/bin")
+    if staging_host_bin.exists():
+        tools = list(staging_host_bin.iterdir())
+        print(f"  staging_dir/host/bin 当前有 {len(tools)} 个文件")
+    else:
+        print("  staging_dir/host/bin 不存在，需要完整重建")
+
+    try:
+        print("  ▶️ 运行 make tools/install V=s...")
+        result = subprocess.run(
+            ["make", "tools/install", "V=s"],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if result.returncode != 0:
+            print(f"  ⚠️ make tools/install 返回非零退出码: {result.returncode}")
+            print(f"  stderr (last 500): {result.stderr[-500:]}")
+
+        critical_tools = ["apk", "fwtool", "fakeroot"]
+        all_found = True
+        for tool in critical_tools:
+            tool_path = staging_host_bin / tool
+            if tool_path.exists():
+                print(f"  ✅ {tool} 已存在")
+            else:
+                print(f"  ❌ {tool} 仍然缺失")
+                all_found = False
+
+        if all_found:
+            print("✅ host 工具重建成功")
+            return True
+        else:
+            print("⚠️ 部分关键工具仍然缺失，可能需要手动检查")
+            return False
+    except subprocess.TimeoutExpired:
+        print("❌ make tools/install 超时（30分钟）")
+        return False
+    except Exception as e:
+        print(f"❌ 重建 host 工具时出错: {e}")
+        return False
+
+
 def fix_apk_wrapper_syntax():
     """修复 APK 包装器脚本中的语法错误"""
     print("🔧 检测到 APK wrapper 语法错误，尝试修复...")
@@ -3308,6 +3368,8 @@ def main():
             fix_attempted = fix_apk_depends_problem()  # Use the consolidated function
         elif current_error_signature == "apk_wrapper_syntax":
             fix_attempted = fix_apk_wrapper_syntax()
+        elif current_error_signature in ("apk_host_tool_missing", "fwtool_host_tool_missing"):
+            fix_attempted = fix_missing_host_tools()
         elif current_error_signature == "unknown_error":
             print("未知错误，无法自动修复。")
             # Optional: Reduce jobs as a last resort?
