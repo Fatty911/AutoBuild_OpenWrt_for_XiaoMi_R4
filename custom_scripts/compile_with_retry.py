@@ -114,6 +114,9 @@ def get_error_signature(log_content):
     if re.search(r"Killed|signal 9|Error 137", log_content):
         return "oom_detected"
 
+    if re.search(r"No rule to make target 'package/index'", log_content):
+        return "package_index_not_found"
+
     # Configuration out of sync (causes "No rule to make target" cascade)
     # This is a high-priority detection because it causes infinite retry loops
     # when .config is stale and feeds are not properly installed.
@@ -3027,6 +3030,33 @@ def fix_config_out_of_sync(log_content):
     return attempted or confirmed
 
 
+def fix_package_index_not_found():
+    print("🔧 检测到 'package/index' 目标不存在（OpenWrt main/APK 已改为 package/merge-index），执行修复...")
+
+    attempted = False
+
+    if os.path.isfile("package/Makefile"):
+        try:
+            with open("package/Makefile", "r") as f:
+                pmf_content = f.read()
+
+            if "package/index:" not in pmf_content:
+                stub = "package/index:\n\t@true\n\n"
+                with open("package/Makefile", "w") as f:
+                    f.write(stub + pmf_content)
+                print("  ✅ 已添加 'package/index' stub")
+                attempted = True
+            else:
+                print("  ℹ️ 'package/index' 已存在于 Makefile 中")
+                attempted = True
+        except Exception as e:
+            print(f"  ⚠️ 修改 package/Makefile 时出错: {e}")
+    else:
+        print("  ⚠️ package/Makefile 不存在")
+
+    return attempted
+
+
 # --- Main Logic ---
 def main():
     parser = argparse.ArgumentParser(description="OpenWrt 编译修复脚本")
@@ -3236,6 +3266,8 @@ def main():
                 fix_attempted = True
         elif current_error_signature.startswith("config_out_of_sync"):
             fix_attempted = fix_config_out_of_sync(log_content_global)
+        elif current_error_signature == "package_index_not_found":
+            fix_attempted = fix_package_index_not_found()
         elif current_error_signature.startswith("netifd_link_error"):
             fix_attempted = fix_netifd_libnl_tiny()
         elif current_error_signature == "lua_neturl_download":

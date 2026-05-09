@@ -217,6 +217,12 @@ jobs:
           echo "CONFIG_CRYPTO_DEV_EIP93_AEAD=y" >> "$KCFG" 2>/dev/null || true
         done
 
+        # 无条件添加 package/index stub，兼容 OpenWrt main/APK（已改为 package/merge-index）
+        if ! grep -q "^package/index:" package/Makefile 2>/dev/null; then
+          echo "⚡ Adding 'package/index' stub to package/Makefile for APK compatibility"
+          { printf 'package/index:\n\t@true\n\n'; cat package/Makefile; } > /tmp/_pmf && mv /tmp/_pmf package/Makefile
+        fi
+
     - name: Try compiling the firmware
       id: compile_attempt
       run: |
