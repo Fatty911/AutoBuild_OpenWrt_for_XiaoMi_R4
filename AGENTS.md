@@ -83,3 +83,4 @@
 - 2026-05-10: 三次修复 Lienol2：即使 PATH 已正确，package/install 仍可能静默失败导致 root.orig-* 不存在→空壳固件。修复：(1) 工作流新增 "Ensure root.orig exists for valid firmware" 步骤，编译后检查 root.orig-*，缺失时清除 stamp 并强制重跑 package/install + target/install；(2) compile_with_retry.py 新增 `root_orig_missing` 错误签名及 `fix_root_orig_missing()` 修复函数。
 - 2026-05-10: 清理 6 个遗留 codex 分支（codex/review-workflow-file-for-errors-*），它们仍包含已删除的 Build_OpenWRT.org_2_for_XIAOMI_R4.yml，导致 GitHub 持续注册 Org2 工作流。
 - 2026-05-10: 修复 AI Fix 429 余额不足未触发 fallback：(1) auto_fix_with_AI_LLM.py 将 429 纳入 QUOTA_EXHAUSTED 检测，增加"余额不足"/"无可用资源"关键词；(2) AI_Auto_Fix_Monitor.yml Track 3 错误匹配模式增加 429/余额不足/insufficient/quota/balance，确保 zhipu 等付费模型余额耗尽时自动跳过到下一个 provider。
+- 2026-05-10: 优化 Lienol1/Lienol2 时间分配：Lienol1 新增 "Install packages to root filesystem" 步骤，执行 `make package/install`（预计增加 ~40-55 分钟，使 Lienol1 接近 5h30m~5h45m）。这样 root.orig-* 在 Phase 1 就已创建，Lienol2 只需做 `target/install` + 固件打包，大幅缩短并更早发现报错。

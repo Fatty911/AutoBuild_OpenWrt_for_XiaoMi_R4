@@ -34,6 +34,7 @@ A template for building OpenWrt with GitHub Actions
   - `make package/index` 目标不存在（OpenWrt 主分支迁移 APK 后改为 `package/merge-index`，workflow 预编译阶段无条件添加 `@true` stub，`compile_with_retry.py` `fix_package_index_not_found()` 无条件修复）
   - Lienol 2 `staging_dir/host` 被误删导致 `apk: No such file or directory`→固件空壳（现保留 `staging_dir/host` 和 `staging_dir/toolchain-*`，仅删源码目录；`compile_with_retry.py` `fix_missing_host_tools()` 兜底重建）
   - Lienol 2 `package/install` 静默失败导致 `root.orig-*` 不存在→空壳固件（工作流编译后检查 root.orig，缺失时强制重跑 package/install；`compile_with_retry.py` `root_orig_missing` 签名 + `fix_root_orig_missing()` 自动修复）
+  - Lienol 1 新增 `make package/install` 步骤（预计增加 ~40-55 分钟，使 Lienol1 接近 5h30m~5h45m），提前创建 root.orig-*，Lienol2 只需做 target/install + 固件打包
   - 清理 6 个遗留 codex 分支，它们仍包含已删除的 Org2 .yml，导致 GitHub 持续注册 Org2 工作流
 - **AI 优化**：
   - `pick_best_model.py` 支持双排行榜（Artificial Analysis + LMSYS Arena）合并抓取，并动态发现 OpenRouter 免费模型，显著扩展 Track 3 fallback 模型池
