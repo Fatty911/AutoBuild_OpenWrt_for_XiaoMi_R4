@@ -265,6 +265,40 @@ jobs:
           echo "检测到 firmware 编译失败，已记录错误日志"
         fi
 
+    - name: Ensure root.orig exists for valid firmware
+      run: |
+        cd openwrt
+        # root.orig-* is created by package/install; if missing, the firmware is an empty shell
+        if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
+          echo "✅ root.orig-* 存在，固件包含完整包"
+        else
+          echo "⚠️ root.orig-* 不存在！package/install 可能失败，强制重跑..."
+          export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
+          # 清除 package/install 和 target/install 的 stamp，强制重跑
+          rm -f staging_dir/target-*/stamp/.package_install_done
+          rm -f staging_dir/target-*/stamp/.target_install_done
+          # 先确保 host 工具存在
+          if ! which apk >/dev/null 2>&1; then
+            echo "apk 不在 PATH 中，运行 make tools/install..."
+            make tools/install V=s -j$(nproc) || true
+          fi
+          # 强制重跑 package/install
+          echo "▶️ 运行 make package/install V=s..."
+          make package/install V=s -j1 || {
+            echo "package/install 失败，尝试单线程..."
+            make package/install V=s -j1 || true
+          }
+          # 验证 root.orig 是否已创建
+          if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
+            echo "✅ root.orig-* 已创建"
+            # 重跑 target/install 生成有效固件
+            rm -f staging_dir/target-*/stamp/.target_install_done
+            make target/install V=s || true
+          else
+            echo "❌ root.orig-* 仍未创建，固件可能是空壳"
+          fi
+        fi
+
     - name: Detect firmware build failure
       id: detect_firmware_failure
       run: |

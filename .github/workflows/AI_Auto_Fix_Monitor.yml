@@ -354,7 +354,7 @@ jobs:
                 echo "::warning::超时且无有效代码修改，准备尝试下一个模型..."
                 continue
               fi
-            elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401" opencode_output.log; then
+            elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401|429|余额不足|insufficient|quota|balance" opencode_output.log; then
               echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
               # DMXAPI 证书过期 → 标记不可用，后续跳过所有 DMXAPI 模型
               if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then
@@ -384,7 +384,7 @@ jobs:
                 echo "::warning::超时且无有效代码修改，准备尝试下一个模型..."
                 continue
               fi
-              elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401" opencode_output.log; then
+              elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401|429|余额不足|insufficient|quota|balance" opencode_output.log; then
                 echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
                 # DMXAPI 证书过期 → 标记不可用
                 if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then

@@ -207,6 +207,10 @@ def get_error_signature(log_content):
     ):
         return "apk_wrapper_syntax"
 
+    # root.orig-* missing: apk can't open root filesystem → empty shell firmware
+    if re.search(r"Unable to open root.*No such file or directory", log_content):
+        return "root_orig_missing"
+
     # APK host tool missing (staging_dir/host/bin/apk doesn't exist)
     if re.search(r"staging_dir/host/bin/apk:\s*No such file or directory", log_content):
         return "apk_host_tool_missing"
@@ -2784,6 +2788,111 @@ def fix_missing_host_tools():
         return False
 
 
+def fix_root_orig_missing():
+    """修复 root.orig-* 缺失导致 apk --manifest 无法读取根文件系统
+
+    根因：package/install 从未成功执行，导致 build_dir/target-*/root.orig-* 不存在。
+    当 apk 尝试对 root.orig-ramips 做 --manifest 时报 "Unable to open root: No such file or directory"。
+    修复：清除 package/install 和 target/install 的 stamp，显式重跑 make package/install。
+    """
+    print("🔧 检测到 root.orig-* 缺失，尝试修复...")
+
+    root_orig_dirs = glob.glob("build_dir/target-*/root.orig-*")
+    print(f"  当前 root.orig-* 目录: {root_orig_dirs if root_orig_dirs else '（无）'}")
+
+    staging_host_apk = Path("staging_dir/host/bin/apk")
+    if not staging_host_apk.exists():
+        print("  ⚠️ staging_dir/host/bin/apk 不存在，先重建 host 工具...")
+        try:
+            result = subprocess.run(
+                ["make", "tools/install", "V=s"],
+                capture_output=True,
+                text=True,
+                timeout=1800,
+            )
+            if result.returncode != 0:
+                print(f"  ⚠️ make tools/install 返回非零退出码: {result.returncode}")
+                print(f"  stderr (last 500): {result.stderr[-500:]}")
+        except subprocess.TimeoutExpired:
+            print("  ❌ make tools/install 超时")
+            return False
+        except Exception as e:
+            print(f"  ❌ make tools/install 出错: {e}")
+            return False
+        if not staging_host_apk.exists():
+            print("  ❌ tools/install 后 apk 仍不存在，放弃")
+            return False
+
+    stamp_cleaned = 0
+    for stamp in glob.glob("staging_dir/target-*/stamp/.package_install_done"):
+        try:
+            os.remove(stamp)
+            stamp_cleaned += 1
+        except OSError:
+            pass
+    for stamp in glob.glob("staging_dir/target-*/stamp/.target_install_done"):
+        try:
+            os.remove(stamp)
+            stamp_cleaned += 1
+        except OSError:
+            pass
+    if stamp_cleaned > 0:
+        print(f"  ✅ 清除了 {stamp_cleaned} 个 stamp 文件")
+
+    print("  ▶️ 运行 make package/install V=s -j1...")
+    try:
+        result = subprocess.run(
+            ["make", "package/install", "V=s", "-j1"],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if result.returncode != 0:
+            print(f"  ⚠️ make package/install 返回非零退出码: {result.returncode}")
+            print(f"  stderr (last 500): {result.stderr[-500:]}")
+    except subprocess.TimeoutExpired:
+        print("  ❌ make package/install 超时")
+        return False
+    except Exception as e:
+        print(f"  ❌ make package/install 出错: {e}")
+        return False
+
+    root_orig_dirs = glob.glob("build_dir/target-*/root.orig-*")
+    if root_orig_dirs:
+        print(f"  ✅ root.orig-* 已创建: {root_orig_dirs}")
+        return True
+
+    print("  ⚠️ 首次 package/install 后 root.orig-* 仍不存在，再试一次...")
+    for stamp in glob.glob("staging_dir/target-*/stamp/.package_install_done"):
+        try:
+            os.remove(stamp)
+        except OSError:
+            pass
+    try:
+        result = subprocess.run(
+            ["make", "package/install", "V=s"],
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if result.returncode != 0:
+            print(f"  ⚠️ 第二次 make package/install 返回非零退出码: {result.returncode}")
+    except subprocess.TimeoutExpired:
+        print("  ❌ 第二次 make package/install 超时")
+        return False
+    except Exception as e:
+        print(f"  ❌ 第二次 make package/install 出错: {e}")
+        return False
+
+    root_orig_dirs = glob.glob("build_dir/target-*/root.orig-*")
+    if root_orig_dirs:
+        print(f"  ✅ 第二次后 root.orig-* 已创建: {root_orig_dirs}")
+        return True
+    else:
+        print("  ❌ 修复失败，root.orig-* 仍然不存在")
+        return False
+
+
 def fix_apk_wrapper_syntax():
     """修复 APK 包装器脚本中的语法错误"""
     print("🔧 检测到 APK wrapper 语法错误，尝试修复...")
@@ -3382,6 +3491,8 @@ def main():
             fix_attempted = fix_apk_depends_problem()  # Use the consolidated function
         elif current_error_signature == "apk_wrapper_syntax":
             fix_attempted = fix_apk_wrapper_syntax()
+        elif current_error_signature == "root_orig_missing":
+            fix_attempted = fix_root_orig_missing()
         elif current_error_signature in ("apk_host_tool_missing", "fwtool_host_tool_missing"):
             fix_attempted = fix_missing_host_tools()
         elif current_error_signature == "unknown_error":

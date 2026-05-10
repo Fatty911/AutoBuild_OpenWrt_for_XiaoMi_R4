@@ -167,12 +167,15 @@ def call_api(proxy_url, api_key, model, prompt):
         resp = requests.post(url, headers=headers, json=data, timeout=180)
 
         # 捕捉额度用尽/不再免费等特有错误，抛出特殊异常标记
-        if resp.status_code in [401, 402, 403]:
+        if resp.status_code in [401, 402, 403, 429]:
             err_text = resp.text[:500].lower()
             if (
                 "free promotion has ended" in err_text
                 or "insufficient quota" in err_text
                 or "balance" in err_text
+                or "余额不足" in err_text
+                or "无可用资源" in err_text
+                or resp.status_code == 429
             ):
                 raise Exception(
                     f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}"

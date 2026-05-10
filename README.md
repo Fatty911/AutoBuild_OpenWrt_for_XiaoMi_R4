@@ -33,6 +33,8 @@ A template for building OpenWrt with GitHub Actions
   - Track 2 Zhipu API URL 拼接兼容 `/v4` 端点
   - `make package/index` 目标不存在（OpenWrt 主分支迁移 APK 后改为 `package/merge-index`，workflow 预编译阶段无条件添加 `@true` stub，`compile_with_retry.py` `fix_package_index_not_found()` 无条件修复）
   - Lienol 2 `staging_dir/host` 被误删导致 `apk: No such file or directory`→固件空壳（现保留 `staging_dir/host` 和 `staging_dir/toolchain-*`，仅删源码目录；`compile_with_retry.py` `fix_missing_host_tools()` 兜底重建）
+  - Lienol 2 `package/install` 静默失败导致 `root.orig-*` 不存在→空壳固件（工作流编译后检查 root.orig，缺失时强制重跑 package/install；`compile_with_retry.py` `root_orig_missing` 签名 + `fix_root_orig_missing()` 自动修复）
+  - 清理 6 个遗留 codex 分支，它们仍包含已删除的 Org2 .yml，导致 GitHub 持续注册 Org2 工作流
 - **AI 优化**：
   - `pick_best_model.py` 支持双排行榜（Artificial Analysis + LMSYS Arena）合并抓取，并动态发现 OpenRouter 免费模型，显著扩展 Track 3 fallback 模型池
   - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮
@@ -42,12 +44,13 @@ A template for building OpenWrt with GitHub Actions
   - Build 工作流增加 `last_error.log` 兜底生成逻辑
   - 修复 `Build_OpenWrt_Firmware.yml` 缓存配置：移除 `build_dir`，避免 actions/cache post-step 上传失败导致 job 假失败
   - 修复 `pick_best_model.py` / `dmxapi_meta_router.py` opencode.json API key 模板语法（`{{env:...}}` → 实际值），避免 Track 3 认证失败/超时
-  - Track 3 增加配置脱敏打印、退出码输出、`TIMEOUT_EXIT` 重置、错误关键词匹配（401/Unauthorized）
+  - Track 3 增加配置脱敏打印、退出码输出、`TIMEOUT_EXIT` 重置、错误关键词匹配（401/Unauthorized/429/余额不足/quota/balance）
   - 修复 `validate_build_output.py` 在 .bin 文件为损坏符号链接时崩溃的 bug，避免 Build Quality Gate 假失败
   - 增强 `validate_build_output.py`：全局 try/except 捕获未预期异常，确保失败时仍输出 BUILD_QUALITY_GATE=fail
   - 修复 Lienol 2 调试日志上传条件：`failure()` 确保脚本崩溃时也能获取调试信息
   - 修复 `dmxapi_meta_router.py` `--config-omo-generic` 增加 `build` agent，解决 oh-my-opencode `--agent build` 找不到 agent 的问题
   - Track 3 跳过 API key 为空的模型，避免浪费尝试次数
+  - 修复 AI Fix 429/余额不足未触发 fallback：`auto_fix_with_AI_LLM.py` 将 429 纳入 QUOTA_EXHAUSTED 检测；Track 3 错误匹配增加 429/insufficient/quota/balance 关键词
 
 > ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
 
