@@ -84,3 +84,4 @@
 - 2026-05-10: 清理 6 个遗留 codex 分支（codex/review-workflow-file-for-errors-*），它们仍包含已删除的 Build_OpenWRT.org_2_for_XIAOMI_R4.yml，导致 GitHub 持续注册 Org2 工作流。
 - 2026-05-10: 修复 AI Fix 429 余额不足未触发 fallback：(1) auto_fix_with_AI_LLM.py 将 429 纳入 QUOTA_EXHAUSTED 检测，增加"余额不足"/"无可用资源"关键词；(2) AI_Auto_Fix_Monitor.yml Track 3 错误匹配模式增加 429/余额不足/insufficient/quota/balance，确保 zhipu 等付费模型余额耗尽时自动跳过到下一个 provider。
 - 2026-05-10: 优化 Lienol1/Lienol2 时间分配：Lienol1 新增 "Install packages to root filesystem" 步骤，执行 `make package/install`（预计增加 ~40-55 分钟，使 Lienol1 接近 5h30m~5h45m）。这样 root.orig-* 在 Phase 1 就已创建，Lienol2 只需做 `target/install` + 固件打包，大幅缩短并更早发现报错。
+- 2026-05-10: 增强 `validate_build_output.py` Build Quality Gate：(1) 新增 root.orig-* 存在性检查，作为空壳固件的关键诊断信号；(2) 增加 Lienol Phase 2 MEGA 上传检测路径（检查 openwrt/.mega_upload_success）；(3) 更详细的诊断输出（环境变量值、所有 .bin 文件大小列表、root.orig 文件数和总大小）；(4) 支持通过 `MIN_FIRMWARE_SIZE_MB` 环境变量覆盖最小固件大小阈值。
