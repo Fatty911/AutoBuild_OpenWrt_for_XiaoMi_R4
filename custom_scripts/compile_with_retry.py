@@ -2758,6 +2758,20 @@ def fix_missing_host_tools():
 
         if all_found:
             print("✅ host 工具重建成功")
+            # package/install 的 stamp 文件可能标记为"已完成"但实际 root.orig-* 不存在
+            # 清除 stamp 强制 make 重跑 package/install
+            stamp_cleaned = 0
+            for stamp in glob.glob("staging_dir/target-*/stamp/.package_install_done"):
+                try:
+                    os.remove(stamp)
+                    print(f"  🧹 清除 package_install stamp: {get_relative_path(stamp)}")
+                    stamp_cleaned += 1
+                except OSError:
+                    pass
+            for stamp in glob.glob("build_dir/target-*/root.orig-*"):
+                pass
+            if stamp_cleaned > 0:
+                print(f"  ✅ 清除了 {stamp_cleaned} 个 package/install stamp，重试时会重新执行 package/install")
             return True
         else:
             print("⚠️ 部分关键工具仍然缺失，可能需要手动检查")

@@ -229,6 +229,20 @@ jobs:
       run: |
         set -euo pipefail
         cd openwrt
+        # 确保 staging_dir/host/bin 在 PATH 中（apk/fwtool/fakeroot 等 host 工具）
+        # 没有 PATH 设置，make package/install 调用 apk 时会 "No such file or directory"
+        export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
+        echo "PATH=$PATH"
+        # 验证关键 host 工具可用
+        for tool in apk fwtool fakeroot; do
+          if which "$tool" >/dev/null 2>&1; then
+            echo "✅ $tool: $(which $tool)"
+          else
+            echo "⚠️ $tool 不在 PATH 中，尝试 make tools/install..."
+            make tools/install V=s -j$(nproc) || true
+            break
+          fi
+        done
         make defconfig
         [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
         echo "开始执行修复后重试编译..."
