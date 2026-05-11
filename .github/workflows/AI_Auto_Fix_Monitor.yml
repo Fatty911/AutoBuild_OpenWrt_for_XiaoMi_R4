@@ -435,14 +435,19 @@ jobs:
           # ── 防止 AI 改到其他工作流文件 ──
           echo "=== 🔒 工作流文件隔离检查 ==="
           TARGET_WF="$(basename "$WORKFLOW_YML")"
-          git diff --cached --name-only | grep "\.github/workflows/" | while read -r wf; do
-            wf_name=$(basename "$wf")
-            if [ "$wf_name" != "$TARGET_WF" ] && [ -f "$wf" ]; then
-              echo "⚠️ AI 意外修改了非目标工作流: $wf_name → 正在恢复"
-              git checkout HEAD -- "$wf"
-              git reset HEAD "$wf" 2>/dev/null || true
-            fi
-          done
+          CHANGED_WF_FILES=$(git diff --cached --name-only | grep "\.github/workflows/" || true)
+          if [ -n "$CHANGED_WF_FILES" ]; then
+            echo "$CHANGED_WF_FILES" | while read -r wf; do
+              wf_name=$(basename "$wf")
+              if [ "$wf_name" != "$TARGET_WF" ] && [ -f "$wf" ]; then
+                echo "⚠️ AI 意外修改了非目标工作流: $wf_name → 正在恢复"
+                git checkout HEAD -- "$wf"
+                git reset HEAD "$wf" 2>/dev/null || true
+              fi
+            done
+          else
+            echo "✅ AI 未修改任何工作流文件，隔离检查通过"
+          fi
           
           # ── 文件数量异常检测（防 gh repo sync --force 等意外大规模删除）──
           echo "=== 📊 文件数量异常检测 ==="

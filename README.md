@@ -36,7 +36,8 @@ A template for building OpenWrt with GitHub Actions
   - Lienol 2 `package/install` 静默失败导致 `root.orig-*` 不存在→空壳固件（工作流编译后检查 root.orig，缺失时强制重跑 package/install；`compile_with_retry.py` `root_orig_missing` 签名 + `fix_root_orig_missing()` 自动修复）
   - Lienol 1 新增 `make package/install` 步骤（预计增加 ~40-55 分钟，使 Lienol1 接近 5h30m~5h45m），提前创建 root.orig-*，Lienol2 只需做 target/install + 固件打包
   - 清理 6 个遗留 codex 分支，它们仍包含已删除的 Org2 .yml，导致 GitHub 持续注册 Org2 工作流
-  - `validate_build_output.py` Build Quality Gate 增强：root.orig-* 存在性检查（空壳固件诊断）、Lienol Phase 2 MEGA 检测路径、详细诊断输出、`MIN_FIRMWARE_SIZE_MB` 环境变量覆盖
+  - `validate_build_output.py` Build Quality Gate 增强：root.orig-* 非空检查（空壳固件诊断）、Lienol Phase 2 MEGA 检测路径、详细诊断输出、`MIN_FIRMWARE_SIZE_MB` 环境变量覆盖、默认阈值从 5MB 降为 3MB（Mi Router 4 UBI 固件正常仅 3-4MB）
+  - 修复 `AI_Auto_Fix_Monitor.yml` Track 3 隔离检查 bug：grep 无匹配时 `set -e` 导致 commit+push 永远无法执行
 - **AI 优化**：
   - `pick_best_model.py` 支持双排行榜（Artificial Analysis + LMSYS Arena）合并抓取，并动态发现 OpenRouter 免费模型，显著扩展 Track 3 fallback 模型池
   - `pick_best_model.py --ranked` 输出多提供商优先列表，Track 3 fallback 更健壮

@@ -3,7 +3,7 @@
 构建输出验证门：
 必须满足以下至少一项：
 1. 成功上传压缩包到 MEGA 网盘
-2. 成功生成 .bin 固件文件，并且固件大小合理（排除 initramfs，正常固件需 > 5MB）
+2. 成功生成 .bin 固件文件，并且固件大小合理（排除 initramfs，正常固件需 > 3MB）
 
 如果两者都没有（或生成的固件是个空壳），报错并触发 AI 自动修复。
 这可以防止打包出 1MB 左右的"假"固件骗过工作流，导致误删 MEGA 备份。
@@ -90,11 +90,11 @@ def main():
         print(f"glob 结果数量: {len(bin_files)}")
 
         # 最小有效固件大小，可通过环境变量覆盖
-        min_valid_size_str = os.getenv("MIN_FIRMWARE_SIZE_MB", "5")
+        min_valid_size_str = os.getenv("MIN_FIRMWARE_SIZE_MB", "3")
         try:
             min_valid_size_mb = float(min_valid_size_str)
         except ValueError:
-            min_valid_size_mb = 5.0
+            min_valid_size_mb = 3.0
         if min_valid_size_mb <= 0:
             print("⚠️ WARNING: MIN_FIRMWARE_SIZE_MB <= 0, 大小校验已禁用，任何非零 .bin 文件都算合格")
         MIN_VALID_SIZE = int(min_valid_size_mb * 1024 * 1024)
