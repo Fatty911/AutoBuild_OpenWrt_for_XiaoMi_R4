@@ -3224,10 +3224,10 @@ def fix_package_index_not_found():
                 pmf_content = f.read()
 
             if "package/index:" not in pmf_content:
-                stub = "package/index:\n\t@true\n\n"
-                with open("package/Makefile", "w") as f:
-                    f.write(stub + pmf_content)
-                print("  ✅ 已添加 'package/index' stub")
+                stub = "\npackage/index:\n\t@true\n"
+                with open("package/Makefile", "a") as f:
+                    f.write(stub)
+                print("  ✅ 已追加 'package/index' stub（尾部追加，避免破坏 include/eval 宏）")
                 attempted = True
             else:
                 print("  ℹ️ 'package/index' 已存在于 Makefile 中")
