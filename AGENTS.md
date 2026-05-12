@@ -88,3 +88,9 @@
 - 2026-05-11: 修复 `validate_build_output.py` 固件大小阈值：默认值从 5MB 降为 3MB。根因：Mi Router 4 (ramips/mt7621) 的 UBI sysupgrade 固件正常大小仅 3-4MB，5MB 阈值导致正常固件被误判为空壳。
 - 2026-05-11: 修复 `AI_Auto_Fix_Monitor.yml` Track 3 工作流文件隔离检查 bug：`git diff --cached --name-only | grep "\.github/workflows/"` 当 AI 未修改任何工作流文件时，grep 返回退出码 1，在 `set -e` 下导致脚本立即退出，commit+push 永远无法执行。修复：先赋值变量 `CHANGED_WF_FILES=$(... || true)`，再判断非空。
 - 2026-05-11: 修复 Lienol2 空壳固件根因：`package/index` stub 在 `package/Makefile` 头部插入，破坏了 `include`/`eval` 宏展开，导致 `package/install` 目标无法被正确定义，`make package/install` 报 "No rule to make target"，root.orig-ramips 内容为空，固件变成空壳。修复：(1) `Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml` 中 stub 改为尾部追加（`echo >>` 而非 `{ printf; cat } >`）；(2) `compile_with_retry.py` 的 `fix_package_index_not_found()` 同步修复。
+- 2026-05-12: 四层修复 Lienol2 空壳固件（构建 #262 仍然产空壳，日志显示 `make package/install` 报 "No rule to make target" 且 Quality Gate 误判 pass）：
+  (1) **Bug 1**：`make package/install` 直接调用时，OpenWrt 的 `%::` catch-all 重入机制在某些状态下无法正确让内层 make 找到目标。修复：设置 `OPENWRT_BUILD=1` 绕过 catch-all，直接走 `else` 分支包含 `package/Makefile`，确保目标存在。注意：`package/stamp-install` 是变量名而非目标名，不能用 `make package/stamp-install`。
+  (2) **Bug 2**：`validate_build_output.py` Quality Gate 只看 `has_mega_upload or has_valid_bin_file`，root.orig 不存在仅打印警告不否决。空壳固件（rootfs0=1MB, 无 root.orig, sysupgrade=3.48MB）照样 pass。修复：root.orig 不存在时一票否决 `has_valid_bin_file`，强制 Quality Gate=fail。
+  (3) **Bug 3**：stamp 文件路径错误。OpenWrt `stampfile` 宏生成的路径是 `staging_dir/stamp/.package_install`，但工作流和 compile_with_retry.py 清除的是 `staging_dir/target-*/stamp/.package_install_done`（路径和文件名都不对）。同步修复为清除 `staging_dir/stamp/.package_install` 和 `staging_dir/stamp/.target_install`。
+  (4) Phase 1 的 `make package/install` 也同步改为 `make OPENWRT_BUILD=1 package/install`。
+  (5) **关于 OpenWrt 官方**：Lienol 的 Makefile/package/Makefile/include/ 与 OpenWrt 官方 main 分支完全一致，此问题非 Lienol 特有。但 OpenWrt 官方不设计单独调用 `package/install` 的场景（正常流程用 `make world`），所以不适合给官方提 PR。

@@ -178,6 +178,14 @@ def main():
     print(f"有效固件: {'✓' if has_valid_bin_file else '✗'}")
     print(f"root.orig: {'✓' if root_orig_exists else '✗'}")
 
+    # root.orig 不存在但 .bin 文件存在 → 空壳固件，一票否决
+    is_empty_shell = not root_orig_exists and has_valid_bin_file
+    if is_empty_shell:
+        print("🚫 硬性否决：root.orig 不存在但存在 .bin 文件 → 空壳固件！")
+        print("   即使 .bin 大小超过阈值，没有 root.orig 意味着 package/install 从未成功")
+        print("   固件内不含任何包，刷机后无法正常使用")
+        has_valid_bin_file = False
+
     if has_mega_upload or has_valid_bin_file:
         print("✓ 验证通过：满足至少一项有效的输出要求")
         with open("/tmp/build_validation.txt", "w") as f:
