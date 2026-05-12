@@ -298,17 +298,18 @@ jobs:
       run: |
         cd openwrt
         export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
-        echo "=== 执行 make OPENWRT_BUILD=1 package/install（安装所有已编译包到 root.orig-*）==="
+        echo "=== 执行 make package/install（安装所有已编译包到 root.orig-*）==="
         echo "此步骤将包安装到 root filesystem，让 Lienol2 只需做 target/install + 固件打包"
         echo "开始时间: $(date)"
         # 确保 tmp/.build 存在（stampfile 依赖）
         [ -d tmp ] || mkdir -p tmp
         touch tmp/.build
-        # 关键：直接 make package/install 会因 %:: catch-all 重入失败
-        # 设置 OPENWRT_BUILD=1 绕过 catch-all，直接走 else 分支包含 package/Makefile
-        make OPENWRT_BUILD=1 package/install V=s -j$(nproc) > package_install.log 2>&1 || {
+        # 正确调用方式：不带 OPENWRT_BUILD=1，让 %:: catch-all 自然处理
+        # catch-all 会先运行 prereq → prepare-tmpinfo → 生成 fresh tmp/.packagedeps
+        # 然后 $(SUBMAKE) -r package/install 递归调用时 OPENWRT_BUILD=1 已在环境
+        make package/install V=s -j$(nproc) > package_install.log 2>&1 || {
           echo "⚠️ 多线程失败，尝试单线程..."
-          make OPENWRT_BUILD=1 package/install V=s -j1 > package_install.log 2>&1 || true
+          make package/install V=s -j1 > package_install.log 2>&1 || true
         }
         echo "结束时间: $(date)"
         # 验证 root.orig-* 是否已创建

@@ -2798,7 +2798,7 @@ def fix_root_orig_missing():
 
     根因：package/install 从未成功执行，导致 build_dir/target-*/root.orig-* 不存在。
     当 apk 尝试对 root.orig-ramips 做 --manifest 时报 "Unable to open root: No such file or directory"。
-    修复：清除 package/install 和 target/install 的 stamp，使用 package/stamp-install 重跑。
+    修复：清除 package/install 和 target/install 的 stamp，使用 make package/install 重跑。
     """
     print("🔧 检测到 root.orig-* 缺失，尝试修复...")
 
@@ -2862,22 +2862,22 @@ def fix_root_orig_missing():
         tmp_build.touch()
         print("  ✅ 创建 tmp/.build（package/install 的 stampfile 依赖）")
 
-    print("  ▶️ 运行 make OPENWRT_BUILD=1 package/install V=s -j1...")
+    print("  ▶️ 运行 make package/install V=s -j1...")
     try:
         result = subprocess.run(
-            ["make", "OPENWRT_BUILD=1", "package/install", "V=s", "-j1"],
+            ["make", "package/install", "V=s", "-j1"],
             capture_output=True,
             text=True,
             timeout=1800,
         )
         if result.returncode != 0:
-            print(f"  ⚠️ make package/stamp-install 返回非零退出码: {result.returncode}")
+            print(f"  ⚠️ make package/install 返回非零退出码: {result.returncode}")
             print(f"  stderr (last 500): {result.stderr[-500:]}")
     except subprocess.TimeoutExpired:
-        print("  ❌ make package/stamp-install 超时")
+        print("  ❌ make package/install 超时")
         return False
     except Exception as e:
-        print(f"  ❌ make package/stamp-install 出错: {e}")
+        print(f"  ❌ make package/install 出错: {e}")
         return False
 
     root_orig_dirs = glob.glob("build_dir/target-*/root.orig-*")
@@ -2885,7 +2885,7 @@ def fix_root_orig_missing():
         print(f"  ✅ root.orig-* 已创建: {root_orig_dirs}")
         return True
 
-    print("  ⚠️ 首次 package/stamp-install 后 root.orig-* 仍不存在，再试一次...")
+    print("  ⚠️ 首次 package/install 后 root.orig-* 仍不存在，再试一次...")
     for stamp in glob.glob("staging_dir/stamp/.package_install"):
         try:
             os.remove(stamp)
@@ -2898,18 +2898,18 @@ def fix_root_orig_missing():
             pass
     try:
         result = subprocess.run(
-            ["make", "package/stamp-install", "V=s"],
+            ["make", "package/install", "V=s", "-j1"],
             capture_output=True,
             text=True,
             timeout=1800,
         )
         if result.returncode != 0:
-            print(f"  ⚠️ 第二次 make package/stamp-install 返回非零退出码: {result.returncode}")
+            print(f"  ⚠️ 第二次 make package/install 返回非零退出码: {result.returncode}")
     except subprocess.TimeoutExpired:
-        print("  ❌ 第二次 make package/stamp-install 超时")
+        print("  ❌ 第二次 make package/install 超时")
         return False
     except Exception as e:
-        print(f"  ❌ 第二次 make package/stamp-install 出错: {e}")
+        print(f"  ❌ 第二次 make package/install 出错: {e}")
         return False
 
     root_orig_dirs = glob.glob("build_dir/target-*/root.orig-*")
