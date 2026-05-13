@@ -41,21 +41,50 @@ jobs:
         run: |
           echo "检测到工作流 [$WORKFLOW_NAME] 运行失败！"
           echo "正在下载错误日志 (Run ID: $RUN_ID)..."
+          # 方法1: 尝试使用 gh run download
           if gh run download $RUN_ID -n error-log 2>/dev/null; then
             echo "成功下载 error-log artifact"
           else
             echo "未找到 error-log 产物，尝试通过 gh CLI 提取失败日志..."
-            gh run view $RUN_ID --log-failed 2>/dev/null | tail -n 500 > last_error.log || true
-            if [ -s last_error.log ]; then
-              echo "已从 gh run view 提取日志到 last_error.log"
-            else
+            # 方法2: 使用 gh run view --log-failed
+            if gh run view $RUN_ID --log-failed 2>/dev/null | tail -n 500 > last_error.log; then
+              if [ -s last_error.log ]; then
+                echo "已从 gh run view 提取日志到 last_error.log"
+              fi
+            fi
+            # 方法3: 尝试下载整个 run 的日志
+            if [ ! -s last_error.log ]; then
               echo "gh run view 也未获取到日志，尝试下载完整日志..."
               gh run download $RUN_ID --dir /tmp/failed_run_logs 2>/dev/null || true
               if [ -d /tmp/failed_run_logs ]; then
-                find /tmp/failed_run_logs -name "*.txt" -exec cat {} \; | grep -iE "error|failed|fatal|make: \*\*\*" | tail -n 200 > last_error.log || true
+                find /tmp/failed_run_logs -name "*.txt" -exec cat {} \; 2>/dev/null | grep -iE "error|failed|fatal|make: \*\*\*" | tail -n 200 > last_error.log || true
               fi
             fi
+            # 方法4: 直接从 API 获取日志
+            if [ ! -s last_error.log ]; then
+              echo "尝试从 API 直接获取日志..."
+              gh api repos/${{ github.repository }}/actions/runs/$RUN_ID/jobs --jq '.jobs[0].id' 2>/dev/null | while read job_id; do
+                gh api repos/${{ github.repository }}/actions/jobs/$job_id/logs 2>/dev/null | strings | grep -iE "error|failed|fatal|make: \*\*\*" | tail -n 200 >> last_error.log || true
+              done
+            fi
+            # 方法5: 如果构建工作流还在运行，获取其日志
+            if [ ! -s last_error.log ]; then
+              echo "尝试从构建工作流本身获取日志..."
+              # 等待一小段时间让日志可用
+              sleep 5
+              gh run view $RUN_ID --log 2>/dev/null | strings | grep -iE "error|failed|fatal|make: \*\*\*" | tail -n 200 > last_error.log || true
+            fi
           fi
+          # 如果仍然没有日志，创建占位符
+          if [ ! -s last_error.log ]; then
+            echo "=== 错误日志获取失败 ===" > last_error.log
+            echo "未能获取到失败工作流的错误日志" >> last_error.log
+            echo "Run ID: $RUN_ID" >> last_error.log
+            echo "WorkFlow: $WORKFLOW_NAME" >> last_error.log
+            echo "这可能是由于工作流被取消或超时导致的" >> last_error.log
+          fi
+          echo "=== 最终错误日志 ==="
+          head -20 last_error.log || echo "日志文件为空"
           ls -la
 
       - name: Setup Node.js
@@ -528,7 +557,47 @@ jobs:
           # 拉取最新的提交以避免冲突 (rebase 模式)
           git pull --rebase origin main || true
           
-          git push origin HEAD:main || { echo "::error::Push failed"; exit 1; }
+          # === Push with retry for HTTP 429 (rate limit) ===
+          echo "=== 推送代码到远程仓库 ==="
+          PUSH_MAX_RETRIES=3
+          PUSH_RETRY_COUNT=0
+          PUSH_SUCCESS=false
+          
+          while [ $PUSH_RETRY_COUNT -lt $PUSH_MAX_RETRIES ] && [ "$PUSH_SUCCESS" = "false" ]; do
+            PUSH_RETRY_COUNT=$((PUSH_RETRY_COUNT + 1))
+            echo "推送尝试 $PUSH_RETRY_COUNT / $PUSH_MAX_RETRIES..."
+            
+            if git push origin HEAD:main 2>&1; then
+              PUSH_SUCCESS=true
+              echo "✅ 推送成功"
+            else
+              PUSH_OUTPUT=$(git push origin HEAD:main 2>&1 || true)
+              echo "推送输出: $PUSH_OUTPUT"
+              
+              # 检测是否是 HTTP 429 错误
+              if echo "$PUSH_OUTPUT" | grep -qiE "429|QUOTA_EXHAUSTED|rate limit|Too Many Requests"; then
+                echo "⚠️ 检测到 HTTP 429 (配额耗尽)，等待后重试..."
+                # 指数退避: 10s, 20s, 40s
+                WAIT_TIME=$((10 * (2 ** (PUSH_RETRY_COUNT - 1))))
+                echo "等待 ${WAIT_TIME} 秒后重试..."
+                sleep $WAIT_TIME
+              else
+                # 非 429 错误，直接失败
+                echo "::error::推送失败 (非配额原因): $PUSH_OUTPUT"
+                exit 1
+              fi
+            fi
+          done
+          
+          if [ "$PUSH_SUCCESS" = "false" ]; then
+            echo "::error::推送失败，已尝试 $PUSH_MAX_RETRIES 次仍失败"
+            echo "⚠️ 修复代码已提交到本地，但因 GitHub API 配额限制无法推送"
+            echo "请手动检查并推送修复:"
+            echo "  1. 检查 git status"
+            echo "  2. 运行 git push origin main"
+            exit 1
+          fi
+          
           echo "Track 3 修复成功并已推送"
           
           # ── 重触发工作流（根据失败类型决定重触发Phase1还是Phase2）──
