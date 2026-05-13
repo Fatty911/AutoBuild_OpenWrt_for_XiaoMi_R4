@@ -305,8 +305,28 @@ jobs:
         make -j1 V=s > complete_build.log 2>&1 || {
           echo "⚠️ make -j1 V=s 失败，尝试查看错误..."
           tail -n 100 complete_build.log
-          echo "failure_detected=true" >> $GITHUB_ENV
-          exit 1
+          # 检查是否是 "No rule to make target" 错误（包在 feeds 中不存在）
+          if grep -q "No rule to make target" complete_build.log; then
+            missing_pkg=$(grep "No rule to make target" complete_build.log | sed 's/.*No rule to make target .package\/\([^\/]*\)\/compile.*/\1/' | head -1)
+            if [ -n "$missing_pkg" ]; then
+              echo "包 $missing_pkg 在当前 feeds 中不存在，从 .config 中移除并重新尝试..."
+              sed -i "/CONFIG_PACKAGE_${missing_pkg}=/d" .config 2>/dev/null || true
+              make defconfig > /dev/null 2>&1 || true
+              echo "重新运行 make -j1 V=s..."
+              make -j1 V=s > complete_build.log 2>&1 || {
+                echo "⚠️ 移除缺失包后仍然失败"
+                tail -n 100 complete_build.log
+                echo "failure_detected=true" >> $GITHUB_ENV
+                exit 1
+              }
+            else
+              echo "failure_detected=true" >> $GITHUB_ENV
+              exit 1
+            fi
+          else
+            echo "failure_detected=true" >> $GITHUB_ENV
+            exit 1
+          fi
         }
         echo "结束时间: $(date)"
         # 验证 root.orig-* 是否已创建

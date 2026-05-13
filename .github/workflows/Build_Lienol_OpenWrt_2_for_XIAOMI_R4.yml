@@ -235,15 +235,26 @@ jobs:
         export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
         echo "PATH=$PATH"
         # 验证关键 host 工具可用
+        MISSING_TOOLS=""
         for tool in apk fwtool fakeroot; do
           if which "$tool" >/dev/null 2>&1; then
             echo "✅ $tool: $(which $tool)"
           else
-            echo "⚠️ $tool 不在 PATH 中，尝试 make tools/install..."
-            make tools/install V=s -j$(nproc) || true
-            break
+            echo "⚠️ $tool 不在 PATH 中"
+            MISSING_TOOLS="$MISSING_TOOLS $tool"
           fi
         done
+        if [ -n "$MISSING_TOOLS" ]; then
+          echo "缺失的 host 工具:$MISSING_TOOLS，尝试 make tools/install..."
+          make tools/install V=s -j$(nproc) || true
+          # 再次检查
+          for tool in apk fwtool fakeroot; do
+            if ! which "$tool" >/dev/null 2>&1; then
+              echo "⚠️ $tool 仍然缺失，尝试 make tools/fwtool/install..."
+              make tools/fwtool/install V=s -j1 || true
+            fi
+          done
+        fi
         make defconfig
         [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
         echo "开始执行修复后重试编译..."
@@ -269,19 +280,27 @@ jobs:
     - name: Ensure root.orig exists for valid firmware
       run: |
         cd openwrt
+        export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
         # root.orig-* is created by package/install during make world; if missing, the firmware is an empty shell
         if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
           echo "✅ root.orig-* 存在，固件包含完整包"
         else
           echo "❌ root.orig-* 不存在！这意味着 make world (make -j1 V=s) 未能成功完成 package/install 阶段"
-          echo "    OpenWrt 的 package/install 目标不能单独调用，它只在 make world 的完整上下文中工作"
-          echo "    根因通常是编译错误导致 make world 提前退出"
-          echo "    AI Fix Monitor 会尝试修复编译错误"
-          # 不尝试手动运行 make package/install（这总是失败）
-          # 设置失败标志并退出，触发 error-log 生成
-          echo "failure_reason=root_orig_missing" >> $GITHUB_ENV
-          echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
-          exit 1
+          echo "    尝试清除 package/install stamp 并重新运行 make -j1 V=s..."
+          # 清除 package/install 相关 stamp，强制重新运行
+          rm -f staging_dir/target-*/stamp/.package_install_done 2>/dev/null || true
+          rm -f build_dir/target-*/.pkgdir/*.installed 2>/dev/null || true
+          make -j1 V=s > root_orig_retry.log 2>&1 || true
+          if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
+            echo "✅ 重试后 root.orig-* 已创建"
+          else
+            echo "❌ 重试后 root.orig-* 仍然不存在"
+            echo "    根因通常是编译错误导致 make world 提前退出"
+            echo "    AI Fix Monitor 会尝试修复编译错误"
+            echo "failure_reason=root_orig_missing" >> $GITHUB_ENV
+            echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
+            exit 1
+          fi
         fi
 
     - name: Detect firmware build failure
