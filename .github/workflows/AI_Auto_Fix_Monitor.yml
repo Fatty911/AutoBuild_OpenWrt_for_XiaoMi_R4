@@ -574,15 +574,44 @@ jobs:
               PUSH_OUTPUT=$(git push origin HEAD:main 2>&1 || true)
               echo "推送输出: $PUSH_OUTPUT"
               
-              # 检测是否是 HTTP 429 错误
+              # 检测是否是 HTTP 429 错误 (配额耗尽)
               if echo "$PUSH_OUTPUT" | grep -qiE "429|QUOTA_EXHAUSTED|rate limit|Too Many Requests"; then
                 echo "⚠️ 检测到 HTTP 429 (配额耗尽)，等待后重试..."
                 # 指数退避: 10s, 20s, 40s
                 WAIT_TIME=$((10 * (2 ** (PUSH_RETRY_COUNT - 1))))
                 echo "等待 ${WAIT_TIME} 秒后重试..."
                 sleep $WAIT_TIME
+              # 检测 GitHub App 权限错误 (AI 修改了工作流文件)
+              elif echo "$PUSH_OUTPUT" | grep -qiE "GitHub App|workflows.*permission|without.*workflows|remote rejected.*workflow"; then
+                echo "⚠️ 检测到 GitHub App 权限错误：AI 修改了工作流文件但没有 workflows 权限"
+                echo "正在回滚工作流文件修改..."
+                # 回滚工作流文件的修改
+                git checkout -- .github/workflows/ 2>/dev/null || true
+                git restore --staged .github/workflows/ 2>/dev/null || true
+                
+                # 重新 add 和 commit
+                git add .
+                git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+                git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+                
+                # 再次尝试推送
+                if ! git diff --cached --quiet; then
+                  echo "重新提交非工作流文件修改..."
+                  git commit -m "Auto-fix build error with OpenCode (without workflow files)" || true
+                  echo "=== 再次尝试推送 ==="
+                  if git push origin HEAD:main 2>&1; then
+                    PUSH_SUCCESS=true
+                    echo "✅ 回滚工作流文件后推送成功"
+                  else
+                    echo "::error::回滚后仍推送失败: $(git push origin HEAD:main 2>&1 || true)"
+                    exit 1
+                  fi
+                else
+                  echo "::error::只有工作流文件被修改，无法提交修复"
+                  exit 1
+                fi
               else
-                # 非 429 错误，直接失败
+                # 其他错误，直接失败
                 echo "::error::推送失败 (非配额原因): $PUSH_OUTPUT"
                 exit 1
               fi
