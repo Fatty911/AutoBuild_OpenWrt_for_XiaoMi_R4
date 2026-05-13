@@ -94,3 +94,9 @@
   (3) **Bug 2**：`compile_with_retry.py` 的 `fix_root_orig_missing()` 也使用了错误的 `make OPENWRT_BUILD=1 package/install`，且 retry 逻辑使用了不存在的 `make package/stamp-install` 目标。同步修复为 `make package/install`。
   (4) 同步修改 Lienol1 和 Lienol2 工作流，以及 compile_with_retry.py 的所有相关位置。
   (5) **关于 OpenWrt 官方**：Lienol 的 Makefile/package/Makefile/include/ 与 OpenWrt 官方 main 分支完全一致，此问题非 Lienol 特有。但 OpenWrt 官方不设计单独调用 `package/install` 的场景（正常流程用 `make world`），所以不适合给官方提 PR。
+- 2026-05-13: **六层修复 Lienol 空壳固件**：之前的五层修复仍未解决问题。`make package/install`（无论是否带 OPENWRT_BUILD=1）仍然报 "No rule to make target"。
+  (1) **根因重分析**：OpenWrt 的 `package/install` 目标**不是独立可用的**。它由 `subdir` 宏动态生成，依赖于 `$(curdir)/builddirs` 变量。`builddirs` 来自 `package-y`，而 `package-y` 来自 `tmp/.packagedeps`。即使 `tmp/.packagedeps` 存在，如果它只包含 `kernel/linux`（这是默认添加的），`subdir` 宏生成的 `package/install` 目标会依赖于 `package/kernel/linux/install`，但后者可能不存在（内核使用 BuildKernel 模板，install 目标行为不同）。因此单独调用 `make package/install` 总是失败。
+  (2) **正确方案**：不再尝试单独调用 `make package/install`。改为运行完整的 `make -j1 V=s`（即 `make world`），让 `package/install` 在 `world` 目标的完整上下文中自然被调用。
+  (3) **Lienol1 修改**："Install packages to root filesystem" 步骤改为 "Complete build with make world"，运行 `make -j1 V=s` 完成完整构建。如果失败或 root.orig 不存在，设置 `FIRMWARE_BUILD_FAILED=true` 并 `exit 1`。
+  (4) **Lienol2 修改**："Ensure root.orig exists" 步骤不再尝试 `make package/install`，直接检查 root.orig 是否存在。缺失时设置失败标志并 `exit 1`，触发 error-log 生成和 AI Fix Monitor。
+  (5) **AI Fix Monitor 增强**：增强 error-log 获取兜底逻辑（多种方法获取失败日志），添加 push 重试处理 HTTP 429，添加 GitHub App 权限错误检测（AI 修改工作流文件时自动回滚）。
