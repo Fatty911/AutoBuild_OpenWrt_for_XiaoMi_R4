@@ -269,37 +269,19 @@ jobs:
     - name: Ensure root.orig exists for valid firmware
       run: |
         cd openwrt
-        # root.orig-* is created by package/install; if missing, the firmware is an empty shell
+        # root.orig-* is created by package/install during make world; if missing, the firmware is an empty shell
         if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
           echo "✅ root.orig-* 存在，固件包含完整包"
         else
-          echo "⚠️ root.orig-* 不存在！package/install 可能失败，强制重跑..."
-          export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
-          # 清除 stamp 文件（stampfile 宏生成的路径是 $(STAGING_DIR)/stamp/.package_install）
-          rm -f staging_dir/stamp/.package_install
-          rm -f staging_dir/stamp/.target_install
-          # 先确保 host 工具存在
-          if ! which apk >/dev/null 2>&1; then
-            echo "apk 不在 PATH 中，运行 make tools/install..."
-            make tools/install V=s -j$(nproc) || true
-          fi
-          # 确保 tmp/.build 存在（package/install 的 stampfile 依赖它）
-          [ -d tmp ] || mkdir -p tmp
-          touch tmp/.build
-          # 正确调用方式：不带 OPENWRT_BUILD=1，让 %:: catch-all 自然处理
-          # catch-all 会先运行 prereq → prepare-tmpinfo → 生成 fresh tmp/.packagedeps
-          # 然后 $(SUBMAKE) -r package/install 递归调用时 OPENWRT_BUILD=1 已在环境
-          echo "▶️ 运行 make package/install V=s -j1..."
-          make package/install V=s -j1 || true
-          # 验证 root.orig 是否已创建
-          if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
-            echo "✅ root.orig-* 已创建"
-            # 重跑 target/install 生成有效固件
-            rm -f staging_dir/stamp/.target_install
-            make target/install V=s || true
-          else
-            echo "❌ root.orig-* 仍未创建，固件可能是空壳"
-          fi
+          echo "❌ root.orig-* 不存在！这意味着 make world (make -j1 V=s) 未能成功完成 package/install 阶段"
+          echo "    OpenWrt 的 package/install 目标不能单独调用，它只在 make world 的完整上下文中工作"
+          echo "    根因通常是编译错误导致 make world 提前退出"
+          echo "    AI Fix Monitor 会尝试修复编译错误"
+          # 不尝试手动运行 make package/install（这总是失败）
+          # 设置失败标志并退出，触发 error-log 生成
+          echo "failure_reason=root_orig_missing" >> $GITHUB_ENV
+          echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
+          exit 1
         fi
 
     - name: Detect firmware build failure
