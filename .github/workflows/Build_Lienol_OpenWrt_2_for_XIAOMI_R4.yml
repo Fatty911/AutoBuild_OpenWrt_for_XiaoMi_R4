@@ -248,12 +248,20 @@ jobs:
           echo "缺失的 host 工具:$MISSING_TOOLS，尝试 make tools/install..."
           make tools/install V=s -j$(nproc) || true
           # 再次检查
+          STILL_MISSING=""
           for tool in apk fwtool fakeroot; do
-            if ! which "$tool" >/dev/null 2>&1; then
-              echo "⚠️ $tool 仍然缺失，尝试 make tools/fwtool/install..."
-              make tools/fwtool/install V=s -j1 || true
+            if which "$tool" >/dev/null 2>&1; then
+              echo "✅ $tool 已重建"
+            else
+              echo "❌ $tool 仍然缺失"
+              STILL_MISSING="$STILL_MISSING $tool"
             fi
           done
+          if [ -n "$STILL_MISSING" ]; then
+            echo "::error::关键 host 工具无法重建:$STILL_MISSING，这是 Lienol1 构建产物不完整导致的"
+            echo "failure_reason=missing_host_tools" >> $GITHUB_ENV
+            exit 1
+          fi
         fi
         make defconfig
         [ -f Makefile ] || { echo "::error::openwrt/Makefile 不存在，工作目录异常"; exit 1; }
@@ -294,12 +302,25 @@ jobs:
           if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
             echo "✅ 重试后 root.orig-* 已创建"
           else
-            echo "❌ 重试后 root.orig-* 仍然不存在"
-            echo "    根因通常是编译错误导致 make world 提前退出"
-            echo "    AI Fix Monitor 会尝试修复编译错误"
-            echo "failure_reason=root_orig_missing" >> $GITHUB_ENV
-            echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
-            exit 1
+            echo "⚠️ 重试后 root.orig-* 仍然不存在，尝试从 root-* 复制作为兜底..."
+            # 如果 root-* 存在但 root.orig-* 不存在，复制 root-* 作为兜底
+            for root_dir in build_dir/target-*/root-*; do
+              if [ -d "$root_dir" ] && [ ! -d "${root_dir/root-/root.orig-}" ]; then
+                orig_dir="${root_dir/root-/root.orig-}"
+                cp -a "$root_dir" "$orig_dir"
+                echo "✅ 已创建 $orig_dir（从 $root_dir 复制）"
+              fi
+            done
+            if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
+              echo "✅ 兜底复制后 root.orig-* 已存在"
+            else
+              echo "❌ root.orig-* 仍然不存在"
+              echo "    根因通常是编译错误导致 make world 提前退出"
+              echo "    AI Fix Monitor 会尝试修复编译错误"
+              echo "failure_reason=root_orig_missing" >> $GITHUB_ENV
+              echo "FIRMWARE_BUILD_FAILED=true" >> $GITHUB_ENV
+              exit 1
+            fi
           fi
         fi
 

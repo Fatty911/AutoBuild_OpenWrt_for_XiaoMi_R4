@@ -103,3 +103,12 @@
 - 2026-05-13: **修复 AI_Auto_Fix_Monitor.yml 表达式长度超限**：Track 3 的 `run:` 块包含 430+ 行 shell 脚本，总长度 21664 字符，超过 GitHub Actions 的 21000 字符限制，导致工作流文件验证失败。修复：将 Track 3 的完整脚本提取到 `custom_scripts/run_track3.sh`，workflow 中只保留 `bash custom_scripts/run_track3.sh` 调用。同时将 GitHub 上下文变量（`github.event.workflow_run.id` 等）通过 `env:` 块传入脚本。
 - 2026-05-13: **修复 AI_Auto_Fix_Monitor.yml 表达式长度超限（env 块）**：Track 3 的 `env:` 块包含 46 个环境变量（14 个 model list + 11 个 base URL + 1 个重复 GH_TOKEN），`${{ secrets.* }}` 表达式展开后总长度超过 GitHub Actions 的 21000 字符限制。修复：移除所有 model list 变量（脚本有硬编码默认值）、移除所有 base URL（脚本有硬编码默认值，仅保留 GLM_PROXY_BASE_URL）、移除重复 GH_TOKEN。修改后 Track 3 仅剩 20 个环境变量。
 - 2026-05-13: **修复 Lienol1 构建失败（缺失包）**：`make -j1 V=s` 遇到 `No rule to make target 'package/xray-plugin/compile'`，因为 `.config` 中启用了 `CONFIG_PACKAGE_xray-plugin=y` 但该包在当前 feeds 中不存在。
+- 2026-05-14: **七层修复 Lienol1 缺失包清理逻辑**：Build Lienol 1 #489 的自动清理仍然失败，因为 `sed "/CONFIG_PACKAGE_${missing_pkg}=/d"` 只移除精确匹配行，且未清理 `tmp/.packagedeps`。
+  (1) 改进缺失包提取：从 `head -1` 改为 `sort -u`，支持一次清理多个缺失包。
+  (2) 改进 sed 匹配：从精确匹配 `CONFIG_PACKAGE_${pkg}=` 改为 `CONFIG_PACKAGE_.*${pkg}`，同时清理子包和变体（如 `xray-plugin-mini`）。
+  (3) 增加下划线变体处理：`tr '-' '_'`，因为某些包名在 .config 中可能使用下划线。
+  (4) 强制清理 `tmp/.packagedeps`：移除后运行 `make defconfig`，强制重新生成 package deps 缓存。
+- 2026-05-14: **修复 Lienol2 host 工具检查和 root.orig 兜底**：Build Lienol 2 #487 失败因为 `fwtool` 不在 PATH 中（Lienol1 产物不完整）且 `root.orig-ramips` 不存在。
+  (1) host 工具重建后增加二次检查：如果 `apk/fwtool/fakeroot` 仍然缺失，直接 `exit 1` 并设置 `failure_reason=missing_host_tools`，避免继续编译产生更隐蔽的错误。
+  (2) root.orig 缺失时增加兜底复制：如果 `make -j1 V=s` 重试后仍无法创建 `root.orig-*`，尝试从现有的 `root-*` 复制。这不是完美的修复（root.orig 应该由 package/install 创建），但可以让 manifest 生成继续，避免空壳固件。
+- 2026-05-14: **修复 compile_with_retry.py 的 fix_root_orig_missing()**：函数仍使用 `make package/install`，但 OpenWrt 的 `package/install` 目标不能单独调用（已在 2026-05-13 的六层修复中确认）。同步改为 `make -j1 V=s`，让 `package/install` 在 `make world` 的完整上下文中自然执行。

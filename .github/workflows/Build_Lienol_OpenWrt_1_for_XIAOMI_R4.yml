@@ -307,10 +307,22 @@ jobs:
           tail -n 100 complete_build.log
           # 检查是否是 "No rule to make target" 错误（包在 feeds 中不存在）
           if grep -q "No rule to make target" complete_build.log; then
-            missing_pkg=$(grep "No rule to make target" complete_build.log | sed 's/.*No rule to make target .package\/\([^\/]*\)\/compile.*/\1/' | head -1)
-            if [ -n "$missing_pkg" ]; then
-              echo "包 $missing_pkg 在当前 feeds 中不存在，从 .config 中移除并重新尝试..."
-              sed -i "/CONFIG_PACKAGE_${missing_pkg}=/d" .config 2>/dev/null || true
+            # 提取所有缺失的包（可能有多个）
+            missing_pkgs=$(grep "No rule to make target" complete_build.log | sed 's/.*No rule to make target .package\/\([^\/]*\)\/compile.*/\1/' | sort -u)
+            if [ -n "$missing_pkgs" ]; then
+              echo "以下包在当前 feeds 中不存在，将从 .config 中移除:"
+              echo "$missing_pkgs"
+              for pkg in $missing_pkgs; do
+                # 移除所有包含此包名的 CONFIG 行（包括主包和子包/变体）
+                sed -i "/CONFIG_PACKAGE_.*${pkg}/d" .config 2>/dev/null || true
+                # 同时处理下划线变体（有些包名使用下划线代替连字符）
+                pkg_underscored=$(echo "$pkg" | tr '-' '_')
+                if [ "$pkg_underscored" != "$pkg" ]; then
+                  sed -i "/CONFIG_PACKAGE_.*${pkg_underscored}/d" .config 2>/dev/null || true
+                fi
+              done
+              # 清除 package deps 缓存，强制重新生成
+              rm -f tmp/.packagedeps 2>/dev/null || true
               make defconfig > /dev/null 2>&1 || true
               echo "重新运行 make -j1 V=s..."
               make -j1 V=s > complete_build.log 2>&1 || {

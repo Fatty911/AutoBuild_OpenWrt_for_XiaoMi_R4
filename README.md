@@ -54,6 +54,10 @@ A template for building OpenWrt with GitHub Actions
   - 修复 `dmxapi_meta_router.py` `--config-omo-generic` 增加 `build` agent，解决 oh-my-opencode `--agent build` 找不到 agent 的问题
   - Track 3 跳过 API key 为空的模型，避免浪费尝试次数
   - 修复 AI Fix 429/余额不足未触发 fallback：`auto_fix_with_AI_LLM.py` 将 429 纳入 QUOTA_EXHAUSTED 检测；Track 3 错误匹配增加 429/insufficient/quota/balance 关键词
+  - Lienol1 缺失包自动清理增强：从精确匹配 `CONFIG_PACKAGE_${pkg}=` 改为 `CONFIG_PACKAGE_.*${pkg}`，支持子包/变体清理，增加下划线变体处理（`tr '-' '_'`），强制清理 `tmp/.packagedeps` 后重跑 `make defconfig`
+  - Lienol2 host 工具检查强化：重建后二次检查 `apk/fwtool/fakeroot`，仍缺失时直接 `exit 1` 并设置 `failure_reason=missing_host_tools`，避免继续编译产生隐蔽错误
+  - Lienol2 root.orig 兜底复制：重试 `make -j1 V=s` 后仍无法创建 `root.orig-*` 时，从现有的 `root-*` 复制作为兜底，避免 manifest 生成失败导致空壳固件
+  - 修复 `compile_with_retry.py` `fix_root_orig_missing()`：同步弃用独立的 `make package/install`（OpenWrt 目标不能单独调用），改为 `make -j1 V=s` 让 `package/install` 在 `make world` 上下文中自然执行
 
 > ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
 

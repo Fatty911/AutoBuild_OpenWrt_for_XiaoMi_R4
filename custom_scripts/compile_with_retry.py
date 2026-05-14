@@ -2862,22 +2862,23 @@ def fix_root_orig_missing():
         tmp_build.touch()
         print("  ✅ 创建 tmp/.build（package/install 的 stampfile 依赖）")
 
-    print("  ▶️ 运行 make package/install V=s -j1...")
+    # OpenWrt 的 package/install 目标不能单独调用，只能在 make world 的完整上下文中工作
+    print("  ▶️ 运行 make -j1 V=s（让 package/install 在 make world 上下文中自然执行）...")
     try:
         result = subprocess.run(
-            ["make", "package/install", "V=s", "-j1"],
+            ["make", "-j1", "V=s"],
             capture_output=True,
             text=True,
             timeout=1800,
         )
         if result.returncode != 0:
-            print(f"  ⚠️ make package/install 返回非零退出码: {result.returncode}")
+            print(f"  ⚠️ make -j1 V=s 返回非零退出码: {result.returncode}")
             print(f"  stderr (last 500): {result.stderr[-500:]}")
     except subprocess.TimeoutExpired:
-        print("  ❌ make package/install 超时")
+        print("  ❌ make -j1 V=s 超时")
         return False
     except Exception as e:
-        print(f"  ❌ make package/install 出错: {e}")
+        print(f"  ❌ make -j1 V=s 出错: {e}")
         return False
 
     root_orig_dirs = glob.glob("build_dir/target-*/root.orig-*")
@@ -2885,7 +2886,7 @@ def fix_root_orig_missing():
         print(f"  ✅ root.orig-* 已创建: {root_orig_dirs}")
         return True
 
-    print("  ⚠️ 首次 package/install 后 root.orig-* 仍不存在，再试一次...")
+    print("  ⚠️ 首次 make -j1 V=s 后 root.orig-* 仍不存在，再试一次...")
     for stamp in glob.glob("staging_dir/stamp/.package_install"):
         try:
             os.remove(stamp)
@@ -2898,18 +2899,18 @@ def fix_root_orig_missing():
             pass
     try:
         result = subprocess.run(
-            ["make", "package/install", "V=s", "-j1"],
+            ["make", "-j1", "V=s"],
             capture_output=True,
             text=True,
             timeout=1800,
         )
         if result.returncode != 0:
-            print(f"  ⚠️ 第二次 make package/install 返回非零退出码: {result.returncode}")
+            print(f"  ⚠️ 第二次 make -j1 V=s 返回非零退出码: {result.returncode}")
     except subprocess.TimeoutExpired:
-        print("  ❌ 第二次 make package/install 超时")
+        print("  ❌ 第二次 make -j1 V=s 超时")
         return False
     except Exception as e:
-        print(f"  ❌ 第二次 make package/install 出错: {e}")
+        print(f"  ❌ 第二次 make -j1 V=s 出错: {e}")
         return False
 
     root_orig_dirs = glob.glob("build_dir/target-*/root.orig-*")
