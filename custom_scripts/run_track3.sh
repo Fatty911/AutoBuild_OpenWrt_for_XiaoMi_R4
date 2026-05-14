@@ -1,0 +1,438 @@
+#!/bin/bash
+set -euo pipefail
+
+# Track 3 OpenCode Agent Runner
+# This script is called from AI_Auto_Fix_Monitor.yml
+# Expected env vars: WORKFLOW_RUN_ID, WORKFLOW_NAME, WORKFLOW_PATH, REPOSITORY
+# Plus all API keys needed by pick_best_model.py
+
+set -euo pipefail
+git config --local --unset-all http.https://github.com/.extraheader || true
+
+git fetch origin main
+git checkout main || git checkout -b main
+git reset --hard origin/main
+git clean -fd
+
+if [ ! -f "last_error.log" ]; then
+  echo "Track 3: 未找到 last_error.log，尝试使用 gh CLI 提取原始日志..."
+  gh run download ${WORKFLOW_RUN_ID} -n error-log || echo "日志下载彻底失败，将由大模型自行探索"
+fi
+
+BEST_MODEL=$(python custom_scripts/pick_best_model.py)
+SMALL_MODEL=$(python custom_scripts/pick_best_model.py --small)
+echo "Track 3 选定模型: $BEST_MODEL (轻量: $SMALL_MODEL)"
+
+if [ "$BEST_MODEL" = "NO_MODEL_AVAILABLE" ]; then
+  echo "::error::无可用模型，Track 3 终止"
+  exit 1
+fi
+
+# ── 提取 transplant 步骤上下文（用于 DTS/phandle 报错）──
+TRANSPLANT_CONTEXT=""
+WORKFLOW_YML="${GITHUB_WORKSPACE}/${WORKFLOW_PATH}"
+WORKFLOW_FILENAME=$(basename "$WORKFLOW_YML")
+if [ -f "$WORKFLOW_YML" ]; then
+  TRANSPLANT_CONTEXT=$(grep -A 20 "transplant" "$WORKFLOW_YML" 2>/dev/null | head -30 || echo "未找到 transplant 步骤")
+fi
+
+# ── 获取可用的所有提供商及模型 ──
+echo "==== 收集备用/旧版 Provider 的兜底模型（优先使用）===="
+python custom_scripts/pick_best_model.py --ranked > fallback_models.txt 2>/dev/null || true
+if [ ! -s fallback_models.txt ]; then
+  touch fallback_models.txt
+fi
+
+echo "==== 收集 DMXAPI 实时可用的高阶免费模型 ===="
+python custom_scripts/dmxapi_meta_router.py --list > dmxapi_models.txt 2>/dev/null || true
+
+# fallback 模型放在最前面（优先使用），DMXAPI 模型作为备选
+cat fallback_models.txt dmxapi_models.txt | awk '!x[$0]++' > models_to_try.txt
+
+echo "将要尝试的模型优先级列表:"
+cat models_to_try.txt
+
+cp $GITHUB_WORKSPACE/AGENTS.md . 2>/dev/null || true
+
+# ── 保护关键文件：AI 运行前备份，防止 AI 误删 ──
+PROTECTED_FILES="opencode.json oh-my-openagent.json AGENTS.md"
+for f in $PROTECTED_FILES; do
+  [ -f "$f" ] && cp "$f" "${f}.protected_backup"
+done
+
+FIX_SUCCEEDED=false
+MAX_MODEL_TRIES=5
+MODEL_TRIES=0
+MODEL_TIMEOUT=1200
+DMXAPI_BROKEN=false  # DMXAPI 证书过期时标记不可用
+while read -r FULL_MODEL; do
+  [ -z "$FULL_MODEL" ] && continue
+  
+  PROVIDER=$(echo "$FULL_MODEL" | cut -d '/' -f 1)
+  
+  # DMXAPI 证书过期 → 跳过所有 DMXAPI 模型，fallback 到其他 provider
+  if [ "$DMXAPI_BROKEN" = "true" ] && [ "$PROVIDER" = "dmxapi" ]; then
+    echo "⏭️ DMXAPI 已标记不可用，跳过: $FULL_MODEL"
+    continue
+  fi
+  
+  # 限制最大尝试次数（非 DMXAPI 不可用时不计入）
+  MODEL_TRIES=$((MODEL_TRIES + 1))
+  if [ "$MODEL_TRIES" -gt "$MAX_MODEL_TRIES" ]; then
+    echo "已尝试 $MAX_MODEL_TRIES 个模型，停止继续尝试"
+    break
+  fi
+  
+  MODEL_NAME=$(echo "$FULL_MODEL" | cut -d '/' -f 2-)
+  
+  echo "=========================================================="
+  echo "🔥 当前尝试使用提供商/模型: $FULL_MODEL"
+  echo "=========================================================="
+  
+  # 生成本次尝试所用的配置
+  if [ "$PROVIDER" = "dmxapi" ]; then
+     python custom_scripts/dmxapi_meta_router.py --config-opencode "$PROVIDER" "$MODEL_NAME" > opencode.json
+     mkdir -p ~/.config/opencode
+     python custom_scripts/dmxapi_meta_router.py --config-omo > ~/.config/opencode/oh-my-openagent.json
+  else
+     python custom_scripts/pick_best_model.py --opencode-config-for "$PROVIDER" "$MODEL_NAME" > opencode.json
+     mkdir -p ~/.config/opencode
+     python custom_scripts/dmxapi_meta_router.py --config-omo-generic "$PROVIDER" "$MODEL_NAME" > ~/.config/opencode/oh-my-openagent.json
+  fi
+  
+  # 同步 opencode.json 到 ~/.config/opencode/ 供 oh-my-opencode 读取
+  cp opencode.json ~/.config/opencode/opencode.json
+  
+  # 验证生成的 opencode.json 是否合法 JSON
+  if ! python3 -c "import json; json.load(open('opencode.json'))" 2>/dev/null; then
+    echo "::warning::opencode.json 不是合法 JSON，跳过此模型"
+    cat opencode.json
+    continue
+  fi
+  
+  # 检查 API key 是否为空，避免浪费尝试次数
+  API_KEY=$(python3 -c "import json; c=json.load(open('opencode.json')); p=c.get('provider',{}); v=list(p.values())[0] if p else {}; print(v.get('options',{}).get('apiKey',''))")
+  if [ -z "$API_KEY" ]; then
+    echo "::warning::⏭️ API key 为空，跳过: $FULL_MODEL"
+    continue
+  fi
+  
+  # 打印生成的配置（隐藏 API key）供调试
+  echo "==== 生成的 opencode.json（脱敏）===="
+  python3 -c "import json; c=json.load(open('opencode.json')); p=c.get('provider',{}); [v.update({'options':{k:(v['options'][k][:8]+'...' if k=='apiKey' and v['options'][k] else v['options'].get(k,'')) for k in v.get('options',{})}}) for v in p.values() if 'options' in v]; print(json.dumps(c, indent=2))"
+  echo "==== oh-my-openagent.json ===="
+  cat ~/.config/opencode/oh-my-openagent.json 2>/dev/null || echo "未生成"
+  
+  # ── 根据报错类型定制 prompt（使用临时文件避免 YAML 多行解析问题）──
+  FAILURE_TYPE="build"
+  if grep -qi "Phase 1 上传失败\|phase1-upload\|需修复 MEGA 上传逻辑" last_error.log 2>/dev/null; then
+    FAILURE_TYPE="phase1-upload"
+  elif grep -qi "Phase 2 下载失败\|mega-download\|需修复 MEGA 下载逻辑" last_error.log 2>/dev/null; then
+    FAILURE_TYPE="mega-download"
+  fi
+  echo "检测到失败类型: $FAILURE_TYPE"
+  
+  if [ "$FAILURE_TYPE" = "phase1-upload" ]; then
+    echo "Phase 1 编译成功但 MEGA 上传失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的上传逻辑（upload_to_mega 函数），找出上传失败的根本原因并修复。常见问题：mega-rpc 命令不存在、mega-put 超时、登录失败、存储满等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+  elif [ "$FAILURE_TYPE" = "mega-download" ]; then
+    echo "Phase 1 已成功上传到 MEGA，但 Phase 2 下载失败。请分析 last_error.log 和 custom_scripts/mega_manager.py 的下载逻辑（download_from_mega 函数），找出下载失败的根本原因并修复。常见问题：mega-get 超时、登录失败、文件路径错误等。只修改 custom_scripts/mega_manager.py，不要改动其他文件。修复完成后请退出。" > prompt.txt
+  elif grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
+    echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
+  else
+    echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release、Delete workflow runs）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
+  fi
+  
+  # ── 尝试 oh-my-opencode（必须使用 --agent build）──
+  # 跳过 SSL/TLS 证书验证以应对 DMXAPI 等 Provider 证书过期
+  echo "尝试 oh-my-opencode run --agent build..."
+  TIMEOUT_EXIT=0
+  NODE_TLS_REJECT_UNAUTHORIZED=0 timeout $MODEL_TIMEOUT oh-my-opencode run --agent build "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+  echo "oh-my-opencode 退出码: $TIMEOUT_EXIT"
+  if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
+    echo "::warning::oh-my-opencode 超时（${MODEL_TIMEOUT}秒），检查是否有有效代码修改..."
+    # 超时不代表没有产出 - AI 可能在超时前已完成修改，检查 git diff 保留成果
+    git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    git add .
+    git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    if ! git diff --cached --quiet; then
+      echo "✅ 虽然超时，但检测到有效代码修改，视为修复成功"
+      FIX_SUCCEEDED=true
+      break
+    else
+      echo "::warning::超时且无有效代码修改，准备尝试下一个模型..."
+      continue
+    fi
+  elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401|429|余额不足|insufficient|quota|balance" opencode_output.log; then
+    echo "::warning::oh-my-opencode 运行异常或模型参数不兼容，准备 fallback..."
+    # DMXAPI 证书过期 → 标记不可用，后续跳过所有 DMXAPI 模型
+    if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then
+      echo "⚠️ 检测到 DMXAPI 证书过期，标记 DMXAPI 不可用，后续将跳过"
+      DMXAPI_BROKEN=true
+    fi
+  else
+    FIX_SUCCEEDED=true
+  fi
+  
+  if [ "$FIX_SUCCEEDED" = "false" ]; then
+    echo "尝试 opencode run..."
+    TIMEOUT_EXIT=0
+  NODE_TLS_REJECT_UNAUTHORIZED=0 timeout $MODEL_TIMEOUT opencode run "$(cat prompt.txt)" 2>&1 | tee opencode_output.log || TIMEOUT_EXIT=$?
+  echo "opencode 退出码: $TIMEOUT_EXIT"
+  if [ "${TIMEOUT_EXIT:-0}" = "124" ]; then
+    echo "::warning::opencode 超时（${MODEL_TIMEOUT}秒），检查是否有有效代码修改..."
+    git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    git add .
+    git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    if ! git diff --cached --quiet; then
+      echo "✅ 虽然超时，但检测到有效代码修改，视为修复成功"
+      FIX_SUCCEEDED=true
+      break
+    else
+      echo "::warning::超时且无有效代码修改，准备尝试下一个模型..."
+      continue
+    fi
+    elif grep -qiE "ProviderModelNotFoundError|Error: Model not found|\[session\.error\]|UnknownError|参数错误|Bad Request|certificate has expired|certificate|SSL|TLS|timeout|ETIMEDOUT|Failed to create session|Unauthorized|401|429|余额不足|insufficient|quota|balance" opencode_output.log; then
+      echo "::warning::oh-my-opencode 和 opencode 均失败，准备尝试下一个模型..."
+      # DMXAPI 证书过期 → 标记不可用
+      if [ "$PROVIDER" = "dmxapi" ] && grep -qiE "certificate has expired|SSL|TLS" opencode_output.log; then
+        DMXAPI_BROKEN=true
+      fi
+    else
+      FIX_SUCCEEDED=true
+    fi
+  fi
+  rm -f prompt.txt opencode_output.log
+  
+  # 如果某次循环成功产生了代码修改，立刻退出循环并提交
+  if [ "$FIX_SUCCEEDED" = "true" ]; then
+    # 判断是否真正修改了代码（除了自动生成的缓存文件）
+    git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    git add .
+    git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt 2>/dev/null || true
+    
+    if ! git diff --cached --quiet; then
+      echo "✅ 成功利用 $FULL_MODEL 完成修复，退出模型循环。"
+      break
+    else
+      echo "⚠️ 模型 $FULL_MODEL 运行结束，但没有产生有效的代码修改，将继续尝试更强模型..."
+      FIX_SUCCEEDED=false
+    fi
+  fi
+done < models_to_try.txt
+
+# ── 检查是否最终修复成功 ──
+if [ "$FIX_SUCCEEDED" != "true" ]; then
+  echo "::error::所有模型尝试完毕，Track 3 AI 修复彻底失败，不提交任何更改"
+  exit 1
+fi
+
+git config user.name "github-actions[bot]"
+git config user.email "github-actions[bot]@users.noreply.github.com"
+
+# ── 恢复被 AI 误删的关键文件 ──
+for f in $PROTECTED_FILES; do
+  if [ ! -f "$f" ] && [ -f "${f}.protected_backup" ]; then
+    echo "⚠️ AI 删除了 $f，正在恢复..."
+    cp "${f}.protected_backup" "$f"
+  fi
+done
+ rm -f *.protected_backup 2>/dev/null || true
+
+# ── 防止 AI 改到其他工作流文件 ──
+echo "=== 🔒 工作流文件隔离检查 ==="
+TARGET_WF="$(basename "$WORKFLOW_YML")"
+CHANGED_WF_FILES=$(git diff --cached --name-only | grep "\.github/workflows/" || true)
+if [ -n "$CHANGED_WF_FILES" ]; then
+  echo "$CHANGED_WF_FILES" | while read -r wf; do
+    wf_name=$(basename "$wf")
+    if [ "$wf_name" != "$TARGET_WF" ] && [ -f "$wf" ]; then
+      echo "⚠️ AI 意外修改了非目标工作流: $wf_name → 正在恢复"
+      git checkout HEAD -- "$wf"
+      git reset HEAD "$wf" 2>/dev/null || true
+    fi
+  done
+else
+  echo "✅ AI 未修改任何工作流文件，隔离检查通过"
+fi
+
+# ── 文件数量异常检测（防 gh repo sync --force 等意外大规模删除）──
+echo "=== 📊 文件数量异常检测 ==="
+WF_COUNT_BEFORE=$(git rev-parse HEAD:./.github/workflows/ 2>/dev/null)
+if [ -n "$WF_COUNT_BEFORE" ]; then
+  WORKFLOW_BEFORE=$(git ls-tree HEAD -- .github/workflows/ | wc -l)
+else
+  WORKFLOW_BEFORE=8
+fi
+SCRIPTS_BEFORE=$(git ls-tree HEAD -- custom_scripts/ | wc -l)
+WORKFLOW_AFTER=$(find .github/workflows/ -name "*.yml" | wc -l)
+SCRIPTS_AFTER=$(find custom_scripts/ -type f 2>/dev/null | wc -l)
+
+echo "工作流文件: ${WORKFLOW_BEFORE} → ${WORKFLOW_AFTER}"
+echo "脚本文件:   ${SCRIPTS_BEFORE} → ${SCRIPTS_AFTER}"
+
+WF_PCT=$(( (WORKFLOW_BEFORE - WORKFLOW_AFTER) * 100 / (WORKFLOW_BEFORE + 1) ))
+SC_PCT=$(( (SCRIPTS_BEFORE - SCRIPTS_AFTER) * 100 / (SCRIPTS_BEFORE + 1) ))
+
+if [ "$WF_PCT" -ge 20 ] || [ "$SC_PCT" -ge 20 ]; then
+  echo "::error::❌ 文件数量异常减少 ≥20%！可能发生了大规模误删（如 gh repo sync --force）。回滚修改并报告异常。"
+  echo "::error::工作流: ${WORKFLOW_BEFORE}→${WORKFLOW_AFTER} (${WF_PCT}%)，脚本: ${SCRIPTS_BEFORE}→${SCRIPTS_AFTER} (${SC_PCT}%)"
+  git checkout -- .
+  git clean -fd
+  exit 1
+fi
+echo "✅ 文件数量正常"
+
+# ── 清理临时文件，但不删除 last_error.log（评审还需要用）──
+rm -f prompt.txt opencode.json 2>/dev/null || true
+
+# 排除自动生成的缓存文件和运行时临时文件
+git restore --staged .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+
+git add .
+
+# 再次确保缓存文件和临时文件不被提交
+git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+
+if git diff --cached --quiet; then
+  echo "::error::AI 运行完成但未产生任何代码更改，修复可能无效"
+  exit 1
+fi
+
+# === 推送前语法校验 ===
+echo "=== 🔍 推送前语法校验 ==="
+python custom_scripts/validate_syntax.py
+VALIDATION_EXIT=$?
+if [ $VALIDATION_EXIT -ne 0 ]; then
+  echo "::error::❌ 语法校验失败，拒绝推送，回滚修改"
+  git checkout -- .
+  git clean -fd
+  exit 1
+fi
+echo "✅ 语法校验通过，准备提交"
+
+# === 多模型共识评审：5个模型评审，3/5通过才放行（只执行一次）===
+echo "=== 🔍 多模型共识评审 ==="
+ERROR_LOG_CONTENT=$(cat last_error.log 2>/dev/null || echo "No error log")
+REVIEW_OUTPUT=$(python custom_scripts/multi_agent_review.py review --error "$ERROR_LOG_CONTENT" 2>&1)
+REVIEW_EXIT=$?
+echo "$REVIEW_OUTPUT"
+if echo "$REVIEW_OUTPUT" | grep -q "RESULT: FAIL"; then
+  echo "::error::❌ 多模型共识评审未通过，回滚修改"
+  git checkout -- .
+  git clean -fd
+  exit 1
+fi
+echo "✅ 多模型共识评审通过，准备提交"
+
+# 评审通过后才删除 last_error.log
+rm -f last_error.log
+
+git commit -m "Auto-fix build error with OpenCode Deep Repair"
+git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${REPOSITORY}.git
+
+# 拉取最新的提交以避免冲突 (rebase 模式)
+git pull --rebase origin main || true
+
+# === Push with retry for HTTP 429 (rate limit) ===
+echo "=== 推送代码到远程仓库 ==="
+PUSH_MAX_RETRIES=3
+PUSH_RETRY_COUNT=0
+PUSH_SUCCESS=false
+
+while [ $PUSH_RETRY_COUNT -lt $PUSH_MAX_RETRIES ] && [ "$PUSH_SUCCESS" = "false" ]; do
+  PUSH_RETRY_COUNT=$((PUSH_RETRY_COUNT + 1))
+  echo "推送尝试 $PUSH_RETRY_COUNT / $PUSH_MAX_RETRIES..."
+  
+  if git push origin HEAD:main 2>&1; then
+    PUSH_SUCCESS=true
+    echo "✅ 推送成功"
+  else
+    PUSH_OUTPUT=$(git push origin HEAD:main 2>&1 || true)
+    echo "推送输出: $PUSH_OUTPUT"
+    
+    # 检测是否是 HTTP 429 错误 (配额耗尽)
+    if echo "$PUSH_OUTPUT" | grep -qiE "429|QUOTA_EXHAUSTED|rate limit|Too Many Requests"; then
+      echo "⚠️ 检测到 HTTP 429 (配额耗尽)，等待后重试..."
+      # 指数退避: 10s, 20s, 40s
+      WAIT_TIME=$((10 * (2 ** (PUSH_RETRY_COUNT - 1))))
+      echo "等待 ${WAIT_TIME} 秒后重试..."
+      sleep $WAIT_TIME
+    # 检测 GitHub App 权限错误 (AI 修改了工作流文件)
+    elif echo "$PUSH_OUTPUT" | grep -qiE "GitHub App|workflows.*permission|without.*workflows|remote rejected.*workflow"; then
+      echo "⚠️ 检测到 GitHub App 权限错误：AI 修改了工作流文件但没有 workflows 权限"
+      echo "正在回滚工作流文件修改..."
+      # 回滚工作流文件的修改
+      git checkout -- .github/workflows/ 2>/dev/null || true
+      git restore --staged .github/workflows/ 2>/dev/null || true
+      
+      # 重新 add 和 commit
+      git add .
+      git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+      git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
+      
+      # 再次尝试推送
+      if ! git diff --cached --quiet; then
+        echo "重新提交非工作流文件修改..."
+        git commit -m "Auto-fix build error with OpenCode (without workflow files)" || true
+        echo "=== 再次尝试推送 ==="
+        if git push origin HEAD:main 2>&1; then
+          PUSH_SUCCESS=true
+          echo "✅ 回滚工作流文件后推送成功"
+        else
+          echo "::error::回滚后仍推送失败: $(git push origin HEAD:main 2>&1 || true)"
+          exit 1
+        fi
+      else
+        echo "::error::只有工作流文件被修改，无法提交修复"
+        exit 1
+      fi
+    else
+      # 其他错误，直接失败
+      echo "::error::推送失败 (非配额原因): $PUSH_OUTPUT"
+      exit 1
+    fi
+  fi
+done
+
+if [ "$PUSH_SUCCESS" = "false" ]; then
+  echo "::error::推送失败，已尝试 $PUSH_MAX_RETRIES 次仍失败"
+  echo "⚠️ 修复代码已提交到本地，但因 GitHub API 配额限制无法推送"
+  echo "请手动检查并推送修复:"
+  echo "  1. 检查 git status"
+  echo "  2. 运行 git push origin main"
+  exit 1
+fi
+
+echo "Track 3 修复成功并已推送"
+
+# ── 重触发工作流（根据失败类型决定重触发Phase1还是Phase2）──
+FAILED_WORKFLOW="${WORKFLOW_NAME}"
+FAILED_RUN_ID="${WORKFLOW_RUN_ID}"
+WORKFLOW_PATH="${WORKFLOW_PATH}"
+WORKFLOW_FILENAME=$(basename "$WORKFLOW_PATH")
+
+# 从last_error.log检测失败类型
+RETRIGGER_TYPE="self"
+if grep -qi "Phase 1 上传失败\|phase1-upload\|需修复 MEGA 上传逻辑" last_error.log 2>/dev/null; then
+  RETRIGGER_TYPE="phase1"
+fi
+
+if [ "$RETRIGGER_TYPE" = "phase1" ]; then
+  # Phase1上传失败 → 修复后应重触发Phase1让它重新上传
+  PHASE1_WORKFLOW=""
+  case "$WORKFLOW_FILENAME" in
+    Build_OpenWrt_Firmware.yml) PHASE1_WORKFLOW="$WORKFLOW_FILENAME" ;;  # standalone build, no Phase1
+    Build_Lienol_OpenWrt_2_for_XIAOMI_R4.yml) PHASE1_WORKFLOW="Build_Lienol_OpenWrt_1_for_XIAOMI_R4.yml" ;;
+    *) PHASE1_WORKFLOW="$WORKFLOW_FILENAME" ;;
+  esac
+  echo "根因是Phase1上传失败，重触发Phase1: $PHASE1_WORKFLOW"
+  gh workflow run "$PHASE1_WORKFLOW" --ref main || echo "重触发Phase1失败，可手动触发"
+else
+  echo "重触发原失败工作流: $FAILED_WORKFLOW (文件: $WORKFLOW_FILENAME)"
+  gh workflow run "$WORKFLOW_FILENAME" --ref main || echo "重触发失败，可手动触发"
+fi
+
