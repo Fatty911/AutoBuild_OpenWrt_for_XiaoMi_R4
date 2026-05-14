@@ -1,0 +1,8 @@
+{
+  "timestamp": 1778722675.4672027,
+  "valid_models": [
+    "nvidia/nemotron-3-nano-30b-a3b:free",
+    "openai/gpt-oss-120b:free",
+    "openai/gpt-oss-20b:free"
+  ]
+}
