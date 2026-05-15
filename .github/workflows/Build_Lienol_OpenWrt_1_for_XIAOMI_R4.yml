@@ -233,24 +233,17 @@ jobs:
           sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || true
           echo "base-files PKG_RELEASE 已设为 1"
         fi
-        # 主动扫描并移除 .config 中不存在的包（避免编译时失败后重试导致超时）
-        echo "=== 预检查：移除 .config 中不存在的包 ==="
-        MISSING_COUNT=0
-        for pkg in $(grep "^CONFIG_PACKAGE_" .config | grep "=y$\|=m$" | cut -d'=' -f1 | cut -d'_' -f3-); do
-          # 检查包是否存在于 package/ 或 package/feeds/
-          if [ ! -d "package/$pkg" ] && [ ! -d "package/feeds/*/$pkg" ]; then
-            echo "⚠️ 移除不存在的包: $pkg"
-            sed -i "/CONFIG_PACKAGE_.*${pkg}/d" .config 2>/dev/null || true
-            MISSING_COUNT=$((MISSING_COUNT + 1))
+        echo "=== 快速预检查：移除可能不存在的包 ==="
+        for PKG in xray-plugin v2ray-plugin; do
+          if grep -q "CONFIG_PACKAGE_${PKG}=" .config 2>/dev/null; then
+            if [ ! -d "package/${PKG}" ] && [ ! -d "package/feeds/*/${PKG}" ]; then
+              echo "⚠️ 移除不存在的包: ${PKG}"
+              sed -i "/CONFIG_PACKAGE_.*${PKG}/d" .config 2>/dev/null || true
+            fi
           fi
         done
-        if [ "$MISSING_COUNT" -gt 0 ]; then
-          echo "移除了 $MISSING_COUNT 个不存在的包，重新生成配置..."
-          rm -f tmp/.packagedeps
-          make defconfig > /dev/null 2>&1 || true
-        else
-          echo "✅ 所有 .config 中的包都存在于 feeds"
-        fi
+        rm -f tmp/.packagedeps
+        make defconfig > /dev/null 2>&1 || true
         # 逐行读取 feeds.conf.default 并编译
         while IFS= read -r line; do
           [[ -z "$line" || "$line" =~ ^# ]] && continue
