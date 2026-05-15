@@ -253,7 +253,30 @@ jobs:
             else
               retry_count=$((retry_count + 1))
               echo "尝试第 $retry_count 次修复..."
-              if grep -q "PKG_VERSION.*error" packages.log; then
+              # 检查是否是 "No rule to make target" 错误（包在 feeds 中不存在）
+              if grep -q "No rule to make target" packages.log; then
+                # 提取缺失的包
+                missing_pkgs=$(grep "No rule to make target" packages.log | sed 's/.*No rule to make target .package\/\([^\/]*\)\/compile.*/\1/' | sort -u)
+                if [ -n "$missing_pkgs" ]; then
+                  echo "⚠️ 以下包在 feeds 中不存在，将从 .config 中移除:"
+                  echo "$missing_pkgs"
+                  for m_pkg in $missing_pkgs; do
+                    sed -i "/CONFIG_PACKAGE_.*${m_pkg}/d" .config 2>/dev/null || true
+                    m_pkg_underscored=$(echo "$m_pkg" | tr '-' '_')
+                    if [ "$m_pkg_underscored" != "$m_pkg" ]; then
+                      sed -i "/CONFIG_PACKAGE_.*${m_pkg_underscored}/d" .config 2>/dev/null || true
+                    fi
+                  done
+                  rm -f tmp/.packagedeps 2>/dev/null || true
+                  make defconfig > /dev/null 2>&1 || true
+                  echo "已移除缺失包，重试编译..."
+                  # 重试当前包的编译
+                  if make package/$pkg/compile V=s > packages.log 2>&1 || make -j1 package/$pkg/compile V=s > packages.log 2>&1; then
+                    echo "✅ 包 $pkg 在移除缺失依赖后编译成功"
+                    retry_count=0
+                  fi
+                fi
+              elif grep -q "PKG_VERSION.*error" packages.log; then
                 echo "Fixing PKG_VERSION formats..."
                 find ./package ./feeds -type f \( -name "Makefile" -o -name "*.mk" \) 2>/dev/null | while read -r makefile; do
                   if grep -q "PKG_VERSION:=.*\..*\..*-[0-9]\+" "$makefile" && ! grep -q "PKG_RELEASE:=" "$makefile"; then
