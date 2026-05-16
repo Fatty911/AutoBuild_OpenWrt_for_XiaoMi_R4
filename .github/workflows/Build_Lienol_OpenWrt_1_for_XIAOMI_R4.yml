@@ -234,7 +234,7 @@ jobs:
           echo "base-files PKG_RELEASE 已设为 1"
         fi
         echo "=== 快速预检查：移除可能不存在的包 ==="
-        for PKG in xray-plugin v2ray-plugin; do
+        for PKG in xray-plugin xray-core v2ray-plugin v2ray-geosite v2ray-geoip; do
           if grep -q "CONFIG_PACKAGE_${PKG}=" .config 2>/dev/null; then
             if [ ! -d "package/${PKG}" ] && [ ! -d "package/feeds/*/${PKG}" ]; then
               echo "⚠️ 移除不存在的包: ${PKG}"
