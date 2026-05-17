@@ -117,3 +117,10 @@
   (2) **增强 run_track3.sh git push 重试**：推送前先 `git pull --rebase` 避免冲突；推送被拒绝时自动 rebase 冲突解决（`--ours` 策略）；重试次数从 3 增至 5；429 指数退避从 10s 起步改为 15s；新增 `rejected`/`non-fast-forward` 检测（不 sleep 直接进入下次 pull+push 循环）；GitHub App 权限错误回滚后不再立即退出，允许循环继续尝试。
   (3) **增强 auto_fix_with_AI_LLM.py call_api 429 重试**：`call_api()` 新增 429 状态码重试（最多 2 次指数退避），其他临时错误也增加重试，QUOTA_EXHAUSTED 和 CONTEXT_LENGTH_EXCEEDED 仍立即抛出不重试。
   (4) **禁用 fullconenat**：`custom_configs/config_for_Lienol` 中注释 `kmod-ipt-fullconenat` 和 `iptables-mod-fullconenat`（源返回 HTTP 404）。
+- 2026-05-17: **彻底禁用 fullconenat（三层防护）**：仅注释 .config 不够，`make defconfig` 会因依赖关系重新启用 fullconenat。
+  (1) **diy-part1.sh**：在 feeds update 前删除 fullconenat Makefile。
+  (2) **Lienol1 工作流 feeds install 后**：再次删除 fullconenat Makefile 和目录（feeds install 会重新引入）。
+  (3) **Lienol1 预检查步骤**：强制从 .config 中移除所有 fullconenat 相关 CONFIG 行，并删除 fullconenat 目录。
+  (4) **Lienol1 complete_build 步骤**：新增 fullconenat hash mismatch 自动检测和修复逻辑。
+  (5) **run_track3.sh AI prompt**：增加 fullconenat 修复具体指导（禁用包而非修复 hash）。
+  根因：`llccd/netfilter-full-cone-nat` 仓库 git archive 产生的 hash 与 OpenWrt package Makefile 中记录的 hash 不一致（`expected 437dff... got db90c3b...`），且上游不维护此 hash，因此只能彻底禁用。

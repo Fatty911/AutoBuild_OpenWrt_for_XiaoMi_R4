@@ -139,7 +139,7 @@ while read -r FULL_MODEL; do
   elif grep -qi "phandle\|dts\|dtsi\|factory\|transplant" last_error.log 2>/dev/null; then
     echo "分析 last_error.log 中的 DTS/phandle 报错信息。请修复编译问题。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release 等）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。当前工作流的 transplant 步骤内容：$TRANSPLANT_CONTEXT" > prompt.txt
   else
-    echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release、Delete workflow runs）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。修复完成后请退出。" > prompt.txt
+    echo "分析 last_error.log 中的报错信息。运用 LSP 和 Grep 搜索源码，找到根本原因并修复代码。请遵守 AGENTS.md 的规则：不要删除关键步骤（Generate release tag、Upload firmware to release、Delete workflow runs）。重要：不要删除或修改 opencode.json、oh-my-openagent.json 等工具配置文件。不要修改其他工作流文件（只改当前失败的：$WORKFLOW_FILENAME）。查看报错后先扫码一遍 git 历史看有没有解决类似问题的提交，不要改来改去犯重复的错误。特别提示：如果报错涉及 fullconenat 的 Hash mismatch 或下载失败，正确修复方法是从 .config 中移除 CONFIG_PACKAGE_kmod-ipt-fullconenat 和 CONFIG_PACKAGE_iptables-mod-fullconenat，并删除 fullconenat 的 Makefile（find package feeds -path '*/fullconenat/Makefile' -delete），不要尝试修复 hash 值。如果报错涉及某个包在 feeds 中不存在，正确修复方法是从 .config 中移除对应的 CONFIG_PACKAGE_* 行并重新 make defconfig。修复完成后请退出。" > prompt.txt
   fi
   
   # ── 尝试 oh-my-opencode（必须使用 --agent build）──
