@@ -40,7 +40,7 @@
 - **允许缓存兜底**：实时抓取成功后必须把结果写回缓存文件（如 `.leaderboard_cache.json`），供下次抓取失败时兜底。缓存超过 14 天未更新时必须打印警告但仍可使用。无论是本地还是 GitHub Action 中，只要有自动回退机制，就可以用缓存兜底，但必须保证每一两周至少爬一次排行榜更新缓存，不能长期不更新。
 - 优先选择排行榜前 30 且有免费资源的模型。当前已知免费渠道：
   - AtomGit：`zai-org/GLM-5`、`Qwen/Qwen3.5-397B-A17B`（无限量，500次/分，端点 `https://api-ai.gitcode.com/v1`）
-  - OpenRouter：动态 API 自动发现所有 `:free` 及零定价模型（如 `qwen/qwen3.6-plus:free`、`google/gemma-4-31b-it:free`、`nvidia/nemotron-3-super-120b-a12b:free` 等），不再依赖硬编码列表
+  - OpenRouter：动态 API 自动发现所有 `:free` 及零定价模型（如 `qwen/qwen3-coder:free`、`deepseek/deepseek-v4-flash:free`、`google/gemma-4-31b-it:free`、`nvidia/nemotron-3-super-120b-a12b:free` 等），不再依赖硬编码列表
   - ZEN：排行榜前 30 的免费模型
   - NVIDIA NIM：`moonshotai/kimi-k2.5`（免费，262K context，1T MoE 32B active，Intelligence Index 46.8，强推理，端点 `https://integrate.api.nvidia.com/v1`）
   - 七牛云：`nvidia/nemotron-3-super-120b-a12b-free`（免费，1M context，120B MoE 12B active，强推理，端点 `https://api.qnaigc.com/v1`）
@@ -112,3 +112,8 @@
   (1) host 工具重建后增加二次检查：如果 `apk/fwtool/fakeroot` 仍然缺失，直接 `exit 1` 并设置 `failure_reason=missing_host_tools`，避免继续编译产生更隐蔽的错误。
   (2) root.orig 缺失时增加兜底复制：如果 `make -j1 V=s` 重试后仍无法创建 `root.orig-*`，尝试从现有的 `root-*` 复制。这不是完美的修复（root.orig 应该由 package/install 创建），但可以让 manifest 生成继续，避免空壳固件。
 - 2026-05-14: **修复 compile_with_retry.py 的 fix_root_orig_missing()**：函数仍使用 `make package/install`，但 OpenWrt 的 `package/install` 目标不能单独调用（已在 2026-05-13 的六层修复中确认）。同步改为 `make -j1 V=s`，让 `package/install` 在 `make world` 的完整上下文中自然执行。
+- 2026-05-17: **优化 AI Fix 模型池和推送健壮性**：
+  (1) **更新 OpenRouter 免费模型列表**：`pick_best_model.py` 和 `auto_fix_with_AI_LLM.py` 的 OpenRouter 免费模型 fallback 从 `qwen/qwen3.6-plus:free` 升级为 `qwen/qwen3-coder:free,deepseek/deepseek-v4-flash:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,qwen/qwen3-next-80b-a3b-instruct:free`（更侧重编码和推理的免费模型），环境变量名从 `OPENROUTER_QWEN_FREE_MODEL_LIST` 改为 `OPENROUTER_FREE_MODEL_LIST`。
+  (2) **增强 run_track3.sh git push 重试**：推送前先 `git pull --rebase` 避免冲突；推送被拒绝时自动 rebase 冲突解决（`--ours` 策略）；重试次数从 3 增至 5；429 指数退避从 10s 起步改为 15s；新增 `rejected`/`non-fast-forward` 检测（不 sleep 直接进入下次 pull+push 循环）；GitHub App 权限错误回滚后不再立即退出，允许循环继续尝试。
+  (3) **增强 auto_fix_with_AI_LLM.py call_api 429 重试**：`call_api()` 新增 429 状态码重试（最多 2 次指数退避），其他临时错误也增加重试，QUOTA_EXHAUSTED 和 CONTEXT_LENGTH_EXCEEDED 仍立即抛出不重试。
+  (4) **禁用 fullconenat**：`custom_configs/config_for_Lienol` 中注释 `kmod-ipt-fullconenat` 和 `iptables-mod-fullconenat`（源返回 HTTP 404）。

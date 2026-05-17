@@ -6,7 +6,7 @@
 
 免费渠道优先级：
 1. AtomGit（免费无限量）→ GLM-5, Qwen3.5-398B 等
-2. OpenRouter Free → qwen3.6-plus:free, gemma-4-31b-it:free, nemotron-3-super:free 等
+2. OpenRouter Free → qwen3-coder:free, deepseek-v4-flash:free, gemma-4-31b-it:free, nemotron-3-super:free 等
 3. ZEN 免费模型（仅保留排行榜匹配的）
 4. NVIDIA NIM → Kimi K2.5（免费，262K context，强推理）
 5. 七牛云 → Nemotron 3 Super（免费，1M context，120B MoE 强推理）
@@ -509,8 +509,8 @@ def pick_model():
         or_free_models = get_openrouter_free_models(top_set)
         if not or_free_models:
             or_free_models = split_env(
-                "OPENROUTER_QWEN_FREE_MODEL_LIST",
-                "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.6-plus-preview:free",
+                "OPENROUTER_FREE_MODEL_LIST",
+                "qwen/qwen3-coder:free,deepseek/deepseek-v4-flash:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,qwen/qwen3-next-80b-a3b-instruct:free",
             )
         if or_free_models:
             print(
@@ -668,8 +668,8 @@ def pick_ranked_models(limit=10):
             or_free_models = get_openrouter_free_models(top_set)
             if not or_free_models:
                 or_free_models = split_env(
-                    "OPENROUTER_QWEN_FREE_MODEL_LIST",
-                    "qwen/qwen3.6-plus:free,google/gemma-4-31b-it:free,nvidia/nemotron-3-super-120b-a12b:free,qwen/qwen3.6-plus-preview:free",
+                    "OPENROUTER_FREE_MODEL_LIST",
+                    "qwen/qwen3-coder:free,deepseek/deepseek-v4-flash:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free,qwen/qwen3-next-80b-a3b-instruct:free",
                 )
             if or_free_models:
                 result.append(("openrouter", or_free_models[0], or_free_models[-1], or_free_models))

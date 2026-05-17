@@ -136,7 +136,7 @@ def get_local_logs():
 
 
 def call_api(proxy_url, api_key, model, prompt):
-    """调用 API（OpenAI 兼容格式）"""
+    """调用 API（OpenAI 兼容格式），支持 429 重试"""
     import requests
 
     if not proxy_url.startswith(("http://", "https://")):
@@ -158,61 +158,71 @@ def call_api(proxy_url, api_key, model, prompt):
     data = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        # 很多国产/免费 Provider（如 AtomGit/GLM）不支持 8192 或对 max_tokens 敏感
-        # 移除强制的 max_tokens，让提供商使用模型默认的最大输出长度
         "temperature": 0.3,
     }
 
-    try:
-        resp = requests.post(url, headers=headers, json=data, timeout=180)
-
-        # 捕捉额度用尽/不再免费等特有错误，抛出特殊异常标记
-        if resp.status_code in [401, 402, 403, 429]:
-            err_text = resp.text[:500].lower()
-            if (
-                "free promotion has ended" in err_text
-                or "insufficient quota" in err_text
-                or "balance" in err_text
-                or "余额不足" in err_text
-                or "无可用资源" in err_text
-                or resp.status_code == 429
-            ):
-                raise Exception(
-                    f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}"
-                )
-
-        if resp.status_code != 200:
-            err_text = resp.text[:500].lower()
-            if resp.status_code == 400 and (
-                "context length" in err_text
-                or "too many tokens" in err_text
-                or "context window" in err_text
-                or "maximum context" in err_text
-                or "prompt is too long" in err_text
-            ):
-                raise Exception(
-                    f"HTTP {resp.status_code} [CONTEXT_LENGTH_EXCEEDED]: {resp.text[:500]}"
-                )
-            raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
-
-        # 检查响应是否为空
-        if not resp.text or not resp.text.strip():
-            raise Exception(f"API返回空响应")
-
+    max_retries = 2
+    for attempt in range(max_retries + 1):
         try:
-            result = resp.json()
-        except Exception as json_err:
-            raise Exception(f"JSON解析失败: {json_err}, 响应内容: {resp.text[:500]}")
+            resp = requests.post(url, headers=headers, json=data, timeout=180)
 
-        # 检查响应结构
-        if "choices" not in result:
-            raise Exception(f"响应缺少choices字段: {str(result)[:500]}")
-        if not result["choices"] or "message" not in result["choices"][0]:
-            raise Exception(f"响应choices结构无效: {str(result)[:500]}")
+            if resp.status_code in [401, 402, 403, 429]:
+                err_text = resp.text[:500].lower()
+                if (
+                    "free promotion has ended" in err_text
+                    or "insufficient quota" in err_text
+                    or "balance" in err_text
+                    or "余额不足" in err_text
+                    or "无可用资源" in err_text
+                    or resp.status_code == 429
+                ):
+                    if resp.status_code == 429 and attempt < max_retries:
+                        wait = 10 * (2 ** attempt)
+                        print(f"HTTP 429，等待 {wait}s 后重试 ({attempt+1}/{max_retries})...")
+                        time.sleep(wait)
+                        continue
+                    raise Exception(
+                        f"HTTP {resp.status_code} [QUOTA_EXHAUSTED]: {resp.text[:500]}"
+                    )
 
-        return result["choices"][0]["message"]["content"].strip()
-    except Exception as e:
-        raise Exception(f"请求失败: {e}")
+            if resp.status_code != 200:
+                err_text = resp.text[:500].lower()
+                if resp.status_code == 400 and (
+                    "context length" in err_text
+                    or "too many tokens" in err_text
+                    or "context window" in err_text
+                    or "maximum context" in err_text
+                    or "prompt is too long" in err_text
+                ):
+                    raise Exception(
+                        f"HTTP {resp.status_code} [CONTEXT_LENGTH_EXCEEDED]: {resp.text[:500]}"
+                    )
+                raise Exception(f"HTTP {resp.status_code}: {resp.text[:500]}")
+
+            if not resp.text or not resp.text.strip():
+                raise Exception(f"API返回空响应")
+
+            try:
+                result = resp.json()
+            except Exception as json_err:
+                raise Exception(f"JSON解析失败: {json_err}, 响应内容: {resp.text[:500]}")
+
+            if "choices" not in result:
+                raise Exception(f"响应缺少choices字段: {str(result)[:500]}")
+            if not result["choices"] or "message" not in result["choices"][0]:
+                raise Exception(f"响应choices结构无效: {str(result)[:500]}")
+
+            return result["choices"][0]["message"]["content"].strip()
+        except Exception as e:
+            if "QUOTA_EXHAUSTED" in str(e) or "CONTEXT_LENGTH_EXCEEDED" in str(e):
+                raise
+            if attempt < max_retries:
+                wait = 5 * (2 ** attempt)
+                print(f"请求失败，等待 {wait}s 后重试 ({attempt+1}/{max_retries}): {e}")
+                time.sleep(wait)
+                continue
+            raise Exception(f"请求失败: {e}")
+    raise Exception("请求失败: 超过最大重试次数")
 
 
 def get_resolved_models(name, proxy_url, api_key, requested_models):
@@ -1227,17 +1237,18 @@ def main():
             }
         )
 
-    # 4) Qwen3.6-Plus Free via OpenRouter (免费)
+    # 4) OpenRouter 免费模型 (动态优先，环境变量兜底)
     if openrouter_api_key:
-        qwen_free_models = split_models(
-            "OPENROUTER_QWEN_FREE_MODEL_LIST", "qwen/qwen3.6-plus:free"
+        or_free_models = split_models(
+            "OPENROUTER_FREE_MODEL_LIST",
+            "qwen/qwen3-coder:free,deepseek/deepseek-v4-flash:free,nvidia/nemotron-3-super-120b-a12b:free,google/gemma-4-31b-it:free"
         )
         providers.append(
             {
                 "name": "QWEN-FREE-OR",
                 "proxy_url": "https://openrouter.ai/api/v1",
                 "api_key": openrouter_api_key,
-                "models": qwen_free_models,
+                "models": or_free_models,
             }
         )
 

@@ -334,12 +334,9 @@ rm -f last_error.log
 git commit -m "Auto-fix build error with OpenCode Deep Repair"
 git remote set-url origin https://${ACTIONS_TRIGGER_PAT}@github.com/${REPOSITORY}.git
 
-# 拉取最新的提交以避免冲突 (rebase 模式)
-git pull --rebase origin main || true
-
-# === Push with retry for HTTP 429 (rate limit) ===
+# === Push with retry: rebase + 429 handling + permission errors ===
 echo "=== 推送代码到远程仓库 ==="
-PUSH_MAX_RETRIES=3
+PUSH_MAX_RETRIES=5
 PUSH_RETRY_COUNT=0
 PUSH_SUCCESS=false
 
@@ -347,63 +344,80 @@ while [ $PUSH_RETRY_COUNT -lt $PUSH_MAX_RETRIES ] && [ "$PUSH_SUCCESS" = "false"
   PUSH_RETRY_COUNT=$((PUSH_RETRY_COUNT + 1))
   echo "推送尝试 $PUSH_RETRY_COUNT / $PUSH_MAX_RETRIES..."
   
-  if git push origin HEAD:main 2>&1; then
+  # 每次推送前先 pull --rebase 避免冲突
+  echo "=== 拉取远程最新提交 (rebase) ==="
+  git pull --rebase origin main 2>&1 || {
+    PULL_OUTPUT=$?
+    echo "::warning::git pull --rebase 失败 (退出码: $PULL_OUTPUT)，尝试强制 rebase..."
+    git rebase --abort 2>/dev/null || true
+    git fetch origin main 2>&1 || true
+    git rebase origin/main 2>&1 || {
+      echo "::warning::rebase 仍有冲突，使用 ours 策略自动解决..."
+      # AI 修复优先于远程可能的微小差异
+      git diff --name-only --diff-filter=U 2>/dev/null | while read -r conflict_file; do
+        echo "  解决冲突: $conflict_file (使用我们的版本)"
+        git checkout --ours "$conflict_file" 2>/dev/null || true
+        git add "$conflict_file" 2>/dev/null || true
+      done
+      git rebase --continue 2>/dev/null || true
+    }
+  }
+  
+  PUSH_OUTPUT=$(git push origin HEAD:main 2>&1) && PUSH_EXIT=0 || PUSH_EXIT=$?
+  echo "推送输出: $PUSH_OUTPUT"
+  echo "推送退出码: $PUSH_EXIT"
+  
+  if [ $PUSH_EXIT -eq 0 ]; then
     PUSH_SUCCESS=true
     echo "✅ 推送成功"
   else
-    PUSH_OUTPUT=$(git push origin HEAD:main 2>&1 || true)
-    echo "推送输出: $PUSH_OUTPUT"
-    
-    # 检测是否是 HTTP 429 错误 (配额耗尽)
-    if echo "$PUSH_OUTPUT" | grep -qiE "429|QUOTA_EXHAUSTED|rate limit|Too Many Requests"; then
-      echo "⚠️ 检测到 HTTP 429 (配额耗尽)，等待后重试..."
-      # 指数退避: 10s, 20s, 40s
-      WAIT_TIME=$((10 * (2 ** (PUSH_RETRY_COUNT - 1))))
+    if echo "$PUSH_OUTPUT" | grep -qiE "429|QUOTA_EXHAUSTED|rate limit|Too Many Requests|slow down"; then
+      echo "⚠️ 检测到 HTTP 429 (配额耗尽/速率限制)，等待后重试..."
+      # 指数退避: 15s, 30s, 60s, 120s, 240s
+      WAIT_TIME=$((15 * (2 ** (PUSH_RETRY_COUNT - 1))))
       echo "等待 ${WAIT_TIME} 秒后重试..."
       sleep $WAIT_TIME
-    # 检测 GitHub App 权限错误 (AI 修改了工作流文件)
+    elif echo "$PUSH_OUTPUT" | grep -qiE "rejected|non-fast-forward|fetch first|cannot lock ref|updates were rejected"; then
+      echo "⚠️ 推送被拒绝（远程有新提交），下次循环将 pull --rebase 后重试..."
     elif echo "$PUSH_OUTPUT" | grep -qiE "GitHub App|workflows.*permission|without.*workflows|remote rejected.*workflow"; then
       echo "⚠️ 检测到 GitHub App 权限错误：AI 修改了工作流文件但没有 workflows 权限"
       echo "正在回滚工作流文件修改..."
-      # 回滚工作流文件的修改
       git checkout -- .github/workflows/ 2>/dev/null || true
       git restore --staged .github/workflows/ 2>/dev/null || true
       
-      # 重新 add 和 commit
       git add .
       git reset HEAD .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
       git checkout -- .zen_free_models_cache.json .leaderboard_cache.json models_to_try.txt dmxapi_models.txt fallback_models.txt 2>/dev/null || true
       
-      # 再次尝试推送
       if ! git diff --cached --quiet; then
         echo "重新提交非工作流文件修改..."
         git commit -m "Auto-fix build error with OpenCode (without workflow files)" || true
-        echo "=== 再次尝试推送 ==="
-        if git push origin HEAD:main 2>&1; then
+        echo "=== 回滚工作流文件后再次推送 ==="
+        PUSH2_OUTPUT=$(git push origin HEAD:main 2>&1) && PUSH2_EXIT=0 || PUSH2_EXIT=$?
+        if [ $PUSH2_EXIT -eq 0 ]; then
           PUSH_SUCCESS=true
           echo "✅ 回滚工作流文件后推送成功"
         else
-          echo "::error::回滚后仍推送失败: $(git push origin HEAD:main 2>&1 || true)"
-          exit 1
+          echo "::warning::回滚后仍推送失败: $PUSH2_OUTPUT"
         fi
       else
         echo "::error::只有工作流文件被修改，无法提交修复"
         exit 1
       fi
     else
-      # 其他错误，直接失败
-      echo "::error::推送失败 (非配额原因): $PUSH_OUTPUT"
-      exit 1
+      echo "::warning::推送失败 (未知原因): $PUSH_OUTPUT"
+      sleep 10
     fi
   fi
 done
 
 if [ "$PUSH_SUCCESS" = "false" ]; then
   echo "::error::推送失败，已尝试 $PUSH_MAX_RETRIES 次仍失败"
-  echo "⚠️ 修复代码已提交到本地，但因 GitHub API 配额限制无法推送"
+  echo "⚠️ 修复代码已提交到本地，但因 GitHub API 限制无法推送"
   echo "请手动检查并推送修复:"
   echo "  1. 检查 git status"
-  echo "  2. 运行 git push origin main"
+  echo "  2. 运行 git pull --rebase origin main"
+  echo "  3. 运行 git push origin main"
   exit 1
 fi
 

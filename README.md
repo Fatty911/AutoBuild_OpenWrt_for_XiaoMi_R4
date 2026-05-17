@@ -58,6 +58,10 @@ A template for building OpenWrt with GitHub Actions
   - Lienol2 host 工具检查强化：重建后二次检查 `apk/fwtool/fakeroot`，仍缺失时直接 `exit 1` 并设置 `failure_reason=missing_host_tools`，避免继续编译产生隐蔽错误
   - Lienol2 root.orig 兜底复制：重试 `make -j1 V=s` 后仍无法创建 `root.orig-*` 时，从现有的 `root-*` 复制作为兜底，避免 manifest 生成失败导致空壳固件
   - 修复 `compile_with_retry.py` `fix_root_orig_missing()`：同步弃用独立的 `make package/install`（OpenWrt 目标不能单独调用），改为 `make -j1 V=s` 让 `package/install` 在 `make world` 上下文中自然执行
+  - 优化 AI Fix 模型池：OpenRouter 免费模型从 `qwen3.6-plus:free` 升级为 `qwen3-coder:free`、`deepseek-v4-flash:free` 等编码/推理优先模型；环境变量 `OPENROUTER_QWEN_FREE_MODEL_LIST` → `OPENROUTER_FREE_MODEL_LIST`
+  - 增强 `run_track3.sh` git push 重试：推送前 `git pull --rebase`；rebase 冲突自动解决（`--ours` 策略）；重试 3→5 次；429 退避 10s→15s；新增 `rejected`/`non-fast-forward` 检测
+  - 增强 `auto_fix_with_AI_LLM.py` `call_api()` 429 重试：最多 2 次指数退避，`QUOTA_EXHAUSTED` 和 `CONTEXT_LENGTH_EXCEEDED` 仍立即抛出
+  - 禁用 fullconenat：`config_for_Lienol` 中注释 `kmod-ipt-fullconenat` 和 `iptables-mod-fullconenat`（源返回 HTTP 404）
 
 > ⚠️ **严禁执行 `gh repo sync --force`！** 本仓库虽基于 P3TERX/Actions-OpenWrt 模板创建，但已高度定制。执行该命令会导致 28+ 个自定义文件被上游模板覆盖丢失。如需同步上游更新，必须手动 diff 合并单个文件。
 
