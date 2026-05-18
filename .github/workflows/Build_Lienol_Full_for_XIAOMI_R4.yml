@@ -93,7 +93,8 @@ jobs:
 
     - name: Update and Install feeds
       run: |
-        cd /workdir/openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+        cd /workdir/openwrt
+        ./scripts/feeds update -a && ./scripts/feeds install -a
         echo "=== feeds install 后再次禁用 fullconenat ==="
         find package feeds -path "*/fullconenat/Makefile" -delete 2>/dev/null || true
         for f in $(find package feeds -type d -name "fullconenat" 2>/dev/null); do
@@ -107,7 +108,7 @@ jobs:
         [ -e files ] && mv files openwrt/files
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
-        cd openwrt
+        cd /workdir/openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Apply WiFi configuration
@@ -116,12 +117,12 @@ jobs:
         WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
       run: |
         chmod +x $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh
-        $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh openwrt/files/etc/config/wireless
+        $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh /workdir/openwrt/files/etc/config/wireless
 
     - name: Download package
       id: download
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         for i in 1 2 3 4 5; do
           output=$(make defconfig 2>&1) && break
           if echo "$output" | grep -q "recursive dependency detected"; then
@@ -145,19 +146,19 @@ jobs:
       env:
         TERM: dumb
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
 
     - name: Compile toolchain
       id: compile_toolchain
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
 
     - name: Compile kernel
       id: compile_kernel
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         for KCFG in target/linux/ramips/mt7621/config-* target/linux/generic/config-*; do
           [ -f "$KCFG" ] || continue
           echo "CONFIG_CRYPTO_DEV_EIP93_AES=y" >> "$KCFG" 2>/dev/null || true
@@ -170,7 +171,7 @@ jobs:
     - name: Compile packages by feeds
       id: compile_packages
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         cp Makefile Makefile.bak
 
         echo "=== Lienol1: 修复 base-files 版本 ==="
@@ -230,7 +231,7 @@ jobs:
     - name: Complete build with make world
       id: complete_build
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
         echo "=== 执行 make -j1 V=s（完成剩余构建，包括 package/install）==="
         echo "开始时间: $(date)"
@@ -294,7 +295,7 @@ jobs:
     - name: Compile firmware
       id: compile_firmware
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
         echo "=== 开始编译固件 ==="
         echo "开始时间: $(date)"
@@ -321,7 +322,7 @@ jobs:
         SOURCE: Lienol
         FILE_DATE: ${{ github.run_id }}
       run: |
-        cd openwrt
+        cd /workdir/openwrt
         echo "=== 打包固件文件 ==="
         mkdir -p ../firmware
         for f in bin/targets/ramips/mt7621/*.bin; do
