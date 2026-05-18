@@ -1,0 +1,379 @@
+#
+# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# Description: Build OpenWrt using GitHub Actions - Lienol 合并版 (Phase1 + Phase2)
+#
+
+name: Build Lienol Full (Phase1+2) for XIAOMI_R4
+
+on:
+  workflow_dispatch:
+  push:
+    branches: 
+      - master
+      - main
+    paths:
+      - 'custom_scripts/diy-part1.sh'
+      - 'custom_scripts/diy-part2.sh'
+      - 'custom_scripts/replace_wifi_config.sh'
+      - 'custom_scripts/extract_last_error.py'
+      - 'custom_scripts/validate_build_output.py'
+      - 'custom_scripts/mega_manager.py'
+      - 'custom_configs/**'
+      - .github/workflows/Build_Lienol_Full_for_XIAOMI_R4.yml
+      - package/luci-app-autoupdate/**
+
+concurrency:
+  group: lienol-full-${{ github.ref }}-${{ (endsWith(format('{0}', github.run_number), '0') || endsWith(format('{0}', github.run_number), '2') || endsWith(format('{0}', github.run_number), '4') || endsWith(format('{0}', github.run_number), '6') || endsWith(format('{0}', github.run_number), '8')) && 'even' || 'odd' }}
+  cancel-in-progress: true
+
+env:
+  REPO_URL: https://github.com/Lienol/openwrt
+  REPO_BRANCH: main
+  FEEDS_CONF: feeds.conf.default
+  CONFIG_FILE: custom_configs/config_for_Lienol
+  DIY_P1_SH: custom_scripts/diy-part1.sh
+  DIY_P2_SH: custom_scripts/diy-part2.sh
+  UPLOAD_BIN_DIR: true
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
+  TZ: Asia/Shanghai
+  SOURCE: Lienol
+  DEVICE_NAME: XIAOMI_R4
+  FILE_DATE: ${{ github.run_id }}
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+
+    - name: Maximize build space
+      uses: easimon/maximize-build-space@master
+      with:
+          root-reserve-mb: 4096
+          temp-reserve-mb: 1024
+          swap-size-mb: 1024
+          build-mount-path: /workdir
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+    - name: Checkout
+      uses: actions/checkout@main
+      with:
+        fetch-depth: 1
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq git jq python3 python3-pip pigz gzip zstd xz-utils p7zip-full curl wget tar
+        pip3 install pyyaml requests --quiet
+
+    - name: Clone Lienol OpenWrt
+      run: |
+        cd /workdir
+        git clone --depth=1 --branch=${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
+        cd openwrt
+        git submodule update --init --recursive
+
+    - name: Run DIY script part 1
+      run: |
+        chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
+        cd /workdir/openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
+
+    - name: Update and Install feeds
+      run: |
+        cd /workdir/openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+        echo "=== feeds install 后再次禁用 fullconenat ==="
+        find package feeds -path "*/fullconenat/Makefile" -delete 2>/dev/null || true
+        for f in $(find package feeds -type d -name "fullconenat" 2>/dev/null); do
+          echo "删除 fullconenat 目录: $f"
+          rm -rf "$f"
+        done || true
+
+    - name: Load custom configuration
+      run: |
+        [ -e files ] && mv files openwrt/files
+        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        chmod +x $DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
+
+    - name: Apply WiFi configuration
+      env:
+        WIFI_SSID: ${{ secrets.WIFI_SSID }}
+        WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+      run: |
+        chmod +x $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh
+        $GITHUB_WORKSPACE/custom_scripts/replace_wifi_config.sh openwrt/files/etc/config/wireless
+
+    - name: Download package
+      id: download
+      run: |
+        cd openwrt
+        for i in 1 2 3 4 5; do
+          output=$(make defconfig 2>&1) && break
+          if echo "$output" | grep -q "recursive dependency detected"; then
+            echo "Recursive dependency detected, attempting auto-fix..."
+            echo "$output" | python3 ../custom_scripts/fix_kconfig_cycle.py --once || true
+          else
+            echo "$output"
+            exit 1
+          fi
+        done
+        make download -j$(nproc) V=s
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+        
+    - name: Check space usage after download
+      if: (!cancelled())
+      run: df -hT
+    
+    - name: Compile tools
+      id: compile_tools
+      env:
+        TERM: dumb
+      run: |
+        cd openwrt
+        make tools/install -j$(nproc) V=s > tools.log 2>&1 || make tools/install -j1 V=s > tools.log 2>&1
+
+    - name: Compile toolchain
+      id: compile_toolchain
+      run: |
+        cd openwrt
+        make toolchain/install -j$(nproc) V=s > toolchain.log 2>&1 || make toolchain/install -j1 V=s > toolchain.log 2>&1
+
+    - name: Compile kernel
+      id: compile_kernel
+      run: |
+        cd openwrt
+        for KCFG in target/linux/ramips/mt7621/config-* target/linux/generic/config-*; do
+          [ -f "$KCFG" ] || continue
+          echo "CONFIG_CRYPTO_DEV_EIP93_AES=y" >> "$KCFG" 2>/dev/null || true
+          echo "CONFIG_CRYPTO_DEV_EIP93_DES=y" >> "$KCFG" 2>/dev/null || true
+          echo "CONFIG_CRYPTO_DEV_EIP93_AEAD=y" >> "$KCFG" 2>/dev/null || true
+          echo "修复 $KCFG: 添加 CONFIG_CRYPTO_DEV_EIP93_AES/DES/AEAD=y"
+        done
+        make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
+
+    - name: Compile packages by feeds
+      id: compile_packages
+      run: |
+        cd openwrt
+        cp Makefile Makefile.bak
+
+        echo "=== Lienol1: 修复 base-files 版本 ==="
+        if [ -f "package/base-files/Makefile" ]; then
+          sed -i 's/PKG_RELEASE:=$(COMMITCOUNT)/PKG_RELEASE:=1/' package/base-files/Makefile || true
+          echo "base-files PKG_RELEASE 已设为 1"
+        fi
+
+        echo "=== 快速预检查：移除可能不存在的包 ==="
+        for PKG in xray-plugin xray-core v2ray-plugin v2ray-geosite v2ray-geoip; do
+          if grep -q "CONFIG_PACKAGE_${PKG}=" .config 2>/dev/null; then
+            if [ ! -d "package/${PKG}" ] && [ ! -d "package/feeds/*/${PKG}" ]; then
+              echo "⚠️ 移除不存在的包: ${PKG}"
+              sed -i "/CONFIG_PACKAGE_.*${PKG}/d" .config 2>/dev/null || true
+            fi
+          fi
+        done
+        echo "=== 强制禁用 fullconenat（上游 hash 不匹配）==="
+        find package feeds -path "*/fullconenat/Makefile" -delete 2>/dev/null || true
+        find package feeds -type d -name "fullconenat" -exec rm -rf {} + 2>/dev/null || true
+        sed -i '/CONFIG_PACKAGE_.*fullconenat/d' .config 2>/dev/null || true
+
+        rm -f tmp/.packagedeps
+        make defconfig > /dev/null 2>&1 || true
+
+        echo "=== 开始并行编译所有包 ==="
+        echo "开始时间: $(date)"
+        if make package/compile -j$(nproc) V=s > packages.log 2>&1; then
+          echo "所有包编译成功 于 $(date)"
+        else
+          echo "⚠️ 包编译失败，尝试修复..."
+          tail -n 100 packages.log
+          if grep -q "No rule to make target" packages.log; then
+            missing_pkgs=$(grep "No rule to make target" packages.log | sed 's/.*No rule to make target .package\/\([^\/]*\)\/compile.*/\1/' | sort -u)
+            if [ -n "$missing_pkgs" ]; then
+              echo "⚠️ 以下包在 feeds 中不存在，将从 .config 中移除:"
+              echo "$missing_pkgs"
+              for m_pkg in $missing_pkgs; do
+                sed -i "/CONFIG_PACKAGE_.*${m_pkg}/d" .config 2>/dev/null || true
+                m_pkg_underscored=$(echo "$m_pkg" | tr '-' '_')
+                if [ "$m_pkg_underscored" != "$m_pkg" ]; then
+                  sed -i "/CONFIG_PACKAGE_.*${m_pkg_underscored}/d" .config 2>/dev/null || true
+                fi
+              done
+              rm -f tmp/.packagedeps 2>/dev/null || true
+              make defconfig > /dev/null 2>&1 || true
+              echo "重新编译..."
+              make package/compile -j$(nproc) V=s > packages.log 2>&1 || {
+                echo "⚠️ 移除缺失包后仍然失败"
+                tail -n 100 packages.log
+              }
+            fi
+          fi
+        fi
+        echo "结束时间: $(date)"
+
+    - name: Complete build with make world
+      id: complete_build
+      run: |
+        cd openwrt
+        export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
+        echo "=== 执行 make -j1 V=s（完成剩余构建，包括 package/install）==="
+        echo "开始时间: $(date)"
+        make -j1 V=s > complete_build.log 2>&1 || {
+          echo "⚠️ make -j1 V=s 失败，尝试查看错误..."
+          tail -n 100 complete_build.log
+          if grep -qiE "Hash mismatch.*fullconenat|fullconenat.*failed to build|fullconenat.*Error" complete_build.log; then
+            echo "⚠️ fullconenat 编译失败（hash mismatch），强制删除并从 .config 移除..."
+            find package feeds -path "*/fullconenat/Makefile" -delete 2>/dev/null || true
+            find package feeds -type d -name "fullconenat" -exec rm -rf {} + 2>/dev/null || true
+            sed -i '/CONFIG_PACKAGE_.*fullconenat/d' .config 2>/dev/null || true
+            rm -f tmp/.packagedeps 2>/dev/null || true
+            make defconfig > /dev/null 2>&1 || true
+            echo "重新运行 make -j1 V=s..."
+            make -j1 V=s > complete_build.log 2>&1 || {
+              echo "⚠️ 移除 fullconenat 后仍然失败"
+              tail -n 100 complete_build.log
+              echo "failure_detected=true" >> $GITHUB_ENV
+              exit 1
+            }
+          elif grep -q "No rule to make target" complete_build.log; then
+            missing_pkgs=$(grep "No rule to make target" complete_build.log | sed 's/.*No rule to make target .package\/\([^\/]*\)\/compile.*/\1/' | sort -u)
+            if [ -n "$missing_pkgs" ]; then
+              echo "以下包在 feeds 中不存在，将从 .config 中移除:"
+              echo "$missing_pkgs"
+              for pkg in $missing_pkgs; do
+                sed -i "/CONFIG_PACKAGE_.*${pkg}/d" .config 2>/dev/null || true
+                pkg_underscored=$(echo "$pkg" | tr '-' '_')
+                if [ "$pkg_underscored" != "$pkg" ]; then
+                  sed -i "/CONFIG_PACKAGE_.*${pkg_underscored}/d" .config 2>/dev/null || true
+                fi
+              done
+              rm -f tmp/.packagedeps 2>/dev/null || true
+              make defconfig > /dev/null 2>&1 || true
+              echo "重新运行 make -j1 V=s..."
+              make -j1 V=s > complete_build.log 2>&1 || {
+                echo "⚠️ 移除缺失包后仍然失败"
+                tail -n 100 complete_build.log
+                echo "failure_detected=true" >> $GITHUB_ENV
+                exit 1
+              }
+            fi
+          else
+            echo "failure_detected=true" >> $GITHUB_ENV
+            exit 1
+          fi
+        }
+        echo "结束时间: $(date)"
+
+        if ls build_dir/target-*/root.orig-* >/dev/null 2>&1; then
+          echo "✅ root.orig-* 已创建"
+          for d in build_dir/target-*/root.orig-*; do
+            echo "  $(du -sh $d)"
+          done
+        else
+          echo "❌ root.orig-* 未创建"
+          echo "failure_detected=true" >> $GITHUB_ENV
+          exit 1
+        fi
+
+    - name: Compile firmware
+      id: compile_firmware
+      run: |
+        cd openwrt
+        export PATH="$PWD/staging_dir/host/bin:$PWD/staging_dir/hostpkg/bin:$PATH"
+        echo "=== 开始编译固件 ==="
+        echo "开始时间: $(date)"
+        make -j$(nproc) V=s TARGET_SUBDIR=ramips/mt7621 > firmware.log 2>&1 || {
+          echo "⚠️ 固件编译失败，尝试单线程重试..."
+          make -j1 V=s TARGET_SUBDIR=ramips/mt7621 > firmware.log 2>&1 || {
+            echo "固件单线程编译也失败"
+            tail -n 50 firmware.log
+            echo "FAILURE_TYPE=firmware-build" >> $GITHUB_ENV
+            exit 1
+          }
+        }
+        echo "固件编译成功 于 $(date)"
+        echo "结束时间: $(date)"
+
+    - name: Validate build output
+      if: success()
+      env:
+        SOURCE: Lienol
+      run: python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
+
+    - name: Package firmware
+      env:
+        SOURCE: Lienol
+        FILE_DATE: ${{ github.run_id }}
+      run: |
+        cd openwrt
+        echo "=== 打包固件文件 ==="
+        mkdir -p ../firmware
+        for f in bin/targets/ramips/mt7621/*.bin; do
+          [ -f "$f" ] || continue
+          cp "$f" ../firmware/
+          echo "已复制: $f"
+        done
+        for f in bin/targets/ramips/mt7621/*.tar.gz; do
+          [ -f "$f" ] || continue
+          cp "$f" ../firmware/
+          echo "已复制: $f"
+        done
+        echo "固件目录内容:"
+        ls -la ../firmware/
+
+    - name: Upload firmware to release
+      if: success()
+      run: |
+        cd /workdir
+        RELEASE_TAG="lienol-$(date +%Y%m%d)-${{ github.run_number }}"
+        gh release create "$RELEASE_TAG" \
+          --title "Lienol Firmware XIAOMI_R4 $(date +%Y-%m-%d)" \
+          --notes "Auto-built firmware from Lienol source" \
+          firmware/*.bin firmware/*.tar.gz 2>/dev/null || {
+            echo "::warning::Release 创建或上传失败，跳过此步骤"
+          }
+
+    - name: Extract Error Log
+      if: failure()
+      run: |
+        cd $GITHUB_WORKSPACE
+        python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
+        if [ ! -s last_error.log ]; then
+          echo "=== 兜底错误日志 ===" > last_error.log
+          for f in openwrt/*.log; do
+            if [ -f "$f" ]; then
+              echo "" >> last_error.log
+              echo "=== $f (last 100 lines) ===" >> last_error.log
+              tail -n 100 "$f" >> last_error.log
+            fi
+          done
+        fi
+
+    - name: Upload Error Log Artifact
+      uses: actions/upload-artifact@main
+      if: failure()
+      with:
+        name: error-log
+        path: last_error.log
+        retention-days: 1
+
+    - name: Delete workflow runs
+      if: always()
+      run: |
+        echo "Workflow runs are cleaned up centrally by cleanup-workflow-runs.yml"
+        echo "This workflow keeps the latest 2 successful and 2 failed runs"
