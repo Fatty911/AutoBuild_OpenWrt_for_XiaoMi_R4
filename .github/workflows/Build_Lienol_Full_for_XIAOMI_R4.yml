@@ -33,7 +33,7 @@ concurrency:
 
 env:
   REPO_URL: https://github.com/Lienol/openwrt
-  REPO_BRANCH: main
+  REPO_BRANCH: 25.12
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: custom_configs/config_for_Lienol
   DIY_P1_SH: custom_scripts/diy-part1.sh
