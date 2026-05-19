@@ -68,7 +68,8 @@ def main():
 
     source = os.getenv("SOURCE", "unknown")
     github_output = os.getenv("GITHUB_OUTPUT", "/tmp/build_output.env")
-    github_workspace = os.getenv("GITHUB_WORKSPACE", "/github/workspace")
+    # OPENWRT_BASE_DIR 优先于 GITHUB_WORKSPACE（后者是 GitHub Actions 受保护变量，无法通过 env: 覆盖）
+    github_workspace = os.getenv("OPENWRT_BASE_DIR") or os.getenv("GITHUB_WORKSPACE", "/github/workspace")
     has_mega_upload = False
     has_valid_bin_file = False
     root_orig_exists = False

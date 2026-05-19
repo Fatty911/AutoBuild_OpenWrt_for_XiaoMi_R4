@@ -315,7 +315,7 @@ jobs:
       if: success()
       env:
         SOURCE: Lienol
-        GITHUB_WORKSPACE: /workdir
+        OPENWRT_BASE_DIR: /workdir
       run: python ${{ github.workspace }}/custom_scripts/validate_build_output.py
 
     - name: Package firmware
