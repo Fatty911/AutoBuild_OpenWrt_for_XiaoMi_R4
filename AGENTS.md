@@ -124,3 +124,4 @@
   (4) **Lienol1 complete_build 步骤**：新增 fullconenat hash mismatch 自动检测和修复逻辑。
   (5) **run_track3.sh AI prompt**：增加 fullconenat 修复具体指导（禁用包而非修复 hash）。
   根因：`llccd/netfilter-full-cone-nat` 仓库 git archive 产生的 hash 与 OpenWrt package Makefile 中记录的 hash 不一致（`expected 437dff... got db90c3b...`），且上游不维护此 hash，因此只能彻底禁用。
+- 2026-05-19: **修复 Lienol Full Validate build output 路径问题**：合并工作流后 `validate_build_output.py` 在 `$GITHUB_WORKSPACE/openwrt/` 查找固件，但编译目录在 `/workdir/openwrt`。修复：(1) 覆盖 `GITHUB_WORKSPACE=/workdir` 环境变量；(2) 修正 Extract Error Log 步骤的 `--log-dir` 参数为 `/workdir/openwrt`；(3) 兜底日志路径也改为 `/workdir/openwrt/*.log`。

@@ -315,7 +315,8 @@ jobs:
       if: success()
       env:
         SOURCE: Lienol
-      run: python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py
+        GITHUB_WORKSPACE: /workdir
+      run: python ${{ github.workspace }}/custom_scripts/validate_build_output.py
 
     - name: Package firmware
       env:
@@ -353,11 +354,10 @@ jobs:
     - name: Extract Error Log
       if: failure()
       run: |
-        cd $GITHUB_WORKSPACE
-        python custom_scripts/extract_last_error.py --log-dir openwrt --output last_error.log || true
+        python ${{ github.workspace }}/custom_scripts/extract_last_error.py --log-dir /workdir/openwrt --output last_error.log || true
         if [ ! -s last_error.log ]; then
           echo "=== 兜底错误日志 ===" > last_error.log
-          for f in openwrt/*.log; do
+          for f in /workdir/openwrt/*.log; do
             if [ -f "$f" ]; then
               echo "" >> last_error.log
               echo "=== $f (last 100 lines) ===" >> last_error.log
