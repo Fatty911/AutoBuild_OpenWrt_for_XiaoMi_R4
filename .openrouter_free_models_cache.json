@@ -1,6 +1,7 @@
 {
-  "timestamp": 1779119572.7824008,
+  "timestamp": 1779249088.8195307,
   "valid_models": [
+    "z-ai/glm-5.1",
     "nvidia/nemotron-3-nano-30b-a3b:free",
     "openai/gpt-oss-120b:free",
     "openai/gpt-oss-20b:free"
