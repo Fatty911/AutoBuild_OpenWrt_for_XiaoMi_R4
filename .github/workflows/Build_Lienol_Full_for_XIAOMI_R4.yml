@@ -316,6 +316,7 @@ jobs:
       env:
         SOURCE: Lienol
         OPENWRT_BASE_DIR: /workdir
+        EXPECTED_TARGET_DIR: ramips/mt7621
       run: python ${{ github.workspace }}/custom_scripts/validate_build_output.py
 
     - name: Package firmware

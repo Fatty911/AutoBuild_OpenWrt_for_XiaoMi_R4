@@ -70,6 +70,7 @@ def main():
     github_output = os.getenv("GITHUB_OUTPUT", "/tmp/build_output.env")
     # OPENWRT_BASE_DIR 优先于 GITHUB_WORKSPACE（后者是 GitHub Actions 受保护变量，无法通过 env: 覆盖）
     github_workspace = os.getenv("OPENWRT_BASE_DIR") or os.getenv("GITHUB_WORKSPACE", "/github/workspace")
+    expected_target_dir = os.getenv("EXPECTED_TARGET_DIR", "")
     has_mega_upload = False
     has_valid_bin_file = False
     root_orig_exists = False
@@ -114,6 +115,10 @@ def main():
                 size_mb = size_bytes / (1024 * 1024)
                 if "initramfs" in f:
                     print(f"  - 跳过 initramfs: {os.path.basename(f)} ({size_mb:.2f} MB)")
+                    continue
+
+                if expected_target_dir and expected_target_dir not in f:
+                    print(f"  - ❌ 目标不匹配: {os.path.basename(f)} (期望含 '{expected_target_dir}')")
                     continue
                 
                 if size_bytes > MIN_VALID_SIZE:
