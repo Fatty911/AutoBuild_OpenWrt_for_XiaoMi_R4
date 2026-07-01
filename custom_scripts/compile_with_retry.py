@@ -2725,9 +2725,8 @@ def fix_luci_lib_taskd_extra_depends():
 def fix_missing_host_tools():
     """重建缺失的 host 工具（apk/fwtool 等 staging_dir/host/bin/ 下的程序）
 
-    根因：Phase 1 备份解压后，staging_dir/host 被 rm -rf 删除（节省空间），
-    导致 Phase 2 编译时 apk/fwtool/fakeroot 等关键 host 工具不存在。
-    修复：运行 make tools/install 重建 staging_dir/host。
+    缓存不完整或构建中断时，apk/fwtool/fakeroot 等关键 host 工具可能缺失。
+    通过 make tools/install 重建 staging_dir/host。
     """
     print("🔧 检测到 host 工具缺失（apk/fwtool），尝试重建 staging_dir/host...")
 
@@ -2777,8 +2776,6 @@ def fix_missing_host_tools():
                     stamp_cleaned += 1
                 except OSError:
                     pass
-            for stamp in glob.glob("build_dir/target-*/root.orig-*"):
-                pass
             if stamp_cleaned > 0:
                 print(f"  ✅ 清除了 {stamp_cleaned} 个 package/install stamp，重试时会重新执行 package/install")
             return True

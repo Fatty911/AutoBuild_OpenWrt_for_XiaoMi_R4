@@ -45,6 +45,20 @@ tmp/
 logs/
 *.log
 
+# AI runtime caches and temporary files
+.leaderboard_cache.json
+.model_resolution_cache.json
+.openrouter_free_models_cache.json
+.zen_free_models_cache.json
+models_to_try.txt
+dmxapi_models.txt
+fallback_models.txt
+last_error.log
+opencode_output.log
+prompt.txt
+review-*.txt
+*.protected_backup
+
 # Test files
 test_*.py
 fix_*.py

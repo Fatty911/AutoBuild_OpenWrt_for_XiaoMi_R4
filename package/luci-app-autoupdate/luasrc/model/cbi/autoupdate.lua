@@ -35,12 +35,24 @@ o.default = "1080"
 o.rmempty = true
 
 o = s:option(ListValue, "check_interval", _("Check Interval"))
-o:value("hourly", _("Every 6 Hours"))
+o:value("6hours", _("Every 6 Hours"))
 o:value("daily", _("Daily"))
 o:value("weekly", _("Weekly"))
 o.default = "daily"
 
+o = s:option(Value, "release_tag_prefix", _("Release Tag Prefix"))
+o.default = "OpenWRT.org_"
+o.rmempty = false
+
+o = s:option(Value, "device_pattern", _("Firmware Device Pattern"))
+o.default = "mi-router-4"
+o.rmempty = false
+
 o = s:option(Value, "current_version", _("Current Version"))
+o.rmempty = true
+o.readonly = true
+
+o = s:option(Value, "last_seen_version", _("Last Processed Release"))
 o.rmempty = true
 o.readonly = true
 

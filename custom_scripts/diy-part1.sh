@@ -35,10 +35,7 @@ echo "✅ base-files 版本永久修复完成 (PKG_RELEASE:=1)"
 echo "=== diy-part1: 禁用 fullconenat（上游 hash 不匹配，无法编译）==="
 rm -rf package/network/utils/fullconenat 2>/dev/null || true
 rm -rf feeds/luci/modules/luci-base/fullconenat 2>/dev/null || true
-for f in $(find package feeds -path "*/fullconenat/Makefile" 2>/dev/null); do
-  echo "删除: $f"
-  rm -f "$f"
-done
+find package feeds -path "*/fullconenat/Makefile" -type f -print -delete 2>/dev/null || true
 echo "✅ fullconenat Makefile 已删除"
 #echo 'src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2' >>feeds.conf.default
 #echo 'src-git OpenClash https://github.com/vernesong/OpenClash' >>feeds.conf.default
@@ -46,4 +43,3 @@ echo "✅ fullconenat Makefile 已删除"
 #echo 'src-git kenzo https://github.com/kenzok8/openwrt-packages' >>feeds.conf.default
 #echo "src-git qttools https://github.com/openwrt/packages.git;master" >> feeds.conf.default
 #echo "src-git lucihttp https://github.com/openwrt/packages.git" >> feeds.conf.default
-

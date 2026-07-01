@@ -90,7 +90,11 @@ config autoupdate 'config'
     option subscription_url '$AUTOPDATE_SUBSCRIPTION'
     option proxy_port '$AUTOPDATE_PROXY_PORT'
     option check_interval 'daily'
+    option release_tag_prefix 'OpenWRT.org_'
+    option device_pattern 'mi-router-4'
     option current_version ''
+    option last_seen_version ''
+    option last_check '0'
     option auto_install '0'
 EOF
 

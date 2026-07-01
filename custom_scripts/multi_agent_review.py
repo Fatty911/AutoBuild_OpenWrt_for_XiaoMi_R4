@@ -3,31 +3,25 @@
 多模型共识评审脚本
 
 流程:
-  1. 并行调用 5 个评审模型
-  2. 收集评审结果，3/5 通过则放行
-  3. 不通过 → 换修复模型重写 → 再评审 → 循环直到通过或耗尽模型
+  1. 排除与修复模型相同的模型家族
+  2. 并行调用 2 个不同家族的评审模型
+  3. 仅在 2/2 明确通过时放行
 
 用法:
   # 评审模式: 审查 git diff 输出，返回通过/不通过
   python3 multi_agent_review.py review --diff <diff_content>
 
-  # 修复+评审循环: 修复文件，评审，不通过则换模型重修
-  python3 multi_agent_review.py fix-and-review --file <path> --error <error_log>
-
 环境变量:
-  REVIEW_TOTAL: 评审模型总数 (默认5)
-  REVIEW_THRESHOLD: 通过阈值 (默认3)
-  REVIEW_MAX_ROUNDS: 最大修复-评审轮数 (默认3)
-  各模型 API Key 同 auto_fix_with_AI_LLM.py
+  REVIEW_TOTAL: 评审模型总数 (默认2)
+  REVIEW_THRESHOLD: 通过阈值 (默认2)
+  FIXER_MODEL: 本次修复使用的模型，用于排除同家族评审
 """
 
 import os
 import sys
 import argparse
-import json
 import subprocess
-import time
-import re  # 移到顶部，避免函数内重复导入
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
@@ -93,7 +87,7 @@ def get_review_models():
             "name": "ALIYUN-Qwen",
             "proxy_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
             "api_key": aliyun_key,
-            "model": os.getenv("ALIYUN_REVIEW_MODEL", "qwen3.6-plus"),
+            "model": os.getenv("ALIYUN_REVIEW_MODEL", "qwen3.7-max"),
         })
 
     mimo_key = os.getenv("MIMO_TOKENPLAN_API_KEY", "").strip()
@@ -111,7 +105,7 @@ def get_review_models():
             "name": "ZHIPU-GLM",
             "proxy_url": "https://open.bigmodel.cn/api/paas/v4/",
             "api_key": zhipu_key,
-            "model": os.getenv("ZHIPU_REVIEW_MODEL", "GLM-5.1"),
+            "model": os.getenv("ZHIPU_REVIEW_MODEL", "glm-5.1"),
         })
 
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
@@ -120,10 +114,51 @@ def get_review_models():
             "name": "DEEPSEEK",
             "proxy_url": "https://api.deepseek.com/v1",
             "api_key": deepseek_key,
-            "model": os.getenv("DEEPSEEK_REVIEW_MODEL", "deepseek-chat"),
+            "model": os.getenv("DEEPSEEK_REVIEW_MODEL", "deepseek-v4-pro"),
         })
 
     return models
+
+
+def model_family(value):
+    """把 provider/model 名称归一为模型家族，避免同家族自己评审自己。"""
+    normalized = str(value or "").lower()
+    families = {
+        "deepseek": ("deepseek",),
+        "glm": ("glm", "zhipu", "bigmodel", "z-ai"),
+        "kimi": ("kimi", "moonshot"),
+        "qwen": ("qwen", "aliyun", "bailian"),
+        "mimo": ("mimo", "xiaomi"),
+        "minimax": ("minimax",),
+        "grok": ("grok", "xai"),
+        "gpt": ("gpt", "openai", "codex"),
+    }
+    for family, markers in families.items():
+        if any(marker in normalized for marker in markers):
+            return family
+    return normalized.split("/", 1)[0] if normalized else ""
+
+
+def select_review_models(review_models, total):
+    """排除修复模型同家族，并保证每个评审来自不同模型家族。"""
+    fixer_family = model_family(os.getenv("FIXER_MODEL", ""))
+    selected = []
+    selected_families = set()
+
+    for model in review_models:
+        family = model_family(f"{model['name']} {model['model']}")
+        if family and family == fixer_family:
+            print(f"跳过同家族评审模型: {model['name']} ({family})")
+            continue
+        if family in selected_families:
+            print(f"跳过重复家族评审模型: {model['name']} ({family})")
+            continue
+        selected.append(model)
+        selected_families.add(family)
+        if len(selected) >= total:
+            break
+
+    return selected
 
 
 def call_review_model(model_config, prompt):
@@ -139,9 +174,8 @@ def call_review_model(model_config, prompt):
         proxy_url = f"https://{proxy_url}"
 
     base = proxy_url.rstrip("/")
-    # 智能拼接：如果URL已包含版本路径（如 /v1, /v2, /v3, /v4 等，含可选尾斜杠），
-    # 直接追加 /chat/completions；否则追加 /v1/chat/completions
-    if re.search(r'/v\d+/?$', base):
+    # OpenAI 兼容端点通常以版本号结尾；Coding Plan 端点会在版本号后再带路径。
+    if re.search(r'/v\d+(?:/[^/]+)*/?$', base):
         url = f"{base}/chat/completions"
     else:
         url = f"{base}/v1/chat/completions"
@@ -162,7 +196,21 @@ def call_review_model(model_config, prompt):
             return {"model": name, "passed": None, "reason": f"HTTP {resp.status_code}: {resp.text[:200]}"}
 
         content = resp.json()["choices"][0]["message"]["content"].strip()
-        passed = "VERDICT: PASS" in content.upper()
+        verdict_lines = [
+            line.strip().upper()
+            for line in content.splitlines()
+            if line.strip().upper().startswith("VERDICT:")
+        ]
+        if verdict_lines == ["VERDICT: PASS"]:
+            passed = True
+        elif verdict_lines == ["VERDICT: FAIL"]:
+            passed = False
+        else:
+            return {
+                "model": name,
+                "passed": None,
+                "reason": f"评审输出格式无效: {content[:200]}",
+            }
 
         reason = ""
         for line in content.split("\n"):
@@ -198,28 +246,35 @@ def get_business_context():
         except:
             pass
     
-    # 默认业务上下文（Phase 1/2 架构）
+    # 默认业务上下文
     return """
-【Phase 1/2 拆分架构】
-- Phase 1: 编译工具链、内核、packages（耗时1-2小时）→ 上传到MEGA
-- Phase 2: 从MEGA下载编译产物 → 只做最终固件组装（几分钟）
-- 关键约束：Phase 2 必须 依赖 Phase 1 的编译产物，不允许fallback到重新克隆源码编译
-- 如果MEGA下载失败，Phase 2 应该直接报错，引导用户重新运行Phase 1
+【OpenWrt.org 单工作流架构】
+- 只从 openwrt/openwrt main 构建小米路由器 4 固件。
+- 不再使用 Lienol、Phase 1/2 或 MEGA 中转。
+- 构建质量门必须验证目标设备 sysupgrade 固件及非空 root.orig。
+- AI 自动修复只能在真实错误日志、真实源码差异和两个不同家族评审均 PASS 时提交。
 """
 
 
 def run_review(diff_content, error_log=""):
-    """并行调用5个评审模型，返回共识结果"""
+    """并行调用不同家族评审模型，返回共识结果。"""
     review_models = get_review_models()
-    total = int(os.getenv("REVIEW_TOTAL", "5"))
-    threshold = int(os.getenv("REVIEW_THRESHOLD", "3"))
+    total = int(os.getenv("REVIEW_TOTAL", "2"))
+    threshold = int(os.getenv("REVIEW_THRESHOLD", "2"))
 
-    if len(review_models) < threshold:
-        print(f"⚠️ 可用评审模型({len(review_models)})少于阈值({threshold})，跳过评审直接通过")
-        return True, []
+    if total < threshold or threshold < 1:
+        print(f"❌ 无效评审参数: total={total}, threshold={threshold}")
+        return False, []
 
     business_context = get_business_context()
-    selected = review_models[:total]
+    selected = select_review_models(review_models, total)
+    if len(selected) < threshold:
+        print(
+            f"❌ 可用的不同家族评审模型({len(selected)})少于阈值({threshold})，"
+            "评审失败"
+        )
+        return False, []
+
     prompt = REVIEW_PROMPT_TEMPLATE.format(
         business_context=business_context,
         error_log=error_log[:2000] if error_log else "N/A",
@@ -284,9 +339,9 @@ def do_review(args):
         diff_content = get_git_diff(args.file)
 
     if not diff_content.strip():
-        print("无变更内容，跳过评审")
-        print("RESULT: PASS")
-        return
+        print("无变更内容，评审失败")
+        print("RESULT: FAIL")
+        sys.exit(1)
 
     error_log = args.error or ""
     passed, results = run_review(diff_content, error_log)
@@ -295,74 +350,7 @@ def do_review(args):
         print("RESULT: PASS")
     else:
         print("RESULT: FAIL")
-
-
-def do_fix_and_review(args):
-    """修复+评审循环模式"""
-    target_file = args.file
-    error_log = args.error or ""
-
-    if not os.path.exists(target_file):
-        print(f"文件不存在: {target_file}")
         sys.exit(1)
-
-    with open(target_file, "r") as f:
-        original_content = f.read()
-
-    max_rounds = int(os.getenv("REVIEW_MAX_ROUNDS", "3"))
-    threshold = int(os.getenv("REVIEW_THRESHOLD", "3"))
-
-    fix_script = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "auto_fix_with_AI_LLM.py"
-    )
-
-    for round_num in range(1, max_rounds + 1):
-        print(f"\n{'#'*60}")
-        print(f"🔄 修复-评审循环 第 {round_num}/{max_rounds} 轮")
-        print(f"{'#'*60}")
-
-        # 第1轮不做修复（假设文件已被修复），后续轮次重新修复
-        if round_num > 1:
-            print(f"换模型重新修复...")
-            with open(target_file, "w") as f:
-                f.write(original_content)
-
-            fix_env = os.environ.copy()
-            fix_env["FIX_ROUND"] = str(round_num)
-            fix_result = subprocess.run(
-                [sys.executable, fix_script],
-                env=fix_env,
-                capture_output=True,
-                text=True,
-            )
-            if fix_result.returncode != 0:
-                print(f"修复脚本失败: {fix_result.stderr[:500]}")
-                continue
-            print(f"修复完成，进入评审...")
-
-        diff_content = get_git_diff(target_file)
-        if not diff_content.strip():
-            with open(target_file, "r") as f:
-                current = f.read()
-            diff_content = f"--- original\n+++ current\n{current[:4000]}"
-
-        passed, results = run_review(diff_content, error_log)
-
-        if passed:
-            print(f"\n✅ 第 {round_num} 轮评审通过！")
-            return
-
-        fail_reasons = [r["reason"] for r in results if r["passed"] is False]
-        print(f"\n❌ 第 {round_num} 轮评审未通过")
-        if fail_reasons:
-            print(f"  反馈摘要: {'; '.join(fail_reasons[:3])}")
-
-    print(f"\n❌ {max_rounds} 轮修复-评审后仍未通过，放弃本次自动修复")
-    with open(target_file, "w") as f:
-        f.write(original_content)
-    print("已恢复原始文件内容")
-    sys.exit(1)
 
 
 def main():
@@ -374,16 +362,10 @@ def main():
     parser_review.add_argument("--diff-file", help="包含 diff 内容的文件")
     parser_review.add_argument("--error", help="原始错误日志", default="")
 
-    parser_fix = subparsers.add_parser("fix-and-review", help="修复+评审循环")
-    parser_fix.add_argument("--file", required=True, help="要修复的文件路径")
-    parser_fix.add_argument("--error", help="错误日志", default="")
-
     args = parser.parse_args()
 
     if args.command == "review":
         do_review(args)
-    elif args.command == "fix-and-review":
-        do_fix_and_review(args)
 
 
 if __name__ == "__main__":

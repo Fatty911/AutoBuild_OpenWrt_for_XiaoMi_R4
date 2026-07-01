@@ -111,7 +111,7 @@ def classify_releases_by_prefix(
     
     Args:
         releases: List of releases
-        tag_prefixes: List of tag prefixes to match (e.g., ["OpenWRT.org_", "OpenWRT_Lienol_"])
+        tag_prefixes: List of tag prefixes to match (e.g., ["OpenWRT.org_"])
         keep_per_prefix: Number of releases to keep per prefix
     
     Returns:
@@ -232,7 +232,6 @@ def main():
         epilog="""
 Examples:
   %(prog)s --prefix "OpenWRT.org_" --keep 3
-  %(prog)s --prefix "OpenWRT.org_" --prefix "OpenWRT_Lienol_" --keep 3
   %(prog)s --prefix "OpenWRT.org_" --dry-run
         
 This script requires:

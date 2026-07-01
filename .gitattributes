@@ -1,0 +1,5 @@
+.github/workflows/*.yml text eol=lf
+custom_scripts/diy-part1.sh text eol=lf
+custom_scripts/diy-part2.sh text eol=lf
+custom_scripts/run_track3.sh text eol=lf
+package/luci-app-autoupdate/root/usr/bin/autoupdate.sh text eol=lf
