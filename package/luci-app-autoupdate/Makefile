@@ -5,6 +5,7 @@ include $(TOPDIR)/rules.mk
 
 LUCI_TITLE:=LuCI support for Auto Firmware Update
 LUCI_PKGARCH:=all
+LUCI_DEPENDS:=+curl +jsonfilter +ca-bundle
 
 include $(TOPDIR)/feeds/luci/luci.mk
 

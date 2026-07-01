@@ -3,11 +3,8 @@ run-name: "AI Fix for ${{ github.event.workflow_run.name || inputs.failed_workfl
 
 on:
   workflow_run:
-    workflows: [
-      "Build Lienol 1 Tools and Kernel before packages for XIAOMI_R4",
-      "Build Lienol 2 packages and fixes for XIAOMI_R4",
-      "Build OpenWrt Firmware for Xiaomi Mi Router 4"
-    ]
+    workflows:
+      - "Build OpenWrt Firmware for Xiaomi Mi Router 4"
     types:
       - completed
   workflow_dispatch:
@@ -31,7 +28,9 @@ jobs:
       actions: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@main
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
 
       - name: Download error log artifact
         env:
@@ -75,25 +74,22 @@ jobs:
               gh run view $RUN_ID --log 2>/dev/null | strings | grep -iE "error|failed|fatal|make: \*\*\*" | tail -n 200 > last_error.log || true
             fi
           fi
-          # 如果仍然没有日志，创建占位符
+          # 没有真实错误日志时拒绝盲修
           if [ ! -s last_error.log ]; then
-            echo "=== 错误日志获取失败 ===" > last_error.log
-            echo "未能获取到失败工作流的错误日志" >> last_error.log
-            echo "Run ID: $RUN_ID" >> last_error.log
-            echo "WorkFlow: $WORKFLOW_NAME" >> last_error.log
-            echo "这可能是由于工作流被取消或超时导致的" >> last_error.log
+            echo "::error::未能获取失败工作流的真实错误日志，拒绝启动 AI 修复"
+            exit 1
           fi
           echo "=== 最终错误日志 ==="
           head -20 last_error.log || echo "日志文件为空"
           ls -la
 
       - name: Setup Node.js
-        uses: actions/setup-node@main
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '22'
 
       - name: Setup Python
-        uses: actions/setup-python@main
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: '3.12'
           
@@ -102,50 +98,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 pyyaml
           
-      - name: Download Error Log Artifact
-        continue-on-error: true
-        uses: actions/download-artifact@main
-        with:
-          name: error-log
-          github-token: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-          run-id: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
-
-      - name: Run AI Auto Fix (Track 2)
-        id: track2
-        continue-on-error: true
-        env:
-          FAILED_RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-          XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
-          XAI_PROXY_URL: ${{ secrets.XAI_PROXY_URL }}
-          MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-          MODAL_API_KEY: ${{ secrets.MODAL_API_KEY }}
-          MODELSCOPE_API_KEY: ${{ secrets.MODELSCOPE_API_KEY }}
-          ATOMGIT_API_KEY: ${{ secrets.ATOMGIT_API_KEY }}
-          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-          BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
-          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
-          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
-          QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
-          GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
-          ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
-          WORKFLOW_FILE: ${{ github.workspace }}/${{ github.event.workflow_run.path || '.github/workflows/Build_OpenWrt_Firmware.yml' }}
+      - name: Setup OpenCode and Oh My OpenCode
         run: |
-          if [ -f "last_error.log" ]; then
-            echo "=== 找到 last_error.log ==="
-            cat last_error.log
-            python custom_scripts/auto_fix_with_AI_LLM.py
-          else
-            echo "没有找到 last_error.log，无法执行 AI 修复。"
-            exit 1
-          fi
-
-      - name: Setup OpenCode & OhMyOpenCode (Track 3)
-        if: steps.track2.outcome == 'failure'
-        run: |
-          echo "=== Track 2 失败，启动 OpenCode 深度修复 ==="
+          echo "=== 启动单一 OpenCode 自动修复路径 ==="
           # 安装 Bun（omo install 需要）
           curl -fsSL https://bun.sh/install | bash
           export PATH="$HOME/.bun/bin:$PATH"
@@ -161,9 +116,8 @@ jobs:
           oh-my-opencode install --no-tui --claude=no --gemini=no --copilot=no --skip-auth
 
       - name: Run OpenCode Agent
-        id: track3
+        id: opencode_fix
         timeout-minutes: 90
-        if: steps.track2.outcome == 'failure'
         env:
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
           WORKFLOW_NAME: ${{ github.event.workflow_run.name || inputs.failed_workflow_name }}
@@ -183,9 +137,14 @@ jobs:
           ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
           NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           QINIU_API_KEY: ${{ secrets.QINIU_API_KEY }}
+          QIANFAN_CODING_API_KEY: ${{ secrets.QIANFAN_CODING_API_KEY }}
+          VOLCANO_CODINGPLAN_API_KEY: ${{ secrets.VOLCANO_CODINGPLAN_API_KEY }}
+          ALIYUN_TOKENPLAN_API_KEY: ${{ secrets.ALIYUN_TOKENPLAN_API_KEY }}
+          MIMO_TOKENPLAN_API_KEY: ${{ secrets.MIMO_TOKENPLAN_API_KEY }}
           GLM_PROXY_BASE_URL: ${{ secrets.GLM_PROXY_URL }}
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
         run: |
           cd "$GITHUB_WORKSPACE"
           bash custom_scripts/run_track3.sh
@@ -196,4 +155,3 @@ jobs:
           echo "Workflow runs are cleaned up centrally by cleanup-workflow-runs.yml"
           echo "This workflow keeps the latest 2 successful and 2 failed runs"
           echo "Daily cleanup runs at 3 AM UTC (11 AM China time)"
-

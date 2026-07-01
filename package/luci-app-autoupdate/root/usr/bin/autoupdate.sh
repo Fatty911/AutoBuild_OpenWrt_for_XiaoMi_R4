@@ -8,12 +8,12 @@
 . /lib/functions.sh
 
 LOG_FILE="/var/log/autoupdate.log"
-CONFIG_FILE="/etc/config/autoupdate"
 LOCK_FILE="/var/lock/autoupdate.lock"
 TEMP_DIR="/tmp/autoupdate"
 FIRMWARE_FILE=""
 PROXY_STARTED=0
 LOCAL_PROXY_PORT=1080
+FORCE_AUTO_INSTALL=0
 
 log() {
 	echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE"
@@ -53,9 +53,17 @@ get_config() {
 	config_get PROXY_PORT config proxy_port "1080"
 	config_get CHECK_INTERVAL config check_interval "daily"
 	config_get CURRENT_VERSION config current_version ""
-	config_get AUTO_INSTALL config auto_install 0
+	config_get LAST_SEEN_VERSION config last_seen_version ""
+	config_get LAST_CHECK config last_check 0
+	config_get RELEASE_TAG_PREFIX config release_tag_prefix "OpenWRT.org_"
+	config_get DEVICE_PATTERN config device_pattern "mi-router-4"
+	config_get AUTO_INSTALL_CONFIG config auto_install 0
 
 	LOCAL_PROXY_PORT="$PROXY_PORT"
+	AUTO_INSTALL="$AUTO_INSTALL_CONFIG"
+	if [ "$FORCE_AUTO_INSTALL" = "1" ]; then
+		AUTO_INSTALL=1
+	fi
 }
 
 # ── 代理管理 ──────────────────────────────────────────────
@@ -125,15 +133,15 @@ fetch_url() {
 	local retry=3
 
 	while [ $retry -gt 0 ]; do
-		local curl_args="-sL --connect-timeout 30 --max-time 120"
-
 		if [ "$PROXY_STARTED" = "1" ] || netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "; then
 			log "使用代理下载: socks5://127.0.0.1:${LOCAL_PROXY_PORT}"
-			curl $curl_args --socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
+			curl -fsSL --connect-timeout 30 --max-time 120 \
+				--socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
 				-o "$output" "$url"
 		else
 			log "直接下载（无代理）"
-			curl $curl_args -o "$output" "$url"
+			curl -fsSL --connect-timeout 30 --max-time 120 \
+				-o "$output" "$url"
 		fi
 
 		if [ -s "$output" ]; then
@@ -153,17 +161,30 @@ github_api() {
 	local url="$1"
 	local output="$2"
 
-	local curl_args="-sL --connect-timeout 30 --max-time 60"
-
-	if [ -n "$GITHUB_TOKEN" ]; then
-		curl_args="$curl_args -H \"Authorization: token $GITHUB_TOKEN\""
-	fi
-
 	if [ "$PROXY_STARTED" = "1" ] || netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "; then
-		curl $curl_args --socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
-			-o "$output" "$url"
+		if [ -n "$GITHUB_TOKEN" ]; then
+			curl -fsSL --connect-timeout 30 --max-time 60 \
+				-H "Authorization: Bearer $GITHUB_TOKEN" \
+				-H "Accept: application/vnd.github+json" \
+				--socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
+				-o "$output" "$url"
+		else
+			curl -fsSL --connect-timeout 30 --max-time 60 \
+				-H "Accept: application/vnd.github+json" \
+				--socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
+				-o "$output" "$url"
+		fi
 	else
-		curl $curl_args -o "$output" "$url"
+		if [ -n "$GITHUB_TOKEN" ]; then
+			curl -fsSL --connect-timeout 30 --max-time 60 \
+				-H "Authorization: Bearer $GITHUB_TOKEN" \
+				-H "Accept: application/vnd.github+json" \
+				-o "$output" "$url"
+		else
+			curl -fsSL --connect-timeout 30 --max-time 60 \
+				-H "Accept: application/vnd.github+json" \
+				-o "$output" "$url"
+		fi
 	fi
 }
 
@@ -188,35 +209,36 @@ get_latest_release() {
 		return 1
 	fi
 
-	# 使用 jsonfilter 解析（OpenWrt 自带）
-	local first_tag
-	first_tag=$(jsonfilter -e '@[0].tag_name' "$releases_json" 2>/dev/null)
+	local tag=""
+	local idx=0
+	while true; do
+		tag=$(jsonfilter -i "$releases_json" -e "@[$idx].tag_name" 2>/dev/null) || break
+		[ -z "$tag" ] && break
+		case "$tag" in
+			"$RELEASE_TAG_PREFIX"*)
+				LATEST_VERSION="$tag"
+				break
+				;;
+		esac
+		idx=$((idx + 1))
+	done
 
-	if [ -z "$first_tag" ]; then
-		log "未找到Release（可能API速率限制，请配置github_token）"
+	if [ -z "$LATEST_VERSION" ]; then
+		log "未找到前缀为 ${RELEASE_TAG_PREFIX} 的 Release"
 		return 1
 	fi
 
-	LATEST_VERSION="$first_tag"
 	log "最新版本: $LATEST_VERSION"
 	return 0
 }
 
 check_new_version() {
-	if [ -z "$CURRENT_VERSION" ]; then
-		# 首次运行，记录当前版本并提示更新
-		log "首次运行，记录版本: $LATEST_VERSION"
-		uci set autoupdate.config.current_version="$LATEST_VERSION"
-		uci commit autoupdate
+	if [ "$LATEST_VERSION" = "$LAST_SEEN_VERSION" ]; then
+		log "该版本已处理: $LATEST_VERSION"
 		return 1
 	fi
 
-	if [ "$LATEST_VERSION" = "$CURRENT_VERSION" ]; then
-		log "已是最新版本: $LATEST_VERSION"
-		return 1
-	fi
-
-	log "发现新版本: $LATEST_VERSION (当前: $CURRENT_VERSION)"
+	log "发现新版本: $LATEST_VERSION (上次处理: ${LAST_SEEN_VERSION:-无})"
 	return 0
 }
 
@@ -229,49 +251,25 @@ find_firmware_file() {
 		return 1
 	fi
 
-	# 用 jsonfilter 查找匹配的固件文件
-	# 优先匹配包含工作流名或 mi-router-4 的 .bin/.img 文件
 	local asset_name=""
 	local asset_url=""
 	local idx=0
 
 	while true; do
-		asset_name=$(jsonfilter -e "@.assets[$idx].name" "$assets_json" 2>/dev/null) || break
+		asset_name=$(jsonfilter -i "$assets_json" -e "@.assets[$idx].name" 2>/dev/null) || break
 		[ -z "$asset_name" ] && break
 
 		case "$asset_name" in
-			*.bin|*.img|*.sysupgrade*)
-				# 匹配 Mi Router 4 相关固件
-				case "$asset_name" in
-					*mi-router-4*|*mi_router_4*|*xiaomi*r4*|*"$WORKFLOW_NAME"*)
-						asset_url=$(jsonfilter -e "@.assets[$idx].browser_download_url" "$assets_json" 2>/dev/null)
-						break
-						;;
-				esac
+			*"$DEVICE_PATTERN"*sysupgrade*.bin)
+				asset_url=$(jsonfilter -i "$assets_json" -e "@.assets[$idx].browser_download_url" 2>/dev/null)
+				break
 				;;
 		esac
 		idx=$((idx + 1))
 	done
 
-	# 没精确匹配，取第一个 .sysupgrade. 或 .bin 文件
 	if [ -z "$asset_url" ]; then
-		idx=0
-		while true; do
-			asset_name=$(jsonfilter -e "@.assets[$idx].name" "$assets_json" 2>/dev/null) || break
-			[ -z "$asset_name" ] && break
-
-			case "$asset_name" in
-				*sysupgrade*|*.bin)
-					asset_url=$(jsonfilter -e "@.assets[$idx].browser_download_url" "$assets_json" 2>/dev/null)
-					break
-					;;
-			esac
-			idx=$((idx + 1))
-		done
-	fi
-
-	if [ -z "$asset_url" ]; then
-		log "Release中没有匹配的固件文件"
+		log "Release 中没有同时匹配 ${DEVICE_PATTERN} 和 sysupgrade 的 .bin 文件"
 		return 1
 	fi
 
@@ -292,11 +290,18 @@ download_firmware() {
 		return 1
 	fi
 
-	# 验证文件大小 (> 3MB for sysupgrade images)
+	# Xiaomi Mi Router 4 的完整 sysupgrade 明显大于单独 kernel1；
+	# 8MB 下限用于拦截下载错误页、initramfs 和 kernel 分区镜像。
 	local size
 	size=$(wc -c < "$output" 2>/dev/null)
-	if [ -z "$size" ] || [ "$size" -lt 3000000 ]; then
+	if [ -z "$size" ] || [ "$size" -lt 8388608 ]; then
 		log "下载的文件太小，可能已损坏: ${size:-0} bytes"
+		rm -f "$output"
+		return 1
+	fi
+
+	if ! sysupgrade -T "$output" >> "$LOG_FILE" 2>&1; then
+		log "sysupgrade -T 校验失败，拒绝使用该固件"
 		rm -f "$output"
 		return 1
 	fi
@@ -309,8 +314,7 @@ download_firmware() {
 install_firmware() {
 	log "准备安装固件..."
 
-	# 更新版本记录（不管是否自动安装都记录，避免重复下载）
-	uci set autoupdate.config.current_version="$LATEST_VERSION"
+	uci set autoupdate.config.last_seen_version="$LATEST_VERSION"
 	uci commit autoupdate
 
 	if [ "$AUTO_INSTALL" != "1" ]; then
@@ -318,6 +322,11 @@ install_firmware() {
 		log "固件已下载到: $FIRMWARE_FILE"
 		log "手动安装: sysupgrade -n $FIRMWARE_FILE"
 		return 0
+	fi
+
+	if ! sysupgrade -T "$FIRMWARE_FILE" >> "$LOG_FILE" 2>&1; then
+		log "刷写前 sysupgrade -T 二次校验失败，已中止"
+		return 1
 	fi
 
 	log "开始刷写固件..."
@@ -329,6 +338,37 @@ install_firmware() {
 }
 
 # ── 主逻辑 ────────────────────────────────────────────────
+
+scheduled_check_due() {
+	local now
+	local interval_seconds
+
+	now=$(date +%s)
+	case "$CHECK_INTERVAL" in
+		6hours|hourly)
+			interval_seconds=21600
+			;;
+		weekly)
+			interval_seconds=604800
+			;;
+		daily|*)
+			interval_seconds=86400
+			;;
+	esac
+
+	case "$LAST_CHECK" in
+		''|*[!0-9]*) LAST_CHECK=0 ;;
+	esac
+
+	if [ $((now - LAST_CHECK)) -lt "$interval_seconds" ]; then
+		log "未到检查间隔，跳过本次定时检查"
+		return 1
+	fi
+
+	uci set autoupdate.config.last_check="$now"
+	uci commit autoupdate
+	return 0
+}
 
 check_update() {
 	log "========== 开始检查更新 =========="
@@ -373,7 +413,10 @@ check_update() {
 		return 1
 	fi
 
-	install_firmware || true
+	if ! install_firmware; then
+		cleanup
+		return 1
+	fi
 
 	log "========== 更新检查完成 =========="
 	cleanup
@@ -386,9 +429,17 @@ case "$1" in
 		check_lock
 		check_update
 		;;
+	scheduled)
+		check_lock
+		get_config
+		if scheduled_check_due; then
+			check_update
+		fi
+		;;
 	install)
 		check_lock
-		AUTO_INSTALL=1 check_update
+		FORCE_AUTO_INSTALL=1
+		check_update
 		;;
 	proxy-test)
 		get_config
@@ -416,10 +467,12 @@ case "$1" in
 	version)
 		get_config
 		echo "Current: ${CURRENT_VERSION:-unknown}"
+		echo "Last seen release: ${LAST_SEEN_VERSION:-none}"
 		;;
 	*)
-		echo "Usage: $0 {check|install|proxy-test|version}"
+		echo "Usage: $0 {check|scheduled|install|proxy-test|version}"
 		echo "  check      - Check for updates (download if found)"
+		echo "  scheduled  - Check only when configured interval is due"
 		echo "  install    - Check and auto-install updates"
 		echo "  proxy-test - Test proxy connectivity"
 		echo "  version    - Show current version"
