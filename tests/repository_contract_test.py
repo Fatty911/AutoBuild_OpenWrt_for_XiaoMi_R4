@@ -104,6 +104,42 @@ class BuildOutputValidationTests(unittest.TestCase):
 
 
 class AutomationContractTests(unittest.TestCase):
+    def test_ssr_plus_configuration_matches_current_helloworld_options(self):
+        config = (
+            REPOSITORY_ROOT / "custom_configs/config_for_OpenWrt_org"
+        ).read_text(encoding="utf-8")
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn(
+            "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Shadowsocks_Rust_Client=y",
+            config,
+        )
+        self.assertIn(
+            "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_ShadowsocksR_Libev_Client=y",
+            config,
+        )
+        self.assertIn(
+            "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Shadowsocks_Simple_Obfs=y",
+            config,
+        )
+        self.assertIn(
+            "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_NONE_V2RAY=y",
+            config,
+        )
+        self.assertNotIn(
+            "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Shadowsocks_Libev_Client",
+            config,
+        )
+        self.assertNotIn(
+            "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_DNS2SOCKS",
+            config,
+        )
+        self.assertIn("CONFIG_PACKAGE_dns2socks=n", config)
+        self.assertIn("CONFIG_PACKAGE_dns2tcp=y", config)
+        self.assertIn("CONFIG_PACKAGE_microsocks=y", config)
+        self.assertNotIn("Shadowsocks/SSR libev", readme)
+        self.assertNotIn("simple-obfs 和 dns2socks", readme)
+
     def test_autoupdate_requires_target_sysupgrade_and_validation(self):
         script = (
             REPOSITORY_ROOT
