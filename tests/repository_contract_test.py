@@ -201,6 +201,8 @@ class AutomationContractTests(unittest.TestCase):
         self.assertIn("AUTOPDATE_HOUR: ${{ vars.AUTOPDATE_HOUR || '4' }}", workflow)
         self.assertIn("AUTOPDATE_MINUTE: ${{ vars.AUTOPDATE_MINUTE || '17' }}", workflow)
         self.assertIn("AUTOPDATE_RELEASE_TAG_PREFIX: OpenWRT.org_Kernel_", workflow)
+        self.assertIn("make defconfig 后 CONFIG_TARGET_ROOTFS_PARTSIZE=", workflow)
+        self.assertIn("重新写入 $ROOTFS_PARTSIZE_MB", workflow)
         self.assertNotIn("OpenWRT.org__Kernel", workflow)
         self.assertNotIn("OpenWrt.org__Kernel", workflow)
 

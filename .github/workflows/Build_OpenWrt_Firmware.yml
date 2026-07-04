@@ -184,7 +184,13 @@ jobs:
           sed -i '/^CONFIG_TARGET_ROOTFS_PARTSIZE=/d' .config
           echo "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE_MB" >> .config
           make defconfig
-          actual_partsize="$(sed -n 's/^CONFIG_TARGET_ROOTFS_PARTSIZE=//p' .config)"
+          actual_partsize="$(sed -n 's/^CONFIG_TARGET_ROOTFS_PARTSIZE=//p' .config | tail -n 1)"
+          if [ "$actual_partsize" != "$ROOTFS_PARTSIZE_MB" ]; then
+            echo "::warning::make defconfig 后 CONFIG_TARGET_ROOTFS_PARTSIZE=${actual_partsize:-空}，重新写入 $ROOTFS_PARTSIZE_MB"
+            sed -i '/^CONFIG_TARGET_ROOTFS_PARTSIZE=/d' .config
+            echo "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE_MB" >> .config
+            actual_partsize="$(sed -n 's/^CONFIG_TARGET_ROOTFS_PARTSIZE=//p' .config | tail -n 1)"
+          fi
           if [ "$actual_partsize" != "$ROOTFS_PARTSIZE_MB" ]; then
             echo "::error::CONFIG_TARGET_ROOTFS_PARTSIZE=$actual_partsize，与要求的 $ROOTFS_PARTSIZE_MB 不一致"
             exit 1
