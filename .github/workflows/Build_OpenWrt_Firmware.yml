@@ -42,10 +42,18 @@ env:
   UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   SOURCE: OpenWrt.org_official
-  AUTOPDATE_GITHUB_REPO: Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4
-  AUTOPDATE_WORKFLOW: OpenWRT.org
-  AUTOPDATE_SUBSCRIPTION: ${{ secrets.SUBSCRIPTION_URL }}
-  AUTOPDATE_PROXY_PORT: 1080
+  ROOTFS_PARTSIZE_MB: ${{ vars.ROOTFS_PARTSIZE_MB || '100' }}
+  MIN_FIRMWARE_SIZE_MB: ${{ vars.MIN_FIRMWARE_SIZE_MB || '8' }}
+  MAX_FIRMWARE_SIZE_MB: ${{ vars.MAX_FIRMWARE_SIZE_MB || '96' }}
+  RELEASE_KEEP_COUNT: ${{ vars.RELEASE_KEEP_COUNT || '3' }}
+  ENABLE_XRAY: ${{ vars.ENABLE_XRAY || '0' }}
+  AUTOPDATE_GITHUB_REPO: ${{ vars.AUTOPDATE_GITHUB_REPO || github.repository }}
+  AUTOPDATE_UPDATE_BASE_URL: ${{ vars.AUTOPDATE_UPDATE_BASE_URL }}
+  AUTOPDATE_PROXY_PORT: ${{ vars.AUTOPDATE_PROXY_PORT || '1080' }}
+  AUTOPDATE_HOUR: ${{ vars.AUTOPDATE_HOUR || '4' }}
+  AUTOPDATE_MINUTE: ${{ vars.AUTOPDATE_MINUTE || '17' }}
+  AUTOPDATE_AUTO_INSTALL: ${{ vars.AUTOPDATE_AUTO_INSTALL || '1' }}
+  AUTOPDATE_RELEASE_TAG_PREFIX: OpenWRT.org_Kernel_
 
 jobs:
   build:
@@ -100,6 +108,11 @@ jobs:
           echo "GOPATH=/workdir/go-cache" >> $GITHUB_ENV
           echo "GOMODCACHE=/workdir/go-mod-cache" >> $GITHUB_ENV
           echo "GOCACHE=/workdir/go-cache" >> $GITHUB_ENV
+
+      - name: Set build metadata
+        run: |
+          echo "BUILD_DATE=$(date +"%Y.%m.%d-%H%M")" >> "$GITHUB_ENV"
+          echo "FILE_DATE=$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
 
       - name: Cache ccache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -162,13 +175,21 @@ jobs:
           chmod +x $DIY_P2_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P2_SH
-          echo "Before defconfig, setting CONFIG_TARGET_ROOTFS_PARTSIZE:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config
+          case "$ROOTFS_PARTSIZE_MB" in
+            ''|*[!0-9]*|0)
+              echo "::error::ROOTFS_PARTSIZE_MB 必须是正整数"
+              exit 1
+              ;;
+          esac
+          sed -i '/^CONFIG_TARGET_ROOTFS_PARTSIZE=/d' .config
+          echo "CONFIG_TARGET_ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE_MB" >> .config
           make defconfig
-          echo "After defconfig, checking CONFIG_TARGET_ROOTFS_PARTSIZE:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config || (echo "Lost after defconfig, reapplying..." && echo "CONFIG_TARGET_ROOTFS_PARTSIZE=110" >> .config)
-          echo "Final check after reapplication:"
-          grep "CONFIG_TARGET_ROOTFS_PARTSIZE" .config
+          actual_partsize="$(sed -n 's/^CONFIG_TARGET_ROOTFS_PARTSIZE=//p' .config)"
+          if [ "$actual_partsize" != "$ROOTFS_PARTSIZE_MB" ]; then
+            echo "::error::CONFIG_TARGET_ROOTFS_PARTSIZE=$actual_partsize，与要求的 $ROOTFS_PARTSIZE_MB 不一致"
+            exit 1
+          fi
+          echo "CONFIG_TARGET_ROOTFS_PARTSIZE=$actual_partsize"
 
       - name: Cache OpenWRT staging_dir
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
@@ -205,6 +226,21 @@ jobs:
         run: |
           cd openwrt
           make target/linux/compile -j$(nproc) V=s > kernel.log 2>&1 || make target/linux/compile -j1 V=s > kernel.log 2>&1
+
+      - name: Embed firmware release identity
+        run: |
+          cd openwrt
+          KERNEL_VERSION="$(find build_dir -maxdepth 4 -type d -name 'linux-*' -printf '%f\n' | sed -n 's/^linux-//p' | head -1)"
+          if [ -z "$KERNEL_VERSION" ]; then
+            echo "::error::无法确定内核版本"
+            exit 1
+          fi
+          RELEASE_TAG="${AUTOPDATE_RELEASE_TAG_PREFIX}${KERNEL_VERSION}_${BUILD_DATE}"
+          mkdir -p files/etc
+          printf '%s\n' "$RELEASE_TAG" > files/etc/autoupdate-version
+          echo "kernel_version=$KERNEL_VERSION" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "固件版本标识: $RELEASE_TAG"
 
       - name: Pre-compile luci-base
         run: |
@@ -276,12 +312,9 @@ jobs:
         id: setEnv
         run: |
           cd openwrt
-          echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
           echo "TARGET_BOARD=$(grep '^CONFIG_TARGET_BOARD=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
           echo "TARGET_SUBTARGET=$(grep '^CONFIG_TARGET_SUBTARGET=' .config | sed -r 's/.*="(.*)"/\1/')" >> $GITHUB_ENV
           echo "TARGET_PROFILE=$(grep '^CONFIG_TARGET_PROFILE=' .config | sed -r 's/.*="(.*)"/\1/' | sed 's/^DEVICE_//')" >> $GITHUB_ENV
-          KERNEL_VERSION=$(ls build_dir/target-*_*/linux-*/ | grep -oP 'linux-\K\d+\.\d+\.\d+' | head -1)
-          echo "kernel_version=$KERNEL_VERSION" >> $GITHUB_ENV
           echo "DEVICE_NAME=$TARGET_PROFILE" >> $GITHUB_ENV
 
       - name: Check for .bin file
@@ -305,7 +338,8 @@ jobs:
           SOURCE: ${{ env.SOURCE }}
           EXPECTED_TARGET_DIR: ramips/mt7621
           EXPECTED_DEVICE_PATTERN: mi-router-4
-          MIN_FIRMWARE_SIZE_MB: 8
+          MIN_FIRMWARE_SIZE_MB: ${{ env.MIN_FIRMWARE_SIZE_MB }}
+          MAX_FIRMWARE_SIZE_MB: ${{ env.MAX_FIRMWARE_SIZE_MB }}
         run: |
           python $GITHUB_WORKSPACE/custom_scripts/validate_build_output.py --gate
 
@@ -313,7 +347,7 @@ jobs:
         if: steps.check_bin.outputs.BIN_EXISTS == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: OpenWrt.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
+          name: OpenWrt.org_Kernel_${{ env.kernel_version }}_${{ env.FILE_DATE }}
           path: |
             openwrt/bin
             openwrt/.config
@@ -322,7 +356,7 @@ jobs:
         id: generate_release_tag
         if: steps.check_bin.outputs.BIN_EXISTS == 'true' && env.BUILD_QUALITY_GATE == 'pass'
         run: |
-          echo "release_tag=OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_${{ env.kernel_version }}_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "release_tag_status=success" >> $GITHUB_OUTPUT
 
       - name: Upload firmware to release
@@ -339,9 +373,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Only delete releases created by this workflow (matching tag prefix)
-          TAG_PREFIX="OpenWRT.org_${{ env.DEVICE_NAME }}_Kernel_"
-          python3 custom_scripts/cleanup_releases.py --prefix "$TAG_PREFIX" --keep 3
+          case "$RELEASE_KEEP_COUNT" in
+            ''|*[!0-9]*|0)
+              echo "::error::RELEASE_KEEP_COUNT 必须是正整数"
+              exit 1
+              ;;
+          esac
+          python3 custom_scripts/cleanup_releases.py \
+            --prefix "$AUTOPDATE_RELEASE_TAG_PREFIX" \
+            --keep "$RELEASE_KEEP_COUNT"
 
       - name: Validate build output
         if: success()

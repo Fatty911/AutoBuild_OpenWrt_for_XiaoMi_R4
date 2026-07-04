@@ -9,4 +9,8 @@ LUCI_DEPENDS:=+curl +jsonfilter +ca-bundle
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
+define Package/luci-app-autoupdate/conffiles
+/etc/config/autoupdate
+endef
+
 $(eval $(call BuildPackage,luci-app-autoupdate))

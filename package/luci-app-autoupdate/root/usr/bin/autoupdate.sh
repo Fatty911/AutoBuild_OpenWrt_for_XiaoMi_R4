@@ -1,10 +1,12 @@
 #!/bin/sh
+# shellcheck shell=ash
 #
 # OpenWrt Firmware Auto Update Script
 # Check and update firmware from GitHub Release
-# Supports temporary proxy via SSR-Plus subscription
+# Falls back to a temporary local proxy only after direct access fails.
 #
 
+# shellcheck source=/dev/null
 . /lib/functions.sh
 
 LOG_FILE="/var/log/autoupdate.log"
@@ -12,6 +14,7 @@ LOCK_FILE="/var/lock/autoupdate.lock"
 TEMP_DIR="/tmp/autoupdate"
 FIRMWARE_FILE=""
 PROXY_STARTED=0
+PROXY_SERVICE_STARTED=""
 LOCAL_PROXY_PORT=1080
 FORCE_AUTO_INSTALL=0
 
@@ -47,15 +50,12 @@ get_config() {
 	config_load autoupdate
 	config_get ENABLED config enabled 0
 	config_get GITHUB_REPO config github_repo ""
-	config_get WORKFLOW_NAME config workflow_name ""
+	config_get UPDATE_BASE_URL config update_base_url ""
 	config_get GITHUB_TOKEN config github_token ""
-	config_get SUBSCRIPTION_URL config subscription_url ""
+	config_get PROXY_SERVICE config proxy_service "auto"
 	config_get PROXY_PORT config proxy_port "1080"
-	config_get CHECK_INTERVAL config check_interval "daily"
-	config_get CURRENT_VERSION config current_version ""
 	config_get LAST_SEEN_VERSION config last_seen_version ""
-	config_get LAST_CHECK config last_check 0
-	config_get RELEASE_TAG_PREFIX config release_tag_prefix "OpenWRT.org_"
+	config_get RELEASE_TAG_PREFIX config release_tag_prefix "OpenWRT.org_Kernel_"
 	config_get DEVICE_PATTERN config device_pattern "mi-router-4"
 	config_get AUTO_INSTALL_CONFIG config auto_install 0
 
@@ -68,39 +68,61 @@ get_config() {
 
 # ── 代理管理 ──────────────────────────────────────────────
 
-# 启动 SSR-Plus 代理（临时）
+proxy_available() {
+	netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "
+}
+
+start_service_proxy() {
+	local service="$1"
+	local init_script=""
+
+	case "$service" in
+		ssr-plus|shadowsocksr)
+			if [ -f "/etc/init.d/ssr-plus" ]; then
+				init_script="/etc/init.d/ssr-plus"
+			elif [ -f "/etc/init.d/shadowsocksr" ]; then
+				init_script="/etc/init.d/shadowsocksr"
+			fi
+			;;
+		openclash)
+			[ -f "/etc/init.d/openclash" ] && init_script="/etc/init.d/openclash"
+			;;
+	esac
+
+	[ -n "$init_script" ] || return 1
+
+	log "启动临时代理服务: $service"
+	"$init_script" start 2>/dev/null
+	PROXY_SERVICE_STARTED="$service"
+	return 0
+}
+
+# 启动或复用本机 SOCKS5 代理（仅在直连失败后调用）
 start_proxy() {
 	log "尝试启动代理..."
 
-	# 1) 检查 SSR-Plus 是否已经在运行 — 直接复用
-	if netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "; then
+	if proxy_available; then
 		log "代理端口 ${LOCAL_PROXY_PORT} 已在监听，直接使用"
 		PROXY_STARTED=0
 		return 0
 	fi
 
-	# 2) 如果没配置订阅 URL，跳过代理
-	if [ -z "$SUBSCRIPTION_URL" ]; then
-		log "订阅URL未配置，跳过代理"
-		return 1
-	fi
+	case "$PROXY_SERVICE" in
+		shadowsocksr|ssr-plus)
+			start_service_proxy "ssr-plus" || return 1
+			;;
+		openclash)
+			start_service_proxy "openclash" || return 1
+			;;
+		auto|*)
+			start_service_proxy "ssr-plus" || start_service_proxy "openclash" || return 1
+			;;
+	esac
 
-	# 3) 通过 LuCI/ubus 启动 SSR-Plus（最可靠的方式）
-	if [ -f "/etc/init.d/ssr-plus" ]; then
-		log "启动 SSR-Plus 服务..."
-		/etc/init.d/ssr-plus start 2>/dev/null
-		sleep 3
-	elif [ -f "/etc/init.d/shadowsocksr" ]; then
-		log "启动 shadowsocksr 服务..."
-		/etc/init.d/shadowsocksr start 2>/dev/null
-		sleep 3
-	fi
-
-	# 4) 验证 SOCKS5 端口
-	local retry=5
+	local retry=8
 	while [ $retry -gt 0 ]; do
-		if netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "; then
-			log "代理启动成功: socks5://127.0.0.1:${LOCAL_PROXY_PORT}"
+		if proxy_available; then
+			log "代理可用: socks5://127.0.0.1:${LOCAL_PROXY_PORT}"
 			PROXY_STARTED=1
 			return 0
 		fi
@@ -108,60 +130,60 @@ start_proxy() {
 		sleep 2
 	done
 
-	log "代理启动失败，将直接访问"
+	log "代理启动失败"
+	if [ -n "$PROXY_SERVICE_STARTED" ]; then
+		PROXY_STARTED=1
+		stop_proxy
+	fi
 	return 1
 }
 
-# 停止临时代理（只停止我们启动的）
+# 停止临时代理（只停止本脚本启动的服务）
 stop_proxy() {
 	if [ "$PROXY_STARTED" = "1" ]; then
 		log "停止临时代理..."
-		if [ -f "/etc/init.d/ssr-plus" ]; then
-			/etc/init.d/ssr-plus stop 2>/dev/null
-		elif [ -f "/etc/init.d/shadowsocksr" ]; then
-			/etc/init.d/shadowsocksr stop 2>/dev/null
-		fi
+		case "$PROXY_SERVICE_STARTED" in
+			openclash)
+				[ -f "/etc/init.d/openclash" ] && /etc/init.d/openclash stop 2>/dev/null
+				;;
+			ssr-plus|shadowsocksr|*)
+				if [ -f "/etc/init.d/ssr-plus" ]; then
+					/etc/init.d/ssr-plus stop 2>/dev/null
+				elif [ -f "/etc/init.d/shadowsocksr" ]; then
+					/etc/init.d/shadowsocksr stop 2>/dev/null
+				fi
+				;;
+		esac
 		PROXY_STARTED=0
+		PROXY_SERVICE_STARTED=""
 	fi
 }
 
 # ── 网络请求 ──────────────────────────────────────────────
 
-fetch_url() {
-	local url="$1"
-	local output="$2"
-	local retry=3
+curl_download() {
+	local mode="$1"
+	local url="$2"
+	local output="$3"
 
-	while [ $retry -gt 0 ]; do
-		if [ "$PROXY_STARTED" = "1" ] || netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "; then
-			log "使用代理下载: socks5://127.0.0.1:${LOCAL_PROXY_PORT}"
-			curl -fsSL --connect-timeout 30 --max-time 120 \
-				--socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
-				-o "$output" "$url"
-		else
-			log "直接下载（无代理）"
-			curl -fsSL --connect-timeout 30 --max-time 120 \
-				-o "$output" "$url"
-		fi
-
-		if [ -s "$output" ]; then
-			return 0
-		fi
-
-		log "下载失败，重试... ($retry)"
-		retry=$((retry - 1))
-		sleep 2
-	done
-
-	return 1
+	rm -f "$output"
+	if [ "$mode" = "proxy" ]; then
+		curl -fsSL --connect-timeout 30 --max-time 120 \
+			--socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
+			-o "$output" "$url"
+	else
+		curl -fsSL --connect-timeout 30 --max-time 120 \
+			-o "$output" "$url"
+	fi
 }
 
-# GitHub API 请求（带可选 Token 认证）
-github_api() {
-	local url="$1"
-	local output="$2"
+curl_api() {
+	local mode="$1"
+	local url="$2"
+	local output="$3"
 
-	if [ "$PROXY_STARTED" = "1" ] || netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "; then
+	rm -f "$output"
+	if [ "$mode" = "proxy" ]; then
 		if [ -n "$GITHUB_TOKEN" ]; then
 			curl -fsSL --connect-timeout 30 --max-time 60 \
 				-H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -188,20 +210,82 @@ github_api() {
 	fi
 }
 
+fetch_url() {
+	local url="$1"
+	local output="$2"
+
+	log "直连下载: $url"
+	if curl_download direct "$url" "$output" && [ -s "$output" ]; then
+		return 0
+	fi
+
+	log "直连下载失败，准备使用代理重试"
+	if start_proxy && curl_download proxy "$url" "$output" && [ -s "$output" ]; then
+		return 0
+	fi
+
+	rm -f "$output"
+	return 1
+}
+
+# GitHub API 请求（带可选 Token 认证）
+github_api() {
+	local url="$1"
+	local output="$2"
+
+	log "直连请求 API: $url"
+	if curl_api direct "$url" "$output" && [ -s "$output" ]; then
+		return 0
+	fi
+
+	log "直连 API 请求失败，准备使用代理重试"
+	if start_proxy && curl_api proxy "$url" "$output" && [ -s "$output" ]; then
+		return 0
+	fi
+
+	rm -f "$output"
+	return 1
+}
+
 # ── 版本检查 ──────────────────────────────────────────────
 
 get_current_version() {
-	# 从 /etc/openwrt_release 获取当前固件版本标识
+	if [ -s /etc/autoupdate-version ]; then
+		sed -n '1{s/[[:space:]]*$//;p;q;}' /etc/autoupdate-version
+		return 0
+	fi
+
 	if [ -f /etc/openwrt_release ]; then
+		# shellcheck source=/dev/null
 		. /etc/openwrt_release
 		echo "${OPENWRT_BOARD:-unknown}@${OPENWRT_ARCH:-unknown}"
 	fi
 }
 
+api_base_url() {
+	local base
+
+	if [ -n "$UPDATE_BASE_URL" ]; then
+		base="${UPDATE_BASE_URL%/}"
+	else
+		base="https://api.github.com/repos/${GITHUB_REPO}"
+	fi
+
+	case "$base" in
+		*/releases)
+			echo "${base%/releases}"
+			;;
+		*)
+			echo "$base"
+			;;
+	esac
+}
+
 get_latest_release() {
-	local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases"
+	local api_url
 	local releases_json="$TEMP_DIR/releases.json"
 
+	api_url="$(api_base_url)/releases"
 	log "获取最新Release: $api_url"
 
 	if ! github_api "$api_url" "$releases_json"; then
@@ -233,19 +317,29 @@ get_latest_release() {
 }
 
 check_new_version() {
+	CURRENT_VERSION="$(get_current_version)"
+
+	if [ -n "$CURRENT_VERSION" ] && [ "$LATEST_VERSION" = "$CURRENT_VERSION" ]; then
+		log "当前固件已是最新版本: $CURRENT_VERSION"
+		uci set autoupdate.config.last_seen_version="$LATEST_VERSION"
+		uci commit autoupdate
+		return 1
+	fi
+
 	if [ "$LATEST_VERSION" = "$LAST_SEEN_VERSION" ]; then
 		log "该版本已处理: $LATEST_VERSION"
 		return 1
 	fi
 
-	log "发现新版本: $LATEST_VERSION (上次处理: ${LAST_SEEN_VERSION:-无})"
+	log "发现新版本: $LATEST_VERSION (当前: ${CURRENT_VERSION:-未知}, 上次处理: ${LAST_SEEN_VERSION:-无})"
 	return 0
 }
 
 find_firmware_file() {
-	local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${LATEST_VERSION}"
+	local api_url
 	local assets_json="$TEMP_DIR/assets.json"
 
+	api_url="$(api_base_url)/releases/tags/${LATEST_VERSION}"
 	if ! github_api "$api_url" "$assets_json"; then
 		log "获取Release资源列表失败"
 		return 1
@@ -320,7 +414,7 @@ install_firmware() {
 	if [ "$AUTO_INSTALL" != "1" ]; then
 		log "自动安装已禁用"
 		log "固件已下载到: $FIRMWARE_FILE"
-		log "手动安装: sysupgrade -n $FIRMWARE_FILE"
+		log "手动安装: sysupgrade $FIRMWARE_FILE"
 		return 0
 	fi
 
@@ -330,7 +424,7 @@ install_firmware() {
 	fi
 
 	log "开始刷写固件..."
-	sysupgrade -n "$FIRMWARE_FILE"
+	sysupgrade "$FIRMWARE_FILE"
 
 	# 不应该到达这里
 	log "固件刷写失败！"
@@ -338,37 +432,6 @@ install_firmware() {
 }
 
 # ── 主逻辑 ────────────────────────────────────────────────
-
-scheduled_check_due() {
-	local now
-	local interval_seconds
-
-	now=$(date +%s)
-	case "$CHECK_INTERVAL" in
-		6hours|hourly)
-			interval_seconds=21600
-			;;
-		weekly)
-			interval_seconds=604800
-			;;
-		daily|*)
-			interval_seconds=86400
-			;;
-	esac
-
-	case "$LAST_CHECK" in
-		''|*[!0-9]*) LAST_CHECK=0 ;;
-	esac
-
-	if [ $((now - LAST_CHECK)) -lt "$interval_seconds" ]; then
-		log "未到检查间隔，跳过本次定时检查"
-		return 1
-	fi
-
-	uci set autoupdate.config.last_check="$now"
-	uci commit autoupdate
-	return 0
-}
 
 check_update() {
 	log "========== 开始检查更新 =========="
@@ -385,11 +448,6 @@ check_update() {
 	if [ -z "$GITHUB_REPO" ]; then
 		log "GitHub仓库未配置"
 		return 1
-	fi
-
-	# 尝试启动代理（仅在配置了订阅URL时）
-	if [ -n "$SUBSCRIPTION_URL" ]; then
-		start_proxy || log "代理启动失败，将直接访问"
 	fi
 
 	# 检查更新
@@ -431,10 +489,7 @@ case "$1" in
 		;;
 	scheduled)
 		check_lock
-		get_config
-		if scheduled_check_due; then
-			check_update
-		fi
+		check_update
 		;;
 	install)
 		check_lock
@@ -443,30 +498,26 @@ case "$1" in
 		;;
 	proxy-test)
 		get_config
-		if [ -n "$SUBSCRIPTION_URL" ]; then
-			start_proxy
-			if [ "$PROXY_STARTED" = "1" ] || netstat -tln 2>/dev/null | grep -q ":${LOCAL_PROXY_PORT} "; then
-				log "代理测试..."
-				if curl --socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
-					-s -o /dev/null -w "%{http_code}" --max-time 15 \
-					"https://github.com" 2>/dev/null | grep -q "200"; then
-					log "GitHub 访问成功"
-					echo "OK: GitHub accessible via proxy"
-				else
-					log "GitHub 访问失败"
-					echo "FAIL: Cannot access GitHub via proxy"
-				fi
-				stop_proxy
+		start_proxy
+		if proxy_available; then
+			log "代理测试..."
+			if curl --socks5-hostname "127.0.0.1:${LOCAL_PROXY_PORT}" \
+				-s -o /dev/null -w "%{http_code}" --max-time 15 \
+				"https://github.com" 2>/dev/null | grep -q "200"; then
+				log "GitHub 访问成功"
+				echo "OK: GitHub accessible via proxy"
 			else
-				echo "FAIL: Proxy not available"
+				log "GitHub 访问失败"
+				echo "FAIL: Cannot access GitHub via proxy"
 			fi
+			stop_proxy
 		else
-			echo "SKIP: No subscription URL configured"
+			echo "FAIL: Proxy not available"
 		fi
 		;;
 	version)
 		get_config
-		echo "Current: ${CURRENT_VERSION:-unknown}"
+		echo "Current: $(get_current_version)"
 		echo "Last seen release: ${LAST_SEEN_VERSION:-none}"
 		;;
 	*)

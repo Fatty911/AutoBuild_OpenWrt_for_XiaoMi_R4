@@ -102,6 +102,23 @@ class BuildOutputValidationTests(unittest.TestCase):
 
         self.assertEqual(valid, [])
 
+    def test_rejects_oversized_image_when_maximum_is_set(self):
+        self.create_image(
+            "openwrt-ramips-mt7621-xiaomi_mi-router-4-squashfs-sysupgrade.bin",
+            size_mb=10,
+        )
+
+        with redirect_stdout(io.StringIO()):
+            valid = validate_build_output.find_valid_sysupgrade_images(
+                self.workspace,
+                "ramips/mt7621",
+                "mi-router-4",
+                8,
+                9,
+            )
+
+        self.assertEqual(valid, [])
+
 
 class AutomationContractTests(unittest.TestCase):
     def test_ssr_plus_configuration_matches_current_helloworld_options(self):
@@ -126,6 +143,11 @@ class AutomationContractTests(unittest.TestCase):
             "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_NONE_V2RAY=y",
             config,
         )
+        self.assertIn(
+            "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Xray=n",
+            config,
+        )
+        self.assertIn("CONFIG_PACKAGE_xray-core=n", config)
         self.assertNotIn(
             "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Shadowsocks_Libev_Client",
             config,
@@ -139,6 +161,8 @@ class AutomationContractTests(unittest.TestCase):
         self.assertIn("CONFIG_PACKAGE_microsocks=y", config)
         self.assertNotIn("Shadowsocks/SSR libev", readme)
         self.assertNotIn("simple-obfs 和 dns2socks", readme)
+        self.assertIn("ENABLE_XRAY=1", readme)
+        self.assertIn("OpenClash 支持更多协议", readme)
 
     def test_autoupdate_requires_target_sysupgrade_and_validation(self):
         script = (
@@ -149,8 +173,48 @@ class AutomationContractTests(unittest.TestCase):
         self.assertIn('*"$DEVICE_PATTERN"*sysupgrade*.bin)', script)
         self.assertGreaterEqual(script.count('sysupgrade -T "$FIRMWARE_FILE"'), 1)
         self.assertIn('sysupgrade -T "$output"', script)
-        self.assertIn('release_tag_prefix "OpenWRT.org_"', script)
+        self.assertIn('release_tag_prefix "OpenWRT.org_Kernel_"', script)
+        self.assertIn('config_get UPDATE_BASE_URL config update_base_url ""', script)
+        self.assertIn("curl_download direct", script)
+        self.assertIn("curl_download proxy", script)
+        self.assertIn("curl_api direct", script)
+        self.assertIn("curl_api proxy", script)
+        self.assertIn("[ -s /etc/autoupdate-version ]", script)
+        self.assertIn('sysupgrade "$FIRMWARE_FILE"', script)
+        self.assertNotIn("sysupgrade -n", script)
+        self.assertNotIn("subscription_url", script)
+        self.assertNotIn("check_interval", script)
+        self.assertNotIn("workflow_name", script)
         self.assertNotIn("*sysupgrade*.bin|*factory*.bin|*kernel*.bin", script)
+
+    def test_build_workflow_exposes_resource_and_autoupdate_variables(self):
+        workflow = (
+            REPOSITORY_ROOT / ".github/workflows/Build_OpenWrt_Firmware.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("ROOTFS_PARTSIZE_MB: ${{ vars.ROOTFS_PARTSIZE_MB || '100' }}", workflow)
+        self.assertIn("MIN_FIRMWARE_SIZE_MB: ${{ vars.MIN_FIRMWARE_SIZE_MB || '8' }}", workflow)
+        self.assertIn("MAX_FIRMWARE_SIZE_MB: ${{ vars.MAX_FIRMWARE_SIZE_MB || '96' }}", workflow)
+        self.assertIn("RELEASE_KEEP_COUNT: ${{ vars.RELEASE_KEEP_COUNT || '3' }}", workflow)
+        self.assertIn("ENABLE_XRAY: ${{ vars.ENABLE_XRAY || '0' }}", workflow)
+        self.assertIn("AUTOPDATE_UPDATE_BASE_URL: ${{ vars.AUTOPDATE_UPDATE_BASE_URL }}", workflow)
+        self.assertIn("AUTOPDATE_HOUR: ${{ vars.AUTOPDATE_HOUR || '4' }}", workflow)
+        self.assertIn("AUTOPDATE_MINUTE: ${{ vars.AUTOPDATE_MINUTE || '17' }}", workflow)
+        self.assertIn("AUTOPDATE_RELEASE_TAG_PREFIX: OpenWRT.org_Kernel_", workflow)
+        self.assertNotIn("OpenWRT.org__Kernel", workflow)
+        self.assertNotIn("OpenWrt.org__Kernel", workflow)
+
+    def test_readme_documents_numeric_sources_and_repo_variable_overrides(self):
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+
+        for text in [
+            "192.168.88.1`；由 `custom_scripts/diy-part2.sh` 写入，工作流不读取 Repository Variables 覆盖",
+            "100 MiB；由 `ROOTFS_PARTSIZE_MB` 控制，工作流读取 Repository Variables 覆盖",
+            "8 MiB、上限 96 MiB；由 `MIN_FIRMWARE_SIZE_MB`/`MAX_FIRMWARE_SIZE_MB` 控制，工作流读取 Repository Variables 覆盖",
+            "最近 3 个 Release；由 `RELEASE_KEEP_COUNT` 控制，工作流读取 Repository Variables 覆盖",
+            "每日 `04:17` 在路由器本地时区运行；由 `AUTOPDATE_HOUR`/`AUTOPDATE_MINUTE` 控制，工作流读取 Repository Variables 覆盖",
+        ]:
+            self.assertIn(text, readme)
 
     def test_active_actions_are_pinned(self):
         workflows = REPOSITORY_ROOT / ".github" / "workflows"

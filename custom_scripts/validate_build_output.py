@@ -44,10 +44,16 @@ def find_valid_sysupgrade_images(
     expected_target_dir: str,
     device_pattern: str,
     minimum_size_mb: float,
+    maximum_size_mb: float | None = None,
 ) -> list[Path]:
     targets_dir = workspace / "openwrt" / "bin" / "targets"
     all_bins = sorted(targets_dir.glob("**/*.bin"))
     minimum_size = int(minimum_size_mb * 1024 * 1024)
+    maximum_size = (
+        int(maximum_size_mb * 1024 * 1024)
+        if maximum_size_mb is not None
+        else None
+    )
     valid: list[Path] = []
 
     print(f"搜索目录: {targets_dir}")
@@ -55,6 +61,11 @@ def find_valid_sysupgrade_images(
         "要求: target 含 "
         f"'{expected_target_dir}'，文件名含 '{device_pattern}' 和 'sysupgrade'，"
         f"大小 >= {minimum_size_mb:.1f} MB"
+        + (
+            f" 且 <= {maximum_size_mb:.1f} MB"
+            if maximum_size_mb is not None
+            else ""
+        )
     )
 
     for image in all_bins:
@@ -76,6 +87,8 @@ def find_valid_sysupgrade_images(
             reasons.append("不是 sysupgrade")
         if size < minimum_size:
             reasons.append(f"小于 {minimum_size_mb:.1f} MB")
+        if maximum_size is not None and size > maximum_size:
+            reasons.append(f"大于 {maximum_size_mb:.1f} MB")
 
         if reasons:
             print(f"  - 跳过 {relative} ({size_mb:.2f} MB): {', '.join(reasons)}")
@@ -125,8 +138,14 @@ def main() -> int:
         print("❌ MIN_FIRMWARE_SIZE_MB 不是有效数字")
         minimum_size_mb = 8.0
 
-    if minimum_size_mb <= 0:
-        print("❌ MIN_FIRMWARE_SIZE_MB 必须大于 0")
+    try:
+        maximum_size_mb = float(os.getenv("MAX_FIRMWARE_SIZE_MB", "96"))
+    except ValueError:
+        print("❌ MAX_FIRMWARE_SIZE_MB 不是有效数字")
+        maximum_size_mb = 96.0
+
+    if minimum_size_mb <= 0 or maximum_size_mb <= minimum_size_mb:
+        print("❌ 固件尺寸必须满足 0 < MIN_FIRMWARE_SIZE_MB < MAX_FIRMWARE_SIZE_MB")
         passed = False
     else:
         print("=== 构建输出质量门 ===")
@@ -136,6 +155,7 @@ def main() -> int:
             expected_target_dir,
             device_pattern,
             minimum_size_mb,
+            maximum_size_mb,
         )
         print("\n--- root.orig 状态 ---")
         root_orig_valid = check_root_orig_exists(workspace)

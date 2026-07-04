@@ -69,15 +69,63 @@ fi
 
 # 从环境变量读取配置并注入
 AUTOPDATE_GITHUB_REPO="${AUTOPDATE_GITHUB_REPO:-Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4}"
-AUTOPDATE_WORKFLOW="${AUTOPDATE_WORKFLOW:-OpenWRT.org}"
-AUTOPDATE_SUBSCRIPTION="${AUTOPDATE_SUBSCRIPTION:-}"
+AUTOPDATE_UPDATE_BASE_URL="${AUTOPDATE_UPDATE_BASE_URL:-}"
 AUTOPDATE_PROXY_PORT="${AUTOPDATE_PROXY_PORT:-1080}"
+AUTOPDATE_HOUR="${AUTOPDATE_HOUR:-4}"
+AUTOPDATE_MINUTE="${AUTOPDATE_MINUTE:-17}"
+AUTOPDATE_AUTO_INSTALL="${AUTOPDATE_AUTO_INSTALL:-1}"
+AUTOPDATE_RELEASE_TAG_PREFIX="${AUTOPDATE_RELEASE_TAG_PREFIX:-OpenWRT.org_Kernel_}"
+ENABLE_XRAY="${ENABLE_XRAY:-0}"
+
+case "$AUTOPDATE_GITHUB_REPO" in
+  */*) ;;
+  *) echo "AUTOPDATE_GITHUB_REPO 必须是 owner/repo"; exit 1 ;;
+esac
+if [ -n "$AUTOPDATE_UPDATE_BASE_URL" ]; then
+  case "$AUTOPDATE_UPDATE_BASE_URL" in
+    http://*|https://*) ;;
+    *) echo "AUTOPDATE_UPDATE_BASE_URL 必须是 HTTP(S) URL"; exit 1 ;;
+  esac
+  if printf '%s' "$AUTOPDATE_UPDATE_BASE_URL" | grep -q '[[:space:]]'; then
+    echo "AUTOPDATE_UPDATE_BASE_URL 不能包含空白字符"
+    exit 1
+  fi
+fi
+case "$AUTOPDATE_PROXY_PORT" in ''|*[!0-9]*|0) echo "AUTOPDATE_PROXY_PORT 无效"; exit 1 ;; esac
+case "$AUTOPDATE_HOUR" in ''|*[!0-9]*) echo "AUTOPDATE_HOUR 无效"; exit 1 ;; esac
+case "$AUTOPDATE_MINUTE" in ''|*[!0-9]*) echo "AUTOPDATE_MINUTE 无效"; exit 1 ;; esac
+[ "$AUTOPDATE_HOUR" -le 23 ] || { echo "AUTOPDATE_HOUR 必须是 0-23"; exit 1; }
+[ "$AUTOPDATE_MINUTE" -le 59 ] || { echo "AUTOPDATE_MINUTE 必须是 0-59"; exit 1; }
+[ "$AUTOPDATE_PROXY_PORT" -le 65535 ] || { echo "AUTOPDATE_PROXY_PORT 必须是 1-65535"; exit 1; }
+case "$AUTOPDATE_AUTO_INSTALL" in 0|1) ;; *) echo "AUTOPDATE_AUTO_INSTALL 必须是 0 或 1"; exit 1 ;; esac
+case "$ENABLE_XRAY" in 0|1) ;; *) echo "ENABLE_XRAY 必须是 0 或 1"; exit 1 ;; esac
+
+sed -i \
+  -e '/^CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_NONE_V2RAY=/d' \
+  -e '/^CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Xray=/d' \
+  -e '/^CONFIG_PACKAGE_xray-core=/d' \
+  .config
+if [ "$ENABLE_XRAY" = "1" ]; then
+  {
+    echo "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_NONE_V2RAY=n"
+    echo "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Xray=y"
+    echo "CONFIG_PACKAGE_xray-core=y"
+  } >> .config
+else
+  {
+    echo "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_NONE_V2RAY=y"
+    echo "CONFIG_PACKAGE_luci-app-ssr-plus_INCLUDE_Xray=n"
+    echo "CONFIG_PACKAGE_xray-core=n"
+  } >> .config
+fi
 
 echo "自动更新配置:"
 echo "  GitHub仓库: $AUTOPDATE_GITHUB_REPO"
-echo "  工作流名称: $AUTOPDATE_WORKFLOW"
-echo "  订阅URL: ${AUTOPDATE_SUBSCRIPTION:-未配置}"
+echo "  更新服务: ${AUTOPDATE_UPDATE_BASE_URL:-GitHub Release API}"
 echo "  代理端口: $AUTOPDATE_PROXY_PORT"
+echo "  自动刷写: $AUTOPDATE_AUTO_INSTALL"
+echo "  夜间时间: $(printf '%02d:%02d' "$AUTOPDATE_HOUR" "$AUTOPDATE_MINUTE")"
+echo "  Xray: $ENABLE_XRAY"
 
 # 创建默认配置
 mkdir -p files/etc/config
@@ -85,18 +133,19 @@ cat > files/etc/config/autoupdate << EOF
 config autoupdate 'config'
     option enabled '1'
     option github_repo '$AUTOPDATE_GITHUB_REPO'
-    option workflow_name '$AUTOPDATE_WORKFLOW'
-    option github_token '${AUTOPDATE_GITHUB_TOKEN:-}'
-    option subscription_url '$AUTOPDATE_SUBSCRIPTION'
+    option update_base_url '$AUTOPDATE_UPDATE_BASE_URL'
+    option github_token ''
+    option proxy_service 'auto'
     option proxy_port '$AUTOPDATE_PROXY_PORT'
-    option check_interval 'daily'
-    option release_tag_prefix 'OpenWRT.org_'
+    option release_tag_prefix '$AUTOPDATE_RELEASE_TAG_PREFIX'
     option device_pattern 'mi-router-4'
-    option current_version ''
     option last_seen_version ''
-    option last_check '0'
-    option auto_install '0'
+    option auto_install '$AUTOPDATE_AUTO_INSTALL'
 EOF
+
+printf '%s %s * * * /usr/bin/autoupdate.sh scheduled >> /var/log/autoupdate.log 2>&1\n' \
+  "$AUTOPDATE_MINUTE" "$AUTOPDATE_HOUR" \
+  > package/luci-app-autoupdate/root/etc/cron.d/autoupdate
 
 echo "自动更新插件配置完成"
 

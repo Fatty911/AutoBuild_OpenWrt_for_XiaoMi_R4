@@ -111,7 +111,7 @@ def classify_releases_by_prefix(
     
     Args:
         releases: List of releases
-        tag_prefixes: List of tag prefixes to match (e.g., ["OpenWRT.org_"])
+        tag_prefixes: List of tag prefixes to match (e.g., ["OpenWRT.org_Kernel_"])
         keep_per_prefix: Number of releases to keep per prefix
     
     Returns:
@@ -231,8 +231,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s --prefix "OpenWRT.org_" --keep 3
-  %(prog)s --prefix "OpenWRT.org_" --dry-run
+  %(prog)s --prefix "OpenWRT.org_Kernel_" --keep 3
+  %(prog)s --prefix "OpenWRT.org_Kernel_" --dry-run
         
 This script requires:
   1. GitHub CLI (gh) installed and authenticated
