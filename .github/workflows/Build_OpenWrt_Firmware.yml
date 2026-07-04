@@ -236,9 +236,39 @@ jobs:
       - name: Embed firmware release identity
         run: |
           cd openwrt
-          KERNEL_VERSION="$(find build_dir -maxdepth 4 -type d -name 'linux-*' -printf '%f\n' | sed -n 's/^linux-//p' | head -1)"
+          KERNEL_VERSION=""
+          TARGET_BOARD="$(sed -nE 's/^CONFIG_TARGET_BOARD="?([^"]*)"?$/\1/p' .config | tail -n 1)"
+          if [ -n "$TARGET_BOARD" ] && [ -f "target/linux/$TARGET_BOARD/Makefile" ]; then
+            patchver_key="KERNEL_PATCHVER"
+            if grep -q '^CONFIG_TESTING_KERNEL=y' .config; then
+              patchver_key="KERNEL_TESTING_PATCHVER"
+            fi
+            KERNEL_PATCHVER="$(sed -nE "s/^[[:space:]]*${patchver_key}[[:space:]]*:?=[[:space:]]*([^[:space:]#]+).*/\1/p" "target/linux/$TARGET_BOARD/Makefile" | tail -n 1)"
+            if [ -z "$KERNEL_PATCHVER" ] && [ "$patchver_key" != "KERNEL_PATCHVER" ]; then
+              KERNEL_PATCHVER="$(sed -nE 's/^[[:space:]]*KERNEL_PATCHVER[[:space:]]*:?=[[:space:]]*([^[:space:]#]+).*/\1/p' "target/linux/$TARGET_BOARD/Makefile" | tail -n 1)"
+            fi
+            version_file="target/linux/generic/kernel-$KERNEL_PATCHVER"
+            if [ -n "$KERNEL_PATCHVER" ] && [ -f "$version_file" ]; then
+              LINUX_VERSION_SUFFIX="$(awk -v key="LINUX_VERSION-$KERNEL_PATCHVER" '$1 == key && ($2 == "=" || $2 == ":=") {print $3}' "$version_file" | tail -n 1)"
+              if [ -n "$LINUX_VERSION_SUFFIX" ]; then
+                KERNEL_VERSION="${KERNEL_PATCHVER}${LINUX_VERSION_SUFFIX}"
+              fi
+            fi
+          fi
+          if [ -z "$KERNEL_VERSION" ]; then
+            KERNEL_VERSION="$(
+              find build_dir -maxdepth 5 -type d -printf '%f\n' |
+                sed -nE 's/^linux-([0-9]+([.][0-9]+)+)$/\1/p' |
+                sort -V |
+                tail -n 1
+            )"
+          fi
           if [ -z "$KERNEL_VERSION" ]; then
             echo "::error::无法确定内核版本"
+            exit 1
+          fi
+          if ! printf '%s\n' "$KERNEL_VERSION" | grep -Eq '^[0-9]+([.][0-9]+)+$'; then
+            echo "::error::内核版本格式无效: $KERNEL_VERSION"
             exit 1
           fi
           RELEASE_TAG="${AUTOPDATE_RELEASE_TAG_PREFIX}${KERNEL_VERSION}_${BUILD_DATE}"

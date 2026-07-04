@@ -203,8 +203,14 @@ class AutomationContractTests(unittest.TestCase):
         self.assertIn("AUTOPDATE_RELEASE_TAG_PREFIX: OpenWRT.org_Kernel_", workflow)
         self.assertIn("make defconfig 后 CONFIG_TARGET_ROOTFS_PARTSIZE=", workflow)
         self.assertIn("重新写入 $ROOTFS_PARTSIZE_MB", workflow)
+        self.assertIn('CONFIG_TARGET_BOARD', workflow)
+        self.assertIn('target/linux/generic/kernel-$KERNEL_PATCHVER', workflow)
+        self.assertIn('LINUX_VERSION-$KERNEL_PATCHVER', workflow)
+        self.assertIn("linux-([0-9]+([.][0-9]+)+)", workflow)
+        self.assertIn("内核版本格式无效", workflow)
         self.assertNotIn("OpenWRT.org__Kernel", workflow)
         self.assertNotIn("OpenWrt.org__Kernel", workflow)
+        self.assertNotIn("find build_dir -maxdepth 4 -type d -name 'linux-*'", workflow)
 
     def test_readme_documents_numeric_sources_and_repo_variable_overrides(self):
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
