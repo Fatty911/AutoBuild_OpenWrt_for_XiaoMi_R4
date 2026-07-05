@@ -90,3 +90,6 @@ Lienol 源、Phase 1/2 分阶段构建、MEGA 中转和 AI 自动合并 PR 均�
 构建框架源自 [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)，固件源码来自 [OpenWrt](https://github.com/openwrt/openwrt)，SSR Plus feed 来自 [fw876/helloworld](https://github.com/fw876/helloworld)。
 
 本仓库沿用 [MIT License](LICENSE)。
+
+### 2026-07-05
+- 仓库目录整理：`oh-my-openagent.json` → `config/`
