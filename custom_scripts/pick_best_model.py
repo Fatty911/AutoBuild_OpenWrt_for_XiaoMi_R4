@@ -5,7 +5,7 @@
 缓存超过 14 天未更新时打印警告但仍使用，确保网络不通时也能工作。
 
 免费渠道优先级：
-1. AtomGit（免费无限量）→ GLM-5, Qwen3.5-398B 等
+1. AtomGit（免费，小AGENT）→ GLM-5.1, DeepSeek-V4-Flash（上下文有限，仅作小AGENT fallback）
 2. OpenRouter Free → qwen3-coder:free, deepseek-v4-flash:free, gemma-4-31b-it:free, nemotron-3-super:free 等
 3. ZEN 免费模型（仅保留排行榜匹配的）
 4. NVIDIA NIM → Kimi K2.5（免费，262K context，强推理）
@@ -496,10 +496,10 @@ def pick_model():
         print(f"[pick_best_model] SiliconFlow GLM: {sf_models[0]}", file=sys.stderr)
         return "siliconflow", sf_models[0], sf_models[-1], sf_models
 
-    # 6. AtomGit 免费模型 (GLM-5, Qwen3.5)
+    # 6. AtomGit 免费模型 (GLM-5.1, DeepSeek-V4-Flash) — 小AGENT角色，上下文有限
     if atomgit_key:
         ag_models = split_env(
-            "ATOMGIT_MODEL_LIST", "zai-org/GLM-5,Qwen/Qwen3.5-397B-A17B"
+            "ATOMGIT_MODEL_LIST", "zai-org/GLM-5.1,deepseek-ai/DeepSeek-V4-Flash"
         )
         print(f"[pick_best_model] AtomGit 免费: {ag_models[0]}", file=sys.stderr)
         return "atomgit", ag_models[0], ag_models[-1], ag_models
@@ -637,7 +637,7 @@ def pick_ranked_models(limit=10):
         "moonshot": ("MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k"),
         "openrouter": ("OPENROUTER_HIGHVALUE_MODEL_LIST", "moonshotai/kimi-k2.5,z-ai/glm-5.1"),
         "siliconflow": ("SILICONFLOW_MODEL_LIST", "zai-org/GLM-5,zai-org/GLM-5.1"),
-        "atomgit": ("ATOMGIT_MODEL_LIST", "zai-org/GLM-5,Qwen/Qwen3.5-397B-A17B"),
+        "atomgit": ("ATOMGIT_MODEL_LIST", "zai-org/GLM-5.1,deepseek-ai/DeepSeek-V4-Flash"),
         "nvidia-nim": ("NVIDIA_NIM_MODEL_LIST", "moonshotai/kimi-k2.5"),
         "qiniu": ("QINIU_MODEL_LIST", "nvidia/nemotron-3-super-120b-a12b-free"),
         "minimax": ("MINIMAX_MODEL_LIST", "MiniMax-M2.7"),
