@@ -54,6 +54,11 @@ env:
   AUTOPDATE_MINUTE: ${{ vars.AUTOPDATE_MINUTE || '17' }}
   AUTOPDATE_AUTO_INSTALL: ${{ vars.AUTOPDATE_AUTO_INSTALL || '1' }}
   AUTOPDATE_RELEASE_TAG_PREFIX: OpenWRT.org_Kernel_
+  # 网络个性化配置（从 Secrets 读取，不设则保持 OpenWrt 默认）
+  LAN_IP: ${{ secrets.LAN_IP }}
+  WIFI_SSID: ${{ secrets.WIFI_SSID }}
+  WIFI_PASSWORD: ${{ secrets.WIFI_PASSWORD }}
+  WIFI_BLACKLIST: ${{ secrets.WIFI_BLACKLIST }}
 
 jobs:
   build:

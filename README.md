@@ -1,8 +1,21 @@
 # 小米路由器 4 OpenWrt 自动构建
 
-本仓库只从 [OpenWrt 官方源码](https://github.com/openwrt/openwrt) 的 `main` 分支构建 Xiaomi Mi Router 4（`ramips/mt7621`）固件。
+构建框架源自 [P3TERX/Actions-OpenWrt](https://github.com/P3TERX/Actions-OpenWrt)。本仓库只从 [OpenWrt 官方源码](https://github.com/openwrt/openwrt) 的 `main` 分支构建 Xiaomi Mi Router 4（`ramips/mt7621`）固件。
 
 Lienol 源、Phase 1/2 分阶段构建、MEGA 中转和 AI 自动合并 PR 均已移除。它们曾用于缩短长时间构建的排错周期，不属于最终构建架构。
+
+## 模板化设计
+
+本仓库作为公开模板，Fork 后无需修改任何代码文件即可使用。所有个性化配置通过 GitHub Secrets 读取：
+
+| Secret 名称 | 说明 | 不设置时的默认值 |
+|-------------|------|-----------------|
+| `LAN_IP` | 路由器 LAN 管理地址 | `192.168.1.1`（OpenWrt 官方默认） |
+| `WIFI_SSID` | WiFi 名称 | `OpenWrt`（官方默认） |
+| `WIFI_PASSWORD` | WiFi 密码（WPA2-PSK） | 无密码（官方默认） |
+| `WIFI_BLACKLIST` | WiFi MAC 黑名单，逗号分隔，如 `AA:BB:CC:DD:EE:FF,11:22:33:44:55:66` | 无黑名单 |
+
+Fork 后不设置任何 Secret，构建出的固件即为纯 OpenWrt 官方默认配置。设置自己的 Secret 后，固件首次启动时自动应用个性化配置（LAN 地址、WiFi 名称/密码、MAC 黑名单）。
 
 ## 使用方法
 
@@ -18,7 +31,7 @@ Lienol 源、Phase 1/2 分阶段构建、MEGA 中转和 AI 自动合并 PR 均�
 | 项目 | 本仓库固件中的体现 |
 |---|---|
 | 目标设备 | 固定为 Xiaomi Mi Router 4，目标为 `ramips/mt7621` |
-| 管理地址 | LAN 默认地址改为 `192.168.88.1`；由 `custom_scripts/diy-part2.sh` 写入，工作流不读取 Repository Variables 覆盖 |
+| 管理地址 | 由 Secret `LAN_IP` 控制，不设则保持 OpenWrt 默认 `192.168.1.1`；由 `custom_scripts/diy-part2.sh` 读取环境变量写入 |
 | Web 管理 | 启用 LuCI、Bootstrap 主题和简体中文 |
 | 拨号 | 显式启用 PPP、PPPoE、内核 PPP/PPPoE/PPPoX 模块和 `luci-proto-ppp` |
 | DNS | 使用 `dnsmasq-full` 的 nftables 支持，并加入 SmartDNS |

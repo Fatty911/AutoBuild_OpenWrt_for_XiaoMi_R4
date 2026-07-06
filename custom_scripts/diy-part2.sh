@@ -10,8 +10,94 @@
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
 
-# Modify default IP
-sed -i 's/192.168.1.1/192.168.88.1/g' package/base-files/files/bin/config_generate
+# ========================================
+# 网络个性化配置（从环境变量读取，未设置则保持 OpenWrt 默认）
+# Fork 后不设 secrets 时，构建出的固件是纯 OpenWrt 官方默认值
+# ========================================
+
+# --- LAN 管理地址 ---
+# 默认 192.168.1.1（OpenWrt 官方默认）
+LAN_IP="${LAN_IP:-192.168.1.1}"
+if [ -n "$LAN_IP" ] && [ "$LAN_IP" != "192.168.1.1" ]; then
+    sed -i "s/192.168.1.1/${LAN_IP}/g" package/base-files/files/bin/config_generate
+    echo "LAN 地址已设置为: $LAN_IP"
+else
+    echo "LAN 地址保持 OpenWrt 默认: 192.168.1.1"
+fi
+
+# --- WiFi SSID 和密码 ---
+# 通过 UCI defaults 脚本在首次启动时应用
+# 不设则保持 OpenWrt 默认（SSID=OpenWrt，无密码）
+WIFI_SSID="${WIFI_SSID:-}"
+WIFI_PASSWORD="${WIFI_PASSWORD:-}"
+WIFI_BLACKLIST="${WIFI_BLACKLIST:-}"
+
+if [ -n "$WIFI_SSID" ] || [ -n "$WIFI_PASSWORD" ] || [ -n "$WIFI_BLACKLIST" ]; then
+    echo "生成 WiFi 个性化配置 UCI defaults 脚本..."
+    mkdir -p package/base-files/files/etc/uci-defaults
+
+    # 生成配置值文件（构建时写入，首次启动时由 UCI defaults 脚本读取）
+    mkdir -p package/base-files/files/etc
+    {
+        echo "WIFI_SSID=$WIFI_SSID"
+        echo "WIFI_PASSWORD=$WIFI_PASSWORD"
+        echo "WIFI_BLACKLIST=$WIFI_BLACKLIST"
+    } > package/base-files/files/etc/wifi-custom.conf
+
+    # 生成 UCI defaults 脚本（静态内容，读取配置文件）
+    cat > package/base-files/files/etc/uci-defaults/zzz-wifi-custom << 'SCRIPT_END'
+#!/bin/sh
+
+# WiFi 个性化配置（首次启动时执行）
+# 读取 /etc/wifi-custom.conf 中的配置值
+
+CONFIG_FILE="/etc/wifi-custom.conf"
+[ -f "$CONFIG_FILE" ] || exit 0
+
+. "$CONFIG_FILE"
+
+# SSID
+if [ -n "$WIFI_SSID" ]; then
+    uci set wireless.default_radio0.ssid="$WIFI_SSID"
+    uci set wireless.default_radio1.ssid="$WIFI_SSID"
+fi
+
+# 密码
+if [ -n "$WIFI_PASSWORD" ]; then
+    uci set wireless.default_radio0.encryption='psk2'
+    uci set wireless.default_radio0.key="$WIFI_PASSWORD"
+    uci set wireless.default_radio1.encryption='psk2'
+    uci set wireless.default_radio1.key="$WIFI_PASSWORD"
+fi
+
+# MAC 黑名单（deny 模式，逗号分隔的 MAC 地址）
+if [ -n "$WIFI_BLACKLIST" ]; then
+    uci set wireless.default_radio0.macfilter='deny'
+    uci set wireless.default_radio1.macfilter='deny'
+    OLD_IFS="$IFS"
+    IFS=','
+    for mac in $WIFI_BLACKLIST; do
+        mac=$(echo "$mac" | tr -d ' ')
+        uci add_list wireless.default_radio0.maclist="$mac"
+        uci add_list wireless.default_radio1.maclist="$mac"
+    done
+    IFS="$OLD_IFS"
+fi
+
+uci commit wireless
+rm -f "$CONFIG_FILE"
+exit 0
+SCRIPT_END
+
+    chmod +x package/base-files/files/etc/uci-defaults/zzz-wifi-custom
+
+    [ -n "$WIFI_SSID" ] && echo "  WiFi SSID: $WIFI_SSID"
+    [ -n "$WIFI_PASSWORD" ] && echo "  WiFi 密码: [已设置]"
+    [ -n "$WIFI_BLACKLIST" ] && echo "  WiFi MAC 黑名单: $WIFI_BLACKLIST"
+    echo "WiFi 个性化配置完成"
+else
+    echo "未设置 WiFi 个性化配置，保持 OpenWrt 默认（SSID=OpenWrt，无密码，无黑名单）"
+fi
 
 #切换内核版本到5.10
 # sed -i '/KERNEL_PATCHVER/cKERNEL_PATCHVER:=5.10' target/linux/ramips/Makefile
