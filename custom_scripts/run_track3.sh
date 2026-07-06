@@ -191,7 +191,7 @@ if [ "$FIX_SUCCEEDED" != "true" ]; then
   exit 1
 fi
 
-git config user.name "Hermes-Agent"
+git config user.name "OpenCode"
 git config user.email "xuerui911@gmail.com"
 
 # ── 恢复被 AI 误删的关键文件 ──
