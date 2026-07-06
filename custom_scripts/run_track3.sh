@@ -191,8 +191,8 @@ if [ "$FIX_SUCCEEDED" != "true" ]; then
   exit 1
 fi
 
-git config user.name "github-actions[bot]"
-git config user.email "github-actions[bot]@users.noreply.github.com"
+git config user.name "Hermes-Agent"
+git config user.email "109130780+Fatty911@users.noreply.github.com"
 
 # ── 恢复被 AI 误删的关键文件 ──
 for f in "${PROTECTED_FILES[@]}"; do
