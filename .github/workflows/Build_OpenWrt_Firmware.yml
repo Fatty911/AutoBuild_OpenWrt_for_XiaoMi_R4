@@ -161,7 +161,10 @@ jobs:
             sleep $((attempt * 15))
           done
           [ "$feed_update_ok" -eq 1 ]
-          ./scripts/feeds install -a
+          if ! timeout --kill-after=30s 10m ./scripts/feeds install -a; then
+            echo "::error::feeds install 失败或超时"
+            exit 1
+          fi
 
       - name: Compute source fingerprint
         id: source_fingerprint

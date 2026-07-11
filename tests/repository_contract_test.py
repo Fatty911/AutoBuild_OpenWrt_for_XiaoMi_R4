@@ -130,6 +130,7 @@ class AutomationContractTests(unittest.TestCase):
         self.assertIn("for attempt in 1 2 3; do", workflow)
         self.assertIn("timeout --kill-after=30s 10m ./scripts/feeds update -a", workflow)
         self.assertIn("sleep $((attempt * 15))", workflow)
+        self.assertIn("timeout --kill-after=30s 10m ./scripts/feeds install -a", workflow)
 
     def test_ssr_plus_configuration_matches_current_helloworld_options(self):
         config = (
