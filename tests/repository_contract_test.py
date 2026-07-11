@@ -121,6 +121,16 @@ class BuildOutputValidationTests(unittest.TestCase):
 
 
 class AutomationContractTests(unittest.TestCase):
+    def test_feed_update_is_bounded_and_retried(self):
+        workflow = (
+            REPOSITORY_ROOT / ".github/workflows/Build_OpenWrt_Firmware.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("GIT_TERMINAL_PROMPT=0", workflow)
+        self.assertIn("for attempt in 1 2 3; do", workflow)
+        self.assertIn("timeout --kill-after=30s 10m ./scripts/feeds update -a", workflow)
+        self.assertIn("sleep $((attempt * 15))", workflow)
+
     def test_ssr_plus_configuration_matches_current_helloworld_options(self):
         config = (
             REPOSITORY_ROOT / "custom_configs/config_for_OpenWrt_org"

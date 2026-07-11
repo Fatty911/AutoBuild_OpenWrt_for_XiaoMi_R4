@@ -145,7 +145,22 @@ jobs:
       - name: Update feeds and Install feeds
         run: |
           cd openwrt
-          ./scripts/feeds update -a
+          export GIT_TERMINAL_PROMPT=0
+          feed_update_ok=0
+          for attempt in 1 2 3; do
+            echo "更新 feeds（第 ${attempt}/3 次）"
+            if timeout --kill-after=30s 10m ./scripts/feeds update -a; then
+              feed_update_ok=1
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::feeds update 连续 3 次失败或超时"
+              exit 1
+            fi
+            rm -rf feeds/*.tmp
+            sleep $((attempt * 15))
+          done
+          [ "$feed_update_ok" -eq 1 ]
           ./scripts/feeds install -a
 
       - name: Compute source fingerprint

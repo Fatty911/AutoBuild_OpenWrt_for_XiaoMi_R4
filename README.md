@@ -54,6 +54,7 @@ Fork 后不设置任何 Secret 时，LAN 使用本仓库默认的 `192.168.88.1`
 ## 构建可靠性
 
 - 所有第三方 GitHub Actions 固定到完整 commit SHA。
+- feed 更新关闭交互式 Git 凭据提示，单次最长等待 10 分钟；遇到网络卡死会清理临时目录并最多重试 3 次，避免无限占用 runner。
 - `staging_dir` 缓存键同时包含 OpenWrt 源码提交、各 feed 提交和本仓库配置哈希，避免旧工具链污染新源码。
 - 先并行编译，失败后以单线程日志重试，并将真正的失败日志上传为 `error-log` Artifact。
 - 构建质量门只接受 `ramips/mt7621` 下、名称匹配 `mi-router-4`、包含 `sysupgrade` 且大小在 8 MiB 到 96 MiB 之间的固件；上下限由 `MIN_FIRMWARE_SIZE_MB`/`MAX_FIRMWARE_SIZE_MB` 控制，工作流读取 Repository Variables 覆盖。
