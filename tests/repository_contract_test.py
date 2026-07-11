@@ -183,9 +183,117 @@ class AutomationContractTests(unittest.TestCase):
         self.assertIn('sysupgrade "$FIRMWARE_FILE"', script)
         self.assertNotIn("sysupgrade -n", script)
         self.assertNotIn("subscription_url", script)
-        self.assertNotIn("check_interval", script)
         self.assertNotIn("workflow_name", script)
         self.assertNotIn("*sysupgrade*.bin|*factory*.bin|*kernel*.bin", script)
+
+    def test_autoupdate_defaults_to_download_only_across_all_layers(self):
+        workflow = (
+            REPOSITORY_ROOT / ".github/workflows/Build_OpenWrt_Firmware.yml"
+        ).read_text(encoding="utf-8")
+        diy = (REPOSITORY_ROOT / "custom_scripts/diy-part2.sh").read_text(
+            encoding="utf-8"
+        )
+        config = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/root/etc/config/autoupdate"
+        ).read_text(encoding="utf-8")
+        luci = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/luasrc/model/cbi/autoupdate.lua"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "AUTOPDATE_AUTO_INSTALL: ${{ vars.AUTOPDATE_AUTO_INSTALL || '0' }}",
+            workflow,
+        )
+        self.assertIn('AUTOPDATE_AUTO_INSTALL="${AUTOPDATE_AUTO_INSTALL:-0}"', diy)
+        self.assertIn("option auto_install '0'", config)
+        self.assertIn('o.default = "0"', luci)
+
+    def test_scheduled_updates_use_hourly_wakeup_and_uci_interval(self):
+        workflow = (
+            REPOSITORY_ROOT / ".github/workflows/Build_OpenWrt_Firmware.yml"
+        ).read_text(encoding="utf-8")
+        diy = (REPOSITORY_ROOT / "custom_scripts/diy-part2.sh").read_text(
+            encoding="utf-8"
+        )
+        script = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/root/usr/bin/autoupdate.sh"
+        ).read_text(encoding="utf-8")
+        config = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/root/etc/config/autoupdate"
+        ).read_text(encoding="utf-8")
+        cron = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/root/etc/crontabs/root"
+        ).read_text(encoding="utf-8")
+        obsolete_cron = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/root/etc/cron.d/autoupdate"
+        )
+        luci = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/luasrc/model/cbi/autoupdate.lua"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn(
+            "AUTOPDATE_CHECK_INTERVAL: ${{ vars.AUTOPDATE_CHECK_INTERVAL || 'daily' }}",
+            workflow,
+        )
+        self.assertIn(
+            'AUTOPDATE_CHECK_INTERVAL="${AUTOPDATE_CHECK_INTERVAL:-daily}"', diy
+        )
+        self.assertIn("option check_interval 'daily'", config)
+        self.assertIn("option last_check '0'", config)
+        self.assertIn('config_get CHECK_INTERVAL config check_interval "daily"', script)
+        self.assertIn("scheduled_check_due()", script)
+        self.assertIn("if scheduled_check_due; then", script)
+        self.assertIn('o:value("6hours", _("Every 6 Hours"))', luci)
+        self.assertIn('o:value("daily", _("Daily"))', luci)
+        self.assertIn('o:value("weekly", _("Weekly"))', luci)
+        self.assertIn("17 * * * * /usr/bin/autoupdate.sh scheduled", cron)
+        self.assertFalse(obsolete_cron.exists())
+
+    def test_download_only_keeps_firmware_and_install_can_override_seen_release(self):
+        script = (
+            REPOSITORY_ROOT
+            / "package/luci-app-autoupdate/root/usr/bin/autoupdate.sh"
+        ).read_text(encoding="utf-8")
+        readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
+
+        self.assertIn('TEMP_DIR="/tmp/autoupdate-work"', script)
+        self.assertIn('DOWNLOAD_DIR="/tmp/autoupdate"', script)
+        self.assertIn('local output="$DOWNLOAD_DIR/$FIRMWARE_NAME"', script)
+        self.assertNotIn('rm -rf "$DOWNLOAD_DIR"', script)
+        self.assertIn(
+            'if [ "$FORCE_AUTO_INSTALL" != "1" ] && [ "$LATEST_VERSION" = "$LAST_SEEN_VERSION" ]; then',
+            script,
+        )
+
+        install_start = script.index("install_firmware()")
+        download_only = script.index('if [ "$AUTO_INSTALL" != "1" ]; then', install_start)
+        download_mark = script.index(
+            'uci set autoupdate.config.last_seen_version="$LATEST_VERSION"',
+            download_only,
+        )
+        download_return = script.index("\t\treturn 0", download_mark)
+        validate_before_flash = script.index(
+            'if ! sysupgrade -T "$FIRMWARE_FILE"',
+            download_return,
+        )
+        install_mark = script.index(
+            'uci set autoupdate.config.last_seen_version="$LATEST_VERSION"',
+            validate_before_flash,
+        )
+        flash = script.index('sysupgrade "$FIRMWARE_FILE"', install_mark)
+        self.assertLess(download_only, download_mark)
+        self.assertLess(download_mark, download_return)
+        self.assertLess(validate_before_flash, install_mark)
+        self.assertLess(install_mark, flash)
+        self.assertIn("校验后的固件保留在 `/tmp/autoupdate/`", readme)
+        self.assertIn("忽略“已处理”标记并强制刷写", readme)
 
     def test_build_workflow_exposes_resource_and_autoupdate_variables(self):
         workflow = (
@@ -198,8 +306,7 @@ class AutomationContractTests(unittest.TestCase):
         self.assertIn("RELEASE_KEEP_COUNT: ${{ vars.RELEASE_KEEP_COUNT || '3' }}", workflow)
         self.assertIn("ENABLE_XRAY: ${{ vars.ENABLE_XRAY || '0' }}", workflow)
         self.assertIn("AUTOPDATE_UPDATE_BASE_URL: ${{ vars.AUTOPDATE_UPDATE_BASE_URL }}", workflow)
-        self.assertIn("AUTOPDATE_HOUR: ${{ vars.AUTOPDATE_HOUR || '4' }}", workflow)
-        self.assertIn("AUTOPDATE_MINUTE: ${{ vars.AUTOPDATE_MINUTE || '17' }}", workflow)
+        self.assertIn("AUTOPDATE_CHECK_INTERVAL: ${{ vars.AUTOPDATE_CHECK_INTERVAL || 'daily' }}", workflow)
         self.assertIn("AUTOPDATE_RELEASE_TAG_PREFIX: OpenWRT.org_Kernel_", workflow)
         self.assertIn("make defconfig 后 CONFIG_TARGET_ROOTFS_PARTSIZE=", workflow)
         self.assertIn("重新写入 $ROOTFS_PARTSIZE_MB", workflow)
@@ -220,7 +327,7 @@ class AutomationContractTests(unittest.TestCase):
             "100 MiB；由 `ROOTFS_PARTSIZE_MB` 控制，工作流读取 Repository Variables 覆盖",
             "8 MiB、上限 96 MiB；由 `MIN_FIRMWARE_SIZE_MB`/`MAX_FIRMWARE_SIZE_MB` 控制，工作流读取 Repository Variables 覆盖",
             "最近 3 个 Release；由 `RELEASE_KEEP_COUNT` 控制，工作流读取 Repository Variables 覆盖",
-            "每日 `04:17` 在路由器本地时区运行；由 `AUTOPDATE_HOUR`/`AUTOPDATE_MINUTE` 控制，工作流读取 Repository Variables 覆盖",
+            "每小时第 `17` 分钟唤醒；实际间隔由 `AUTOPDATE_CHECK_INTERVAL` 控制，工作流读取 Repository Variables 覆盖",
         ]:
             self.assertIn(text, readme)
 

@@ -11,18 +11,18 @@
 #
 
 # ========================================
-# 网络个性化配置（从环境变量读取，未设置则保持 OpenWrt 默认）
-# Fork 后不设 secrets 时，构建出的固件是纯 OpenWrt 官方默认值
+# 网络个性化配置（从环境变量读取）
+# Fork 后不设 secrets 时，LAN 仍使用本仓库约定的 192.168.88.1
 # ========================================
 
 # --- LAN 管理地址 ---
-# 默认 192.168.1.1（OpenWrt 官方默认）
-LAN_IP="${LAN_IP:-192.168.1.1}"
+# 默认 192.168.88.1；LAN_IP Secret 可显式覆盖
+LAN_IP="${LAN_IP:-192.168.88.1}"
 if [ -n "$LAN_IP" ] && [ "$LAN_IP" != "192.168.1.1" ]; then
     sed -i "s/192.168.1.1/${LAN_IP}/g" package/base-files/files/bin/config_generate
     echo "LAN 地址已设置为: $LAN_IP"
 else
-    echo "LAN 地址保持 OpenWrt 默认: 192.168.1.1"
+    echo "LAN 地址已显式设置为 OpenWrt 默认: 192.168.1.1"
 fi
 
 # --- WiFi SSID 和密码 ---
@@ -157,9 +157,8 @@ fi
 AUTOPDATE_GITHUB_REPO="${AUTOPDATE_GITHUB_REPO:-Fatty911/AutoBuild_OpenWrt_for_XiaoMi_R4}"
 AUTOPDATE_UPDATE_BASE_URL="${AUTOPDATE_UPDATE_BASE_URL:-}"
 AUTOPDATE_PROXY_PORT="${AUTOPDATE_PROXY_PORT:-1080}"
-AUTOPDATE_HOUR="${AUTOPDATE_HOUR:-4}"
-AUTOPDATE_MINUTE="${AUTOPDATE_MINUTE:-17}"
-AUTOPDATE_AUTO_INSTALL="${AUTOPDATE_AUTO_INSTALL:-1}"
+AUTOPDATE_CHECK_INTERVAL="${AUTOPDATE_CHECK_INTERVAL:-daily}"
+AUTOPDATE_AUTO_INSTALL="${AUTOPDATE_AUTO_INSTALL:-0}"
 AUTOPDATE_RELEASE_TAG_PREFIX="${AUTOPDATE_RELEASE_TAG_PREFIX:-OpenWRT.org_Kernel_}"
 ENABLE_XRAY="${ENABLE_XRAY:-0}"
 
@@ -178,11 +177,8 @@ if [ -n "$AUTOPDATE_UPDATE_BASE_URL" ]; then
   fi
 fi
 case "$AUTOPDATE_PROXY_PORT" in ''|*[!0-9]*|0) echo "AUTOPDATE_PROXY_PORT 无效"; exit 1 ;; esac
-case "$AUTOPDATE_HOUR" in ''|*[!0-9]*) echo "AUTOPDATE_HOUR 无效"; exit 1 ;; esac
-case "$AUTOPDATE_MINUTE" in ''|*[!0-9]*) echo "AUTOPDATE_MINUTE 无效"; exit 1 ;; esac
-[ "$AUTOPDATE_HOUR" -le 23 ] || { echo "AUTOPDATE_HOUR 必须是 0-23"; exit 1; }
-[ "$AUTOPDATE_MINUTE" -le 59 ] || { echo "AUTOPDATE_MINUTE 必须是 0-59"; exit 1; }
 [ "$AUTOPDATE_PROXY_PORT" -le 65535 ] || { echo "AUTOPDATE_PROXY_PORT 必须是 1-65535"; exit 1; }
+case "$AUTOPDATE_CHECK_INTERVAL" in 6hours|daily|weekly) ;; *) echo "AUTOPDATE_CHECK_INTERVAL 必须是 6hours、daily 或 weekly"; exit 1 ;; esac
 case "$AUTOPDATE_AUTO_INSTALL" in 0|1) ;; *) echo "AUTOPDATE_AUTO_INSTALL 必须是 0 或 1"; exit 1 ;; esac
 case "$ENABLE_XRAY" in 0|1) ;; *) echo "ENABLE_XRAY 必须是 0 或 1"; exit 1 ;; esac
 
@@ -210,7 +206,7 @@ echo "  GitHub仓库: $AUTOPDATE_GITHUB_REPO"
 echo "  更新服务: ${AUTOPDATE_UPDATE_BASE_URL:-GitHub Release API}"
 echo "  代理端口: $AUTOPDATE_PROXY_PORT"
 echo "  自动刷写: $AUTOPDATE_AUTO_INSTALL"
-echo "  夜间时间: $(printf '%02d:%02d' "$AUTOPDATE_HOUR" "$AUTOPDATE_MINUTE")"
+echo "  检查间隔: $AUTOPDATE_CHECK_INTERVAL"
 echo "  Xray: $ENABLE_XRAY"
 
 # 创建默认配置
@@ -223,15 +219,19 @@ config autoupdate 'config'
     option github_token ''
     option proxy_service 'auto'
     option proxy_port '$AUTOPDATE_PROXY_PORT'
+    option check_interval '$AUTOPDATE_CHECK_INTERVAL'
     option release_tag_prefix '$AUTOPDATE_RELEASE_TAG_PREFIX'
     option device_pattern 'mi-router-4'
     option last_seen_version ''
+    option last_check '0'
     option auto_install '$AUTOPDATE_AUTO_INSTALL'
 EOF
 
-printf '%s %s * * * /usr/bin/autoupdate.sh scheduled >> /var/log/autoupdate.log 2>&1\n' \
-  "$AUTOPDATE_MINUTE" "$AUTOPDATE_HOUR" \
-  > package/luci-app-autoupdate/root/etc/cron.d/autoupdate
+mkdir -p package/luci-app-autoupdate/root/etc/crontabs
+cat > package/luci-app-autoupdate/root/etc/crontabs/root << 'EOF'
+# Hourly scheduler; autoupdate.sh enforces the LuCI interval setting.
+17 * * * * /usr/bin/autoupdate.sh scheduled >> /var/log/autoupdate.log 2>&1
+EOF
 
 echo "自动更新插件配置完成"
 

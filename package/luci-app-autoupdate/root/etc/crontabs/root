@@ -1,0 +1,2 @@
+# Hourly scheduler; autoupdate.sh enforces the LuCI interval setting.
+17 * * * * /usr/bin/autoupdate.sh scheduled >> /var/log/autoupdate.log 2>&1

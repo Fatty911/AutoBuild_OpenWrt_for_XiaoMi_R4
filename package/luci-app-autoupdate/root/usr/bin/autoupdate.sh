@@ -11,7 +11,8 @@
 
 LOG_FILE="/var/log/autoupdate.log"
 LOCK_FILE="/var/lock/autoupdate.lock"
-TEMP_DIR="/tmp/autoupdate"
+TEMP_DIR="/tmp/autoupdate-work"
+DOWNLOAD_DIR="/tmp/autoupdate"
 FIRMWARE_FILE=""
 PROXY_STARTED=0
 PROXY_SERVICE_STARTED=""
@@ -54,7 +55,9 @@ get_config() {
 	config_get GITHUB_TOKEN config github_token ""
 	config_get PROXY_SERVICE config proxy_service "auto"
 	config_get PROXY_PORT config proxy_port "1080"
+	config_get CHECK_INTERVAL config check_interval "daily"
 	config_get LAST_SEEN_VERSION config last_seen_version ""
+	config_get LAST_CHECK config last_check 0
 	config_get RELEASE_TAG_PREFIX config release_tag_prefix "OpenWRT.org_Kernel_"
 	config_get DEVICE_PATTERN config device_pattern "mi-router-4"
 	config_get AUTO_INSTALL_CONFIG config auto_install 0
@@ -326,7 +329,7 @@ check_new_version() {
 		return 1
 	fi
 
-	if [ "$LATEST_VERSION" = "$LAST_SEEN_VERSION" ]; then
+	if [ "$FORCE_AUTO_INSTALL" != "1" ] && [ "$LATEST_VERSION" = "$LAST_SEEN_VERSION" ]; then
 		log "该版本已处理: $LATEST_VERSION"
 		return 1
 	fi
@@ -375,9 +378,10 @@ find_firmware_file() {
 }
 
 download_firmware() {
-	local output="$TEMP_DIR/firmware.bin"
+	local output="$DOWNLOAD_DIR/$FIRMWARE_NAME"
 
 	log "下载固件: $FIRMWARE_NAME"
+	mkdir -p "$DOWNLOAD_DIR"
 
 	if ! fetch_url "$FIRMWARE_URL" "$output"; then
 		log "固件下载失败"
@@ -408,10 +412,9 @@ download_firmware() {
 install_firmware() {
 	log "准备安装固件..."
 
-	uci set autoupdate.config.last_seen_version="$LATEST_VERSION"
-	uci commit autoupdate
-
 	if [ "$AUTO_INSTALL" != "1" ]; then
+		uci set autoupdate.config.last_seen_version="$LATEST_VERSION"
+		uci commit autoupdate
 		log "自动安装已禁用"
 		log "固件已下载到: $FIRMWARE_FILE"
 		log "手动安装: sysupgrade $FIRMWARE_FILE"
@@ -423,6 +426,8 @@ install_firmware() {
 		return 1
 	fi
 
+	uci set autoupdate.config.last_seen_version="$LATEST_VERSION"
+	uci commit autoupdate
 	log "开始刷写固件..."
 	sysupgrade "$FIRMWARE_FILE"
 
@@ -432,6 +437,37 @@ install_firmware() {
 }
 
 # ── 主逻辑 ────────────────────────────────────────────────
+
+scheduled_check_due() {
+	local now
+	local interval_seconds
+
+	now=$(date +%s)
+	case "$CHECK_INTERVAL" in
+		6hours|hourly)
+			interval_seconds=21600
+			;;
+		weekly)
+			interval_seconds=604800
+			;;
+		daily|*)
+			interval_seconds=86400
+			;;
+	esac
+
+	case "$LAST_CHECK" in
+		''|*[!0-9]*) LAST_CHECK=0 ;;
+	esac
+
+	if [ $((now - LAST_CHECK)) -lt "$interval_seconds" ]; then
+		log "未到检查间隔，跳过本次定时检查"
+		return 1
+	fi
+
+	uci set autoupdate.config.last_check="$now"
+	uci commit autoupdate
+	return 0
+}
 
 check_update() {
 	log "========== 开始检查更新 =========="
@@ -489,7 +525,10 @@ case "$1" in
 		;;
 	scheduled)
 		check_lock
-		check_update
+		get_config
+		if scheduled_check_due; then
+			check_update
+		fi
 		;;
 	install)
 		check_lock

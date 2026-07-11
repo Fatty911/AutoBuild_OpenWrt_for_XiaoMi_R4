@@ -1,2 +1,0 @@
-# Runs at 04:17 in the router's local timezone.
-17 4 * * * /usr/bin/autoupdate.sh scheduled >> /var/log/autoupdate.log 2>&1

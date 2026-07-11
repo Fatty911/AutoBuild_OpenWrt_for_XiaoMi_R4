@@ -10,12 +10,12 @@ Lienol 源、Phase 1/2 分阶段构建、MEGA 中转和 AI 自动合并 PR 均�
 
 | Secret 名称 | 说明 | 不设置时的默认值 |
 |-------------|------|-----------------|
-| `LAN_IP` | 路由器 LAN 管理地址 | `192.168.1.1`（OpenWrt 官方默认） |
+| `LAN_IP` | 路由器 LAN 管理地址 | `192.168.88.1`（本仓库默认） |
 | `WIFI_SSID` | WiFi 名称 | `OpenWrt`（官方默认） |
 | `WIFI_PASSWORD` | WiFi 密码（WPA2-PSK） | 无密码（官方默认） |
 | `WIFI_BLACKLIST` | WiFi MAC 黑名单，逗号分隔，如 `AA:BB:CC:DD:EE:FF,11:22:33:44:55:66` | 无黑名单 |
 
-Fork 后不设置任何 Secret，构建出的固件即为纯 OpenWrt 官方默认配置。设置自己的 Secret 后，固件首次启动时自动应用个性化配置（LAN 地址、WiFi 名称/密码、MAC 黑名单）。
+Fork 后不设置任何 Secret 时，LAN 使用本仓库默认的 `192.168.88.1`，WiFi 保持 OpenWrt 官方默认配置。设置自己的 Secret 后，固件首次启动时自动应用个性化配置（LAN 地址、WiFi 名称/密码、MAC 黑名单）。
 
 ## 使用方法
 
@@ -31,14 +31,14 @@ Fork 后不设置任何 Secret，构建出的固件即为纯 OpenWrt 官方默�
 | 项目 | 本仓库固件中的体现 |
 |---|---|
 | 目标设备 | 固定为 Xiaomi Mi Router 4，目标为 `ramips/mt7621` |
-| 管理地址 | 由 Secret `LAN_IP` 控制，不设则保持 OpenWrt 默认 `192.168.1.1`；由 `custom_scripts/diy-part2.sh` 读取环境变量写入 |
+| 管理地址 | 由 Secret `LAN_IP` 控制，不设则使用 `192.168.88.1`；由 `custom_scripts/diy-part2.sh` 写入，工作流不读取 Repository Variables 覆盖 |
 | Web 管理 | 启用 LuCI、Bootstrap 主题和简体中文 |
 | 拨号 | 显式启用 PPP、PPPoE、内核 PPP/PPPoE/PPPoX 模块和 `luci-proto-ppp` |
 | DNS | 使用 `dnsmasq-full` 的 nftables 支持，并加入 SmartDNS |
 | 去广告 | 加入 `adblock-fast` 及中文 LuCI 界面 |
 | 代理 | 加入精简的 SSR Plus：nftables 透明代理、Shadowsocks Rust 客户端、ShadowsocksR libev 客户端和 simple-obfs；默认不打包 V2Ray、Xray、Trojan 或 sing-box。`ENABLE_XRAY=1` 时由 `.github/workflows/Build_OpenWrt_Firmware.yml` 读取 Repository Variables，再由 `custom_scripts/diy-part2.sh` 临时启用 `xray-core` 和 SSR Plus Xray 选项 |
 | 网络管理 | 加入 LuCI QoS、usteer、ttyd 和 attended sysupgrade |
-| 自动更新 | 加入本仓库的 `luci-app-autoupdate`，只识别 `OpenWRT.org_Kernel_` Release 和 Mi Router 4 的 sysupgrade 固件；默认每晚 `04:17` 自动检查并刷写，时间由 `AUTOPDATE_HOUR`/`AUTOPDATE_MINUTE` 控制，工作流读取 Repository Variables 覆盖 |
+| 自动更新 | 加入本仓库的 `luci-app-autoupdate`，只识别 `OpenWRT.org_Kernel_` Release 和 Mi Router 4 的 sysupgrade 固件；默认只下载、不自动刷写；定时任务每小时第 `17` 分钟唤醒；实际间隔由 `AUTOPDATE_CHECK_INTERVAL` 控制，工作流读取 Repository Variables 覆盖 |
 | 根文件系统 | SquashFS，分区大小配置为 100 MiB；由 `ROOTFS_PARTSIZE_MB` 控制，工作流读取 Repository Variables 覆盖；同时生成 initramfs 供调试使用 |
 | 构建质量门 | 固件大小下限 8 MiB、上限 96 MiB；由 `MIN_FIRMWARE_SIZE_MB`/`MAX_FIRMWARE_SIZE_MB` 控制，工作流读取 Repository Variables 覆盖 |
 | Release 保留 | 同一标签前缀默认保留最近 3 个 Release；由 `RELEASE_KEEP_COUNT` 控制，工作流读取 Repository Variables 覆盖 |
@@ -72,8 +72,8 @@ Fork 后不设置任何 Secret，构建出的固件即为纯 OpenWrt 官方默�
 - 先直连请求 Release API 和固件 URL；直连失败后才临时启动或复用本机 SOCKS5 代理，再重试一次；
 - 读取 `/etc/autoupdate-version` 判断当前固件版本，避免重复处理或重复刷写同一 Release；
 - 默认保留配置刷写，即执行 `sysupgrade <firmware>`，不使用 `sysupgrade -n`；
-- 默认自动刷写；`AUTOPDATE_AUTO_INSTALL=0` 可改为只下载，手动执行 `autoupdate.sh install` 会强制刷写；
-- 默认每日 `04:17` 在路由器本地时区运行；由 `AUTOPDATE_HOUR`/`AUTOPDATE_MINUTE` 控制，工作流读取 Repository Variables 覆盖。
+- 默认只下载、不自动刷写，校验后的固件保留在 `/tmp/autoupdate/`；`AUTOPDATE_AUTO_INSTALL=1` 可显式启用自动刷写，手动执行 `autoupdate.sh install` 会忽略“已处理”标记并强制刷写；
+- cron 每小时第 `17` 分钟唤醒，实际检查间隔支持每 6 小时、每天或每周；由 `AUTOPDATE_CHECK_INTERVAL` 控制，工作流读取 Repository Variables 覆盖。
 
 ## AI 自动修复
 

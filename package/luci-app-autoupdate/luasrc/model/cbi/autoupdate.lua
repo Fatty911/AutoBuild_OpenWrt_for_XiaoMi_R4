@@ -37,6 +37,12 @@ o.placeholder = "1080"
 o.default = "1080"
 o.rmempty = true
 
+o = s:option(ListValue, "check_interval", _("Check Interval"))
+o:value("6hours", _("Every 6 Hours"))
+o:value("daily", _("Daily"))
+o:value("weekly", _("Weekly"))
+o.default = "daily"
+
 o = s:option(Value, "release_tag_prefix", _("Release Tag Prefix"))
 o.default = "OpenWRT.org_Kernel_"
 o.rmempty = false
@@ -56,8 +62,8 @@ o.rmempty = true
 o.readonly = true
 
 o = s:option(Flag, "auto_install", _("Auto Install"))
-o.description = _("Automatically install at the nightly schedule. Disable this to download only.")
-o.default = "1"
+o.description = _("Automatically install firmware after download (DANGEROUS)")
+o.default = "0"
 o.rmempty = true
 
 o = s:option(Button, "check_update", _("Check Update Now"))
