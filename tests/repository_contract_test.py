@@ -136,6 +136,9 @@ class AutomationContractTests(unittest.TestCase):
         config = (
             REPOSITORY_ROOT / "custom_configs/config_for_OpenWrt_org"
         ).read_text(encoding="utf-8")
+        diy = (REPOSITORY_ROOT / "custom_scripts/diy-part2.sh").read_text(
+            encoding="utf-8"
+        )
         readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
 
         self.assertIn(
@@ -174,6 +177,15 @@ class AutomationContractTests(unittest.TestCase):
         self.assertNotIn("simple-obfs 和 dns2socks", readme)
         self.assertIn("ENABLE_XRAY=1", readme)
         self.assertIn("OpenClash 支持更多协议", readme)
+        self.assertIn("PKG_VERSION:=0\\.0\\.5", diy)
+        self.assertIn(
+            "PKG_SOURCE_VERSION:=486bebd9208539058e57e23a12f23103016e09b4",
+            diy,
+        )
+        self.assertIn(
+            "PKG_MIRROR_HASH:=da5af052265fbfba7a11ee4195257f9bc13f44d054d8fdcbace0639360870035",
+            diy,
+        )
 
     def test_autoupdate_requires_target_sysupgrade_and_validation(self):
         script = (

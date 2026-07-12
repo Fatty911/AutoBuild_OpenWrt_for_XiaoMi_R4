@@ -10,6 +10,21 @@
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
 
+# fw876/helloworld switched simple-obfs back to a git-generated tar.xz on
+# 2026-07-11, but its mirror hash was generated differently from current
+# OpenWrt runners. Keep this narrowly guarded so a future upstream update is
+# never accepted implicitly.
+SIMPLE_OBFS_MAKEFILE="feeds/helloworld/simple-obfs/Makefile"
+if [ -f "$SIMPLE_OBFS_MAKEFILE" ] \
+    && grep -q '^PKG_VERSION:=0\.0\.5$' "$SIMPLE_OBFS_MAKEFILE" \
+    && grep -q '^PKG_SOURCE_VERSION:=486bebd9208539058e57e23a12f23103016e09b4$' "$SIMPLE_OBFS_MAKEFILE" \
+    && grep -q '^PKG_MIRROR_HASH:=7a0154d2de18373e52783d1b64cf5204471049c2d2c64f0b3323d7f430aa4275$' "$SIMPLE_OBFS_MAKEFILE"; then
+    sed -i \
+        's/^PKG_MIRROR_HASH:=7a0154d2de18373e52783d1b64cf5204471049c2d2c64f0b3323d7f430aa4275$/PKG_MIRROR_HASH:=da5af052265fbfba7a11ee4195257f9bc13f44d054d8fdcbace0639360870035/' \
+        "$SIMPLE_OBFS_MAKEFILE"
+    echo "已修复 simple-obfs 0.0.5 的 OpenWrt runner 镜像哈希"
+fi
+
 # ========================================
 # 网络个性化配置（从环境变量读取）
 # Fork 后不设 secrets 时，LAN 仍使用本仓库约定的 192.168.88.1
