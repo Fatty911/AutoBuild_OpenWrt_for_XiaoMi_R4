@@ -446,57 +446,17 @@ def pick_model():
     else:
         print("[pick_best_model] 排行榜抓取失败，不过滤模型", file=sys.stderr)
 
-    zen_key = os.getenv("ZEN_API_KEY", "").strip()
-    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-    openai_key = os.getenv("OPENAI_API_KEY", "").strip()
-    xai_key = os.getenv("XAI_API_KEY", "").strip()
-    deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
-    bailian_key = os.getenv("BAILIAN_API_KEY", "").strip()
-    moonshot_key = os.getenv("MOONSHOT_API_KEY", "").strip()
-    siliconflow_key = os.getenv("SILICONFLOW_API_KEY", "").strip()
-    modelscope_key = os.getenv("MODELSCOPE_API_KEY", "").strip()
     atomgit_key = os.getenv("ATOMGIT_API_KEY", "").strip()
-    glm_proxy_url = os.getenv("GLM_PROXY_URL", "").strip()
-    zhipu_key = os.getenv("ZHIPU_API_KEY", "").strip()
+    zen_key = os.getenv("ZEN_API_KEY", "").strip()
     nvidia_nim_key = os.getenv("NVIDIA_NIM_API_KEY", "").strip()
     qiniu_key = os.getenv("QINIU_API_KEY", "").strip()
+    modelscope_key = os.getenv("MODELSCOPE_API_KEY", "").strip()
+    glm_proxy_url = os.getenv("GLM_PROXY_URL", "").strip()
 
-    # 高性价比模型优先 - 根据用户需求重新排序
-    # 1. 智谱 GLM-5.1 ($2.15/1M, 智能指数51) - 主要决策模型
-    if zhipu_key:
-        zhipu_models = split_env("ZHIPU_MODEL_LIST", "GLM-5.1")
-        print(f"[pick_best_model] 智谱 GLM-5.1 (高性价比): {zhipu_models[0]}", file=sys.stderr)
-        return "zhipu", zhipu_models[0], zhipu_models[-1], zhipu_models
+    # 仅免费/每日免费额度端点（按量付费 >$0.05 端点已停用：zhipu/bailian/moonshot/siliconflow/minimax/deepseek/xai/anthropic/openai）
 
-    # 2. 百炼 Qwen3.6-Plus ($1.13/1M, 智能指数50) - 备用决策模型
-    if bailian_key:
-        bl_models = split_env("BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max")
-        print(f"[pick_best_model] 百炼 Qwen3.6-Plus (高性价比): {bl_models[0]}", file=sys.stderr)
-        return "bailian", bl_models[0], bl_models[-1], bl_models
-
-    # 3. Moonshot Kimi-K2.5 (千帆CodingPlan) - 付费但不贵，性能中上
-    if moonshot_key:
-        ms_models = split_env("MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k")
-        print(f"[pick_best_model] Moonshot Kimi (高性价比): {ms_models[0]}", file=sys.stderr)
-        return "moonshot", ms_models[0], ms_models[-1], ms_models
-
-    # 4. OpenRouter Kimi-K2.5 / GLM-5.1 (付费但不贵)
-    if openrouter_key:
-        or_models = split_env(
-            "OPENROUTER_HIGHVALUE_MODEL_LIST",
-            "moonshotai/kimi-k2.5,z-ai/glm-5.1",
-        )
-        print(f"[pick_best_model] OpenRouter 高性价比: {or_models[0]}", file=sys.stderr)
-        return "openrouter", or_models[0], or_models[-1], or_models
-
-    # 5. SiliconFlow GLM-5/5.1 - 备用GLM源
-    if siliconflow_key:
-        sf_models = split_env("SILICONFLOW_MODEL_LIST", "zai-org/GLM-5,zai-org/GLM-5.1")
-        print(f"[pick_best_model] SiliconFlow GLM: {sf_models[0]}", file=sys.stderr)
-        return "siliconflow", sf_models[0], sf_models[-1], sf_models
-
-    # 6. AtomGit 免费模型 (GLM-5.1, DeepSeek-V4-Flash) — 小AGENT角色，上下文有限
+    # 1. AtomGit 免费模型 (GLM-5.1, DeepSeek-V4-Flash) — 小AGENT角色，上下文有限
     if atomgit_key:
         ag_models = split_env(
             "ATOMGIT_MODEL_LIST", "zai-org/GLM-5.1,deepseek-ai/DeepSeek-V4-Flash"
@@ -504,7 +464,7 @@ def pick_model():
         print(f"[pick_best_model] AtomGit 免费: {ag_models[0]}", file=sys.stderr)
         return "atomgit", ag_models[0], ag_models[-1], ag_models
 
-    # 5. OpenRouter 免费模型 (动态发现或环境变量兜底)
+    # 2. OpenRouter 免费模型 (动态发现或环境变量兜底)
     if openrouter_key:
         or_free_models = get_openrouter_free_models(top_set)
         if not or_free_models:
@@ -519,7 +479,7 @@ def pick_model():
             )
             return "openrouter", or_free_models[0], or_free_models[-1], or_free_models
 
-    # 6. ZEN 免费模型 (排行榜前20免费模型)
+    # 3. ZEN 免费模型 (排行榜前20免费模型)
     if zen_key:
         zen_models = get_zen_free_models(top_set)
         if zen_models:
@@ -528,13 +488,13 @@ def pick_model():
         else:
             print("[pick_best_model] ZEN 无排行榜前 20 免费模型，降级", file=sys.stderr)
 
-    # 7. NVIDIA NIM (Kimi K2.5 免费)
+    # 4. NVIDIA NIM (Kimi K2.5 免费)
     if nvidia_nim_key:
         nim_models = split_env("NVIDIA_NIM_MODEL_LIST", "moonshotai/kimi-k2.5")
         print(f"[pick_best_model] NVIDIA NIM Kimi K2.5: {nim_models[0]}", file=sys.stderr)
         return "nvidia-nim", nim_models[0], nim_models[-1], nim_models
 
-    # 8. 七牛云免费模型
+    # 5. 七牛云免费模型
     if qiniu_key:
         qiniu_models = split_env(
             "QINIU_MODEL_LIST", "nvidia/nemotron-3-super-120b-a12b-free"
@@ -542,64 +502,17 @@ def pick_model():
         print(f"[pick_best_model] 七牛云免费: {qiniu_models[0]}", file=sys.stderr)
         return "qiniu", qiniu_models[0], qiniu_models[-1], qiniu_models
 
-    # 9. MiniMax-M2.7 ($0.53/1M) - 仅用于简单任务，防止高分低能模型影响复杂决策
-    # 注意：MiniMax-M2.7 意图理解能力差，仅适合日志清洗、文档生成等简单任务
-    minimax_key = os.getenv("MINIMAX_API_KEY", "").strip()
-    if minimax_key:
-        mm_models = split_env("MINIMAX_MODEL_LIST", "MiniMax-M2.7")
-        print(f"[pick_best_model] MiniMax-M2.7 (低成本简单任务): {mm_models[0]}", file=sys.stderr)
-        return "minimax", mm_models[0], mm_models[-1], mm_models
-
-    # 10. DeepSeek (性价比不错，保留为备选)
-    if deepseek_key:
-        ds_models = split_env(
-            "DEEPSEEK_MODEL_LIST", "deepseek-v3.2-exp-thinking,deepseek-v3.2"
-        )
-        print(f"[pick_best_model] DeepSeek: {ds_models[0]}", file=sys.stderr)
-        return "deepseek", ds_models[0], ds_models[-1], ds_models
-
-    # 11. ModelScope (GLM-4.7)
+    # 6. ModelScope (每日免费调用额度内)
     if modelscope_key:
         ms_models = split_env("MODELSCOPE_MODEL_LIST", "ZhipuAI/GLM-4.7")
         print(f"[pick_best_model] ModelScope: {ms_models[0]}", file=sys.stderr)
         return "modelscope", ms_models[0], ms_models[-1], ms_models
 
-    # 12. GLM 代理
+    # 7. GLM 代理
     if glm_proxy_url:
         glm_models = split_env("GLM_MODEL_LIST", "GLM-5,GLM-5.1")
         print(f"[pick_best_model] GLM 代理: {glm_models[0]}", file=sys.stderr)
         return "glm-proxy", glm_models[0], glm_models[-1], glm_models
-
-    # 14. Grok-4.2 ($3.00/1M) - 仅用于压缩任务，不参与主要决策
-    # 用户要求：Grok仅作为压缩模型使用
-    if xai_key:
-        grok_models = split_env("XAI_MODEL_LIST", "grok-4.2,grok-4.1")
-        print(f"[pick_best_model] xAI Grok (仅压缩任务): {grok_models[0]}", file=sys.stderr)
-        return "xai", grok_models[0], grok_models[-1], grok_models
-
-    # 15. 昂贵的模型 - 仅在明确需要时使用（用户要求暂时不使用）
-    # 这些模型已被移到列表末尾，只有在上述所有模型都不可用时才会选择
-    if anthropic_key:
-        claude_models = split_env(
-            "CLAUDE_MODEL_LIST", "claude-sonnet-4.6,claude-opus-4.6"
-        )
-        print(
-            f"[pick_best_model] Anthropic Claude (高成本): {claude_models[0]}", file=sys.stderr
-        )
-        return "anthropic", claude_models[0], claude_models[-1], claude_models
-
-    if openrouter_key:
-        or_models = split_env(
-            "OPENROUTER_MODEL_LIST",
-            "zai-org/glm-5.1,moonshotai/kimi-k2.5-thinking,google/gemma-4-31b-it",
-        )
-        print(f"[pick_best_model] OpenRouter 付费模型: {or_models[0]}", file=sys.stderr)
-        return "openrouter", or_models[0], or_models[-1], or_models
-
-    if openai_key:
-        oai_models = split_env("OPENAI_MODEL_LIST", "gpt-5.4,gpt-4.1")
-        print(f"[pick_best_model] OpenAI (高成本): {oai_models[0]}", file=sys.stderr)
-        return "openai", oai_models[0], oai_models[-1], oai_models
 
     print("[pick_best_model] 无可用 API key！", file=sys.stderr)
     return "", "", "", []
@@ -613,40 +526,21 @@ def pick_ranked_models(limit=10):
         print("[pick_best_model] 排行榜抓取失败，不过滤模型", file=sys.stderr)
 
     keys = {
-        "zhipu": os.getenv("ZHIPU_API_KEY", "").strip(),
-        "bailian": os.getenv("BAILIAN_API_KEY", "").strip(),
-        "moonshot": os.getenv("MOONSHOT_API_KEY", "").strip(),
         "openrouter": os.getenv("OPENROUTER_API_KEY", "").strip(),
-        "siliconflow": os.getenv("SILICONFLOW_API_KEY", "").strip(),
         "atomgit": os.getenv("ATOMGIT_API_KEY", "").strip(),
         "nvidia-nim": os.getenv("NVIDIA_NIM_API_KEY", "").strip(),
         "qiniu": os.getenv("QINIU_API_KEY", "").strip(),
-        "minimax": os.getenv("MINIMAX_API_KEY", "").strip(),
-        "deepseek": os.getenv("DEEPSEEK_API_KEY", "").strip(),
         "modelscope": os.getenv("MODELSCOPE_API_KEY", "").strip(),
         "glm-proxy": os.getenv("GLM_PROXY_URL", "").strip(),
-        "xai": os.getenv("XAI_API_KEY", "").strip(),
-        "anthropic": os.getenv("ANTHROPIC_API_KEY", "").strip(),
-        "openai": os.getenv("OPENAI_API_KEY", "").strip(),
         "zen": os.getenv("ZEN_API_KEY", "").strip(),
     }
 
     model_map = {
-        "zhipu": ("ZHIPU_MODEL_LIST", "GLM-5.1"),
-        "bailian": ("BAILIAN_MODEL_LIST", "qwen3.6-plus,qwen-max"),
-        "moonshot": ("MOONSHOT_MODEL_LIST", "moonshot-v1-auto,moonshot-v1-128k"),
-        "openrouter": ("OPENROUTER_HIGHVALUE_MODEL_LIST", "moonshotai/kimi-k2.5,z-ai/glm-5.1"),
-        "siliconflow": ("SILICONFLOW_MODEL_LIST", "zai-org/GLM-5,zai-org/GLM-5.1"),
         "atomgit": ("ATOMGIT_MODEL_LIST", "zai-org/GLM-5.1,deepseek-ai/DeepSeek-V4-Flash"),
         "nvidia-nim": ("NVIDIA_NIM_MODEL_LIST", "moonshotai/kimi-k2.5"),
         "qiniu": ("QINIU_MODEL_LIST", "nvidia/nemotron-3-super-120b-a12b-free"),
-        "minimax": ("MINIMAX_MODEL_LIST", "MiniMax-M2.7"),
-        "deepseek": ("DEEPSEEK_MODEL_LIST", "deepseek-v3.2-exp-thinking,deepseek-v3.2"),
         "modelscope": ("MODELSCOPE_MODEL_LIST", "ZhipuAI/GLM-4.7"),
         "glm-proxy": ("GLM_MODEL_LIST", "GLM-5,GLM-5.1"),
-        "xai": ("XAI_MODEL_LIST", "grok-4.2,grok-4.1"),
-        "anthropic": ("CLAUDE_MODEL_LIST", "claude-sonnet-4.6,claude-opus-4.6"),
-        "openai": ("OPENAI_MODEL_LIST", "gpt-5.4,gpt-4.1"),
     }
 
     result = []
@@ -659,12 +553,6 @@ def pick_ranked_models(limit=10):
                 result.append(("opencode", zen_models[0], zen_models[-1], zen_models))
             continue
         if provider == "openrouter":
-            or_models = split_env(
-                "OPENROUTER_HIGHVALUE_MODEL_LIST",
-                "moonshotai/kimi-k2.5,z-ai/glm-5.1",
-            )
-            if or_models:
-                result.append(("openrouter", or_models[0], or_models[-1], or_models))
             or_free_models = get_openrouter_free_models(top_set)
             if not or_free_models:
                 or_free_models = split_env(
