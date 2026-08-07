@@ -87,7 +87,7 @@ def get_review_models():
             "name": "ALIYUN-Qwen",
             "proxy_url": "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
             "api_key": aliyun_key,
-            "model": os.getenv("ALIYUN_REVIEW_MODEL", "qwen3.7-max"),
+            "model": os.getenv("ALIYUN_REVIEW_MODEL", "qwen3.8-max"),
         })
 
     mimo_key = os.getenv("MIMO_TOKENPLAN_API_KEY", "").strip()
@@ -105,7 +105,7 @@ def get_review_models():
             "name": "ZHIPU-GLM",
             "proxy_url": "https://open.bigmodel.cn/api/paas/v4/",
             "api_key": zhipu_key,
-            "model": os.getenv("ZHIPU_REVIEW_MODEL", "glm-5.1"),
+            "model": os.getenv("ZHIPU_REVIEW_MODEL", "glm-5.2"),
         })
 
     deepseek_key = os.getenv("DEEPSEEK_API_KEY", "").strip()
@@ -114,7 +114,7 @@ def get_review_models():
             "name": "DEEPSEEK",
             "proxy_url": "https://api.deepseek.com/v1",
             "api_key": deepseek_key,
-            "model": os.getenv("DEEPSEEK_REVIEW_MODEL", "deepseek-v4-pro"),
+            "model": os.getenv("DEEPSEEK_REVIEW_MODEL", "deepseek-v4-flash"),
         })
 
     return models

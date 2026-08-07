@@ -386,9 +386,9 @@ class AutomationContractTests(unittest.TestCase):
 
     def test_review_selection_excludes_fixer_and_duplicate_families(self):
         models = [
-            {"name": "ZHIPU-GLM", "model": "glm-5.1"},
+            {"name": "ZHIPU-GLM", "model": "glm-5.2"},
             {"name": "QIANFAN-GLM", "model": "glm-5"},
-            {"name": "DEEPSEEK", "model": "deepseek-v4-pro"},
+            {"name": "DEEPSEEK", "model": "deepseek-v4-flash"},
             {"name": "MIMO", "model": "mimo-v2.5-pro"},
         ]
         with mock.patch.dict(os.environ, {"FIXER_MODEL": "deepseek/v4-pro"}):

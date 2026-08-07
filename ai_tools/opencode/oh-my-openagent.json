@@ -23,7 +23,7 @@
         "kimi-coding-plan/kimi-k2.6",
         "volcengine-coding/kimi-k2.6",
         "alibaba-tokenplan/qwen3.6-plus",
-        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4-flash",
         "bltcy/gpt-5.5"
       ]
     },
@@ -36,7 +36,7 @@
         "kimi-coding-plan/kimi-k2.6",
         "volcengine-coding/kimi-k2.6",
         "alibaba-tokenplan/qwen3.6-plus",
-        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4-flash",
         "bltcy/claude-sonnet-4-6"
       ]
     },
@@ -48,7 +48,7 @@
         "kimi-coding-plan/kimi-k2.6",
         "volcengine-coding/kimi-k2.6",
         "alibaba-tokenplan/deepseek-v3.2",
-        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4-flash",
         "bltcy/gpt-5.5"
       ]
     },
@@ -72,7 +72,7 @@
         "kimi-coding-plan/kimi-k2.6",
         "volcengine-coding/kimi-k2.6",
         "alibaba-tokenplan/qwen3.6-plus",
-        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4-flash",
         "bltcy/claude-sonnet-4-6"
       ]
     }
@@ -86,7 +86,7 @@
         "kimi-coding-plan/kimi-k2.6",
         "volcengine-coding/kimi-k2.6",
         "alibaba-tokenplan/qwen3.6-plus",
-        "deepseek/deepseek-v4-pro",
+        "deepseek/deepseek-v4-flash",
         "bltcy/gpt-5.5"
       ]
     },
