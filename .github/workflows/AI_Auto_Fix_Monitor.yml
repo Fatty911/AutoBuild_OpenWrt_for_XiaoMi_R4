@@ -117,7 +117,22 @@ jobs:
           echo "component=$(python3 -c 'import json;print(json.load(open("classify_result.json"))["component"])')" >> "$GITHUB_OUTPUT"
           echo "playbook_id=$(python3 -c 'import json;print(json.load(open("classify_result.json"))["playbook_id"])')" >> "$GITHUB_OUTPUT"
           
+      - name: Decide whether to run AI repair
+        id: should_fix
+        if: always()
+        env:
+          ERROR_LOG: last_error.log
+        run: |
+          # transient/upstream/no_logs 不触发 AI（重跑即可/等上游），避免白烧模型
+          if python3 custom_scripts/classify_build_failure.py; then
+            :
+          else
+            echo "::warning::决策失败，保守继续 AI（默认 should_fix=true）"
+            echo "should_fix=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup OpenCode and Oh My OpenCode
+        if: steps.should_fix.outputs.should_fix == 'true'
         run: |
           echo "=== 启动单一 OpenCode 自动修复路径 ==="
           # 安装 Bun（omo install 需要）
@@ -136,6 +151,7 @@ jobs:
 
       - name: Run OpenCode Agent
         id: opencode_fix
+        if: steps.should_fix.outputs.should_fix == 'true'
         timeout-minutes: 90
         env:
           WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
@@ -177,7 +193,9 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
         run: |
           if [ -f classify_result.json ]; then
-            if [ "${{ steps.opencode_fix.outcome }}" = "success" ]; then
+            if [ "${{ steps.should_fix.outputs.should_fix }}" = "false" ]; then
+              RESOLVED=skip
+            elif [ "${{ steps.opencode_fix.outcome }}" = "success" ]; then
               RESOLVED=ai
             else
               RESOLVED=ai_failed
