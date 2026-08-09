@@ -1,0 +1,205 @@
+# OpenWrt 构建错误分类目录（Error Catalog）
+#
+# 用途：构建失败 → custom_scripts/playbook_runner.py 对 last_error.log 分类 →
+#       匹配本目录中的类别 → 命中预案则自动执行；预案无法解决/无预案 → 转 AI 兜底
+#       （AI_Auto_Fix_Monitor.yml → run_track3.sh）。
+#
+# 本地调试（WSL2/act 模拟 runner）与线上 GitHub Actions 共用同一套分类器与目录，
+# 保证"本地调试发现的报错"与"上游更新后线上报错"按同一套规则处理。
+#
+# 组件维度（谁的问题）：
+#   upstream:openwrt  — openwrt/openwrt 官方主源（main 分支）
+#   upstream:kernel   — Linux 内核 / DTS 设备树
+#   feed:packages     — feeds/packages 包
+#   feed:luci         — feeds/luci 包
+#   toolchain:apk     — APK 打包/依赖解析工具链
+#   build:artifact    — 构建产物/缓存/staging_dir/build_dir
+#   build:process     — 构建流程/配置同步（.config、feeds、索引）
+#   infra:resource    — 资源限制/网络/下载
+#   ours:workflow     — 本仓库 workflow/custom_scripts/custom_configs
+#
+# 预案设计铁律（防上游变更回归）：
+#   1. 所有预案必须幂等：目标已满足/已应用时静默跳过，不得报错。
+#   2. 涉及文件路径的预案必须先验证目标存在（find / git ls-tree），
+#      上游改名或删除后不得按旧路径继续执行，而是标记 upstream_changed 交由决策。
+#   3. patch 类预案先做反向检测（patch -R --dry-run），已应用则跳过；
+#      目标文件不存在（上游已修复/已改名）时跳过旧补丁，不制造"找不到文件"错误。
+#   4. 修复结果必须记录到 history.jsonl（随仓库提交，跨 run 沉淀）。
+
+categories:
+  - id: missing_file
+    name: 找不到文件/目录
+    components: [build:artifact, upstream:openwrt, upstream:kernel]
+    signatures: [root_ramips_missing_dir, root_orig_missing, package_index_not_found, apk_host_tool_missing, fwtool_host_tool_missing]
+    log_pattern: "No such file or directory|cannot find|command not found|not found"
+    playbook:
+      id: pb_missing_file
+      name: 文件定位三步法
+      steps: |
+        1. 定位：在 openwrt 工作区内 find 搜索目标，判断是"应存在"还是"构建生成"。
+        2. 生成型（root.orig-*、package index、apk 工具）：重建对应目标
+           （make package/index、make package/merge-index、重新编译 host 工具）。
+        3. 上游回归检测：git -C openwrt log --oneline -10 -- <相关路径>，
+           若上游最近改名/删除 → 标记 upstream_changed，跳过旧路径假设，按新路径适配。
+      persistent_fix: [fix_root_ramips_missing_dir, fix_root_orig_missing, fix_package_index_not_found, fix_missing_host_tools]
+    ai_fallback: true
+
+  - id: patch_failure
+    name: Patch 应用失败（上游源码已变）
+    components: [upstream:openwrt, upstream:kernel, feed:packages]
+    signatures: [patch_failed]
+    log_pattern: "Patch failed|Only garbage was found|unexpected end of file in patch|can't find file to patch"
+    playbook:
+      id: pb_patch
+      name: 补丁回归检测
+      steps: |
+        1. 反向检测：patch -R --dry-run 检查是否已应用（上游已合入或重复应用）→ 已应用则跳过。
+        2. 目标检测：patch 目标文件是否存在；不存在 = 上游已改名/已修复 →
+           标记 upstream_changed，删除/跳过对应补丁步骤，不按旧路径制造错误。
+        3. 上下文漂移：目标存在但 hunk 失配 → 记录 diff 上下文，转 AI 适配补丁。
+      persistent_fix: [fix_patch_application]
+    ai_fallback: true
+
+  - id: apk_packaging
+    name: APK 打包/依赖解析错误
+    components: [toolchain:apk, feed:packages, feed:luci, build:artifact]
+    signatures: [apk_invalid_version_format, apk_add_base_files, apk_select_package_error, apk_add_invalid_dep_format, luci_lib_taskd_depends, makefile_dep_missing]
+    log_pattern: "ERROR: info field 'version' has invalid value|not a valid world dependency|unable to select packages|has a dependency on"
+    playbook:
+      id: pb_apk
+      name: APK 修复三板斧
+      steps: |
+        1. base-files 版本格式：sed 重置 PKG_RELEASE，删除 base-files.version 与
+           build_dir 缓存后重新预编译（workflow 已有 Base-files fix 步骤兜底）。
+        2. 依赖声明错误：修复对应 Makefile 的 DEPENDS 行（去空格/去非法符号）。
+        3. 索引重建：make package/index 或 package/merge-index 同步版本。
+      persistent_fix: [fix_base_files_version, fix_metadata_errors, fix_apk_depends_problem, fix_apk_add_base_files_issue]
+    ai_fallback: true
+
+  - id: makefile_syntax
+    name: Makefile/工具链语法错误
+    components: [feed:packages, upstream:openwrt, toolchain:apk]
+    signatures: [makefile_separator, toolchain_provides_syntax, apk_wrapper_syntax]
+    log_pattern: "missing separator|syntax error|Syntax error:"
+    playbook:
+      id: pb_makefile
+      name: 语法修复
+      steps: |
+        1. missing separator：定位 Makefile 行号，修复缩进/续行。
+        2. 工具链 provides 尾空格：去除 provides 行尾空格。
+        3. apk wrapper：重建 staging_dir/host 的 apk wrapper 脚本。
+      persistent_fix: [fix_makefile_separator, fix_toolchain_provides_syntax, fix_apk_wrapper_syntax]
+    ai_fallback: true
+
+  - id: config_stale
+    name: 配置过期（.config 与 feeds 不同步）
+    components: [build:process, ours:workflow]
+    signatures: [config_out_of_sync]
+    log_pattern: "configuration is out of sync|run 'make defconfig'|No rule to make target"
+    playbook:
+      id: pb_config_stale
+      name: 配置重建
+      steps: |
+        1. feeds update/install 补齐（workflow 已有重试逻辑）。
+        2. make defconfig 重建 .config，校验 ROOTFS_PARTSIZE 等关键项。
+        3. 仍有 "No rule to make target" → 查目标归属包是否被上游改名/移除。
+      persistent_fix: [fix_config_out_of_sync]
+    ai_fallback: true
+
+  - id: compile_error
+    name: 包编译错误（源码/依赖不兼容）
+    components: [feed:packages, feed:luci, upstream:kernel]
+    signatures: [trojan_plus_build_error, generic_build_fail]
+    log_pattern: "failed to build|error:|fatal error:"
+    playbook:
+      id: pb_compile
+      name: 编译错误处理
+      steps: |
+        1. 确认失败包与错误行（extract_last_error 已定位组件）。
+        2. 已知包问题（trojan-plus buffer-cast 等）→ 现有 fix 函数修复。
+        3. 新包问题 → 记录签名，转 AI 分析根因并固化为持久预案。
+      persistent_fix: [fix_trojan_plus_issues]
+    ai_fallback: true
+
+  - id: link_error
+    name: 链接错误（缺库/缺符号）
+    components: [feed:packages, build:artifact]
+    signatures: [netifd_link_error]
+    log_pattern: "undefined reference to"
+    playbook:
+      id: pb_link
+      name: 链接修复
+      steps: |
+        1. 缺库场景：预编译对应库（libnl-tiny 等，workflow 已有步骤）。
+        2. 符号缺失：确认依赖包版本与 API 变更，必要时转 AI。
+      persistent_fix: [fix_netifd_libnl_tiny]
+    ai_fallback: true
+
+  - id: dts_error
+    name: 设备树/DTS 错误
+    components: [upstream:kernel]
+    signatures: [dts_phandle_missing]
+    log_pattern: "ERROR \\(phandle_references\\)|Reference to non-existent"
+    playbook:
+      id: pb_dts
+      name: DTS 修复
+      steps: |
+        1. phandle 引用缺失：补充缺失 label 或修正引用（fix_dts_nvmem_layout.py 先跑）。
+        2. 上游内核升级导致 DTS 变更 → git log 对比，按上游新格式适配。
+      persistent_fix: [fix_dts_phandle_missing]
+    ai_fallback: true
+
+  - id: path_conflict
+    name: 路径冲突（目录/符号链接已存在）
+    components: [build:artifact]
+    signatures: [directory_conflict, symlink_conflict]
+    log_pattern: "File exists"
+    playbook:
+      id: pb_path_conflict
+      name: 冲突清理
+      steps: |
+        1. 目录冲突：rm -rf 冲突目标后重建。
+        2. 符号链接冲突：先删后建（幂等）。
+      persistent_fix: [fix_directory_conflict, fix_symbolic_link_conflict]
+    ai_fallback: true
+
+  - id: download_failure
+    name: 下载失败/校验失败
+    components: [infra:resource]
+    signatures: [lua_neturl_download]
+    log_pattern: "Download failed|Hash mismatch|No more mirrors to try"
+    playbook:
+      id: pb_download
+      name: 下载修复
+      steps: |
+        1. 删除 <1KB 的损坏文件后重试（workflow Download package 已有）。
+        2. 更换镜像/重试；持续失败 = 上游源不可用，转 AI 或如实报 blocked。
+      persistent_fix: [fix_lua_neturl_download, fix_lua_neturl_directory]
+    ai_fallback: true
+
+  - id: resource_oom
+    name: 资源不足（OOM/信号 9）
+    components: [infra:resource]
+    signatures: [oom_detected]
+    log_pattern: "Killed|signal 9|Error 137"
+    playbook:
+      id: pb_oom
+      name: 降并行度
+      steps: |
+        1. -j$(nproc) 降至 -j1 重试（workflow 已有 j1 兜底）。
+        2. OOM 高风险包（gcc/llvm/qt5base/webkitgtk/linux）单独低并发编译。
+      persistent_fix: [handle_oom]
+    ai_fallback: false
+
+  - id: unknown
+    name: 未知错误
+    components: [unknown]
+    signatures: [unknown_error, generic_error]
+    log_pattern: ""
+    playbook:
+      id: pb_unknown
+      name: 直接 AI 兜底
+      steps: |
+        分类器未命中 → 跳过预案，直接转 AI 分析；AI 修复成功后把新签名补入本目录。
+      persistent_fix: []
+    ai_fallback: true

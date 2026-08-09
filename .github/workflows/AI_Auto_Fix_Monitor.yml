@@ -97,6 +97,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests beautifulsoup4 pyyaml
+
+      - name: Classify error and record history
+        id: classify
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
+        run: |
+          # 分类失败必须容错：任何异常都不得阻断后续 AI 修复兜底
+          if python custom_scripts/playbook_runner.py --mode classify --log last_error.log --json-out classify_result.json; then
+            python custom_scripts/playbook_runner.py --mode record --result classify_result.json \
+              --source "monitor:${RUN_ID}" --run-id "${RUN_ID}" \
+              || echo "::warning::history 记录失败（不影响修复流程）"
+          else
+            echo "::warning::错误分类失败（写入默认分类，继续 AI 修复兜底）"
+            echo '{"signature":"unknown_error","category":"unknown","component":"unknown","playbook_id":""}' > classify_result.json
+          fi
+          echo "signature=$(python3 -c 'import json;print(json.load(open("classify_result.json"))["signature"])')" >> "$GITHUB_OUTPUT"
+          echo "category=$(python3 -c 'import json;print(json.load(open("classify_result.json"))["category"])')" >> "$GITHUB_OUTPUT"
+          echo "component=$(python3 -c 'import json;print(json.load(open("classify_result.json"))["component"])')" >> "$GITHUB_OUTPUT"
+          echo "playbook_id=$(python3 -c 'import json;print(json.load(open("classify_result.json"))["playbook_id"])')" >> "$GITHUB_OUTPUT"
           
       - name: Setup OpenCode and Oh My OpenCode
         run: |
@@ -144,9 +163,29 @@ jobs:
           GLM_PROXY_URL: ${{ secrets.GLM_PROXY_URL }}
           ACTIONS_TRIGGER_PAT: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
           GH_TOKEN: ${{ secrets.ACTIONS_TRIGGER_PAT || github.token }}
+          ERROR_CATEGORY: ${{ steps.classify.outputs.category }}
+          ERROR_COMPONENT: ${{ steps.classify.outputs.component }}
+          ERROR_SIGNATURE: ${{ steps.classify.outputs.signature }}
+          ERROR_PLAYBOOK_ID: ${{ steps.classify.outputs.playbook_id }}
         run: |
           cd "$GITHUB_WORKSPACE"
           bash custom_scripts/run_track3.sh
+
+      - name: Record AI resolution result
+        if: always()
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.failed_run_id }}
+        run: |
+          if [ -f classify_result.json ]; then
+            if [ "${{ steps.opencode_fix.outcome }}" = "success" ]; then
+              RESOLVED=ai
+            else
+              RESOLVED=ai_failed
+            fi
+            python custom_scripts/playbook_runner.py --mode record --result classify_result.json \
+              --source "monitor:${RUN_ID}" --resolved-by "${RESOLVED}" --run-id "${RUN_ID}" \
+              || echo "::warning::AI 结果记录失败"
+          fi
 
       - name: Delete workflow runs
         if: always()

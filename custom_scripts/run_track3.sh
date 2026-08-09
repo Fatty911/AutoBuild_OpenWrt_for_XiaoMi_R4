@@ -49,6 +49,7 @@ RUNTIME_FILES=(
   "opencode.json"
   "opencode_output.log"
   "prompt.txt"
+  "classify_result.json"
 )
 
 stage_source_changes() {
@@ -90,12 +91,20 @@ done
 
 cat > prompt.txt <<EOF
 分析 last_error.log 和失败工作流 ${WORKFLOW_FILENAME}，找到根因并做最小修复。
+自动错误分类（由 playbook_runner.py 生成，仅供参考，以日志实际为准）：
+  签名=${ERROR_SIGNATURE:-unknown}
+  类别=${ERROR_CATEGORY:-unknown}
+  组件=${ERROR_COMPONENT:-unknown}
+  预案=${ERROR_PLAYBOOK_ID:-无}
 要求：
 1. 只修复本次官方 OpenWrt 构建失败直接涉及的文件，不修改其它工作流。
 2. 不修改或删除 AGENTS.md、oh-my-openagent.json、ai_tools/opencode/ 下的工具配置。
 3. 不删除 Generate release tag、Upload firmware to release、Delete workflow runs。
-4. 不提交缓存、模型列表、日志或临时文件。
+4. 不提交缓存、模型列表、日志、prompt、classify_result.json 或临时文件；
+   ai_tools/error_catalog/history.jsonl 是自动错误记录文件，不得手动修改。
 5. 修复后运行相关语法检查；如果无法确定根因，不要制造无依据改动。
+6. 若错误类别属于 patch_failure 或 missing_file 且上游（openwrt/openwrt main）已修复或改名，
+   应适配新路径/移除旧补丁，不要按旧路径继续修复。
 EOF
 
 FIX_SUCCEEDED=false

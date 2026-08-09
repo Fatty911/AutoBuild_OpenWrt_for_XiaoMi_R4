@@ -188,6 +188,9 @@ def call_review_model(model_config, prompt):
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.3,
+        # 推理型评审模型（GLM-5.2 等）思考阶段会消耗大量 token；
+        # 不显式设置 max_tokens 时默认值过小 → content 为空 → 误判"格式无效"
+        "max_tokens": 16000,
     }
 
     try:
