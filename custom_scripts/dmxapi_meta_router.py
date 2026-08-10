@@ -93,21 +93,56 @@ def ask_llm_for_roles(models):
 }}
 """
     
-    import json
-    import urllib.request
-    req = urllib.request.Request(f"{DMXAPI_BASE_URL}/chat/completions", headers={
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
-    }, data=json.dumps({
-        "model": judge_model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.1
-    }).encode("utf-8"))
-    
+    # 通过 OpenCode CLI（Agent 工具）调用 dmxapi，禁止 urllib 直连模型 API。
+    # 密钥只由 opencode 子进程消费（DMXAPI_API_KEY 经 env 注入）。
+    import subprocess
+    import tempfile
+    read_only = {
+        "*": "deny",
+        "read": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "webfetch": "deny",
+        "task": "deny",
+        "question": "deny",
+        "external_directory": "deny",
+    }
+    config = {
+        "provider": {
+            "dmxapi": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "dmxapi",
+                "options": {
+                    "baseURL": DMXAPI_BASE_URL,
+                    "apiKey": "{env:DMXAPI_API_KEY}",
+                },
+                "models": {judge_model: {"limit": {"context": 131072, "output": 8192}}},
+            }
+        },
+        "agent": {"plan": {"permission": read_only}},
+        "permission": read_only,
+    }
+    env = dict(os.environ)
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config, ensure_ascii=False)
+    env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
+    env["OPENCODE_DISABLE_TELEMETRY"] = "1"
     try:
-        resp = urllib.request.urlopen(req, timeout=30)
-        result = json.loads(resp.read().decode('utf-8'))
-        content = result['choices'][0]['message']['content'].strip()
+        with tempfile.TemporaryDirectory(prefix="dmxapi-roles-") as tmpdir:
+            prompt_path = os.path.join(tmpdir, "prompt.md")
+            with open(prompt_path, "w", encoding="utf-8") as handle:
+                handle.write(prompt)
+            cmd = [
+                os.environ.get("OPENCODE_BIN", "opencode"), "run", "--pure", "--agent", "plan",
+                "--model", f"dmxapi/{judge_model}",
+                "--format", "default",
+                "--dir", tmpdir,
+                "--file", "prompt.md",
+                "Answer the attached prompt directly. Do not call tools or modify files. Return only the requested JSON.",
+            ]
+            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=120, env=env)
+        if completed.returncode != 0:
+            raise RuntimeError(f"opencode exit {completed.returncode}: {(completed.stderr or '')[:200]}")
+        content = (completed.stdout or "").strip()
         # 清理可能存在的 markdown 标签
         content = re.sub(r'^```json\s*', '', content)
         content = re.sub(r'^```\s*', '', content)

@@ -162,8 +162,12 @@ def select_review_models(review_models, total):
 
 
 def call_review_model(model_config, prompt):
-    """调用单个评审模型，返回评审结果"""
-    import requests
+    """调用单个评审模型（通过 OpenCode CLI Agent 工具），返回评审结果。
+
+    密钥只由 opencode 子进程消费；本函数禁止直连模型 API。
+    """
+    import subprocess
+    import tempfile
 
     name = model_config["name"]
     proxy_url = model_config["proxy_url"]
@@ -175,30 +179,63 @@ def call_review_model(model_config, prompt):
 
     base = proxy_url.rstrip("/")
     # OpenAI 兼容端点通常以版本号结尾；Coding Plan 端点会在版本号后再带路径。
-    if re.search(r'/v\d+(?:/[^/]+)*/?$', base):
-        url = f"{base}/chat/completions"
-    else:
-        url = f"{base}/v1/chat/completions"
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    if base.endswith("/v1/messages"):
+        base = base[: -len("/v1/messages")]
 
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {api_key}",
+    provider_label = re.sub(r"[^A-Za-z0-9_-]", "-", name.lower())[:60]
+    read_only = {
+        "*": "deny",
+        "read": "allow",
+        "edit": "deny",
+        "bash": "deny",
+        "webfetch": "deny",
+        "task": "deny",
+        "question": "deny",
+        "external_directory": "deny",
     }
-    data = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3,
-        # 推理型评审模型（GLM-5.2 等）思考阶段会消耗大量 token；
-        # 不显式设置 max_tokens 时默认值过小 → content 为空 → 误判"格式无效"
-        "max_tokens": 16000,
+    config = {
+        "provider": {
+            provider_label: {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": provider_label,
+                "options": {"baseURL": base, "apiKey": api_key},
+                # 推理型评审模型（GLM-5.2 等）思考阶段会消耗大量 token；
+                # 不显式设置 max_tokens 时默认值过小 → content 为空 → 误判"格式无效"
+                "models": {model: {"limit": {"context": 131072, "output": 16000}}},
+            }
+        },
+        "agent": {"plan": {"permission": read_only}},
+        "permission": read_only,
     }
+    env = dict(os.environ)
+    env["OPENCODE_CONFIG_CONTENT"] = json.dumps(config, ensure_ascii=False)
+    env["OPENCODE_DISABLE_AUTOUPDATE"] = "1"
+    env["OPENCODE_DISABLE_TELEMETRY"] = "1"
+    opencode_bin = os.environ.get("OPENCODE_BIN", "opencode")
 
     try:
-        resp = requests.post(url, headers=headers, json=data, timeout=120)
-        if resp.status_code != 200:
-            return {"model": name, "passed": None, "reason": f"HTTP {resp.status_code}: {resp.text[:200]}"}
-
-        content = resp.json()["choices"][0]["message"]["content"].strip()
+        with tempfile.TemporaryDirectory(prefix="multi-review-") as tmpdir:
+            prompt_path = os.path.join(tmpdir, "prompt.md")
+            with open(prompt_path, "w", encoding="utf-8") as handle:
+                handle.write(prompt)
+            cmd = [
+                opencode_bin, "run", "--pure", "--agent", "plan",
+                "--model", f"{provider_label}/{model}",
+                "--format", "default",
+                "--dir", tmpdir,
+                "--file", "prompt.md",
+                "Answer the attached prompt directly. Do not call tools or modify files. Return VERDICT: PASS or VERDICT: FAIL with REASON: line.",
+            ]
+            completed = subprocess.run(cmd, capture_output=True, text=True, timeout=300, env=env)
+        if completed.returncode != 0:
+            return {
+                "model": name,
+                "passed": None,
+                "reason": f"opencode exit {completed.returncode}: {(completed.stderr or '')[:200]}",
+            }
+        content = (completed.stdout or "").strip()
         verdict_lines = [
             line.strip().upper()
             for line in content.splitlines()
@@ -228,7 +265,6 @@ def call_review_model(model_config, prompt):
 
     except Exception as e:
         return {"model": name, "passed": None, "reason": str(e)[:200]}
-
 
 def get_business_context():
     """获取业务上下文，用于架构评审"""

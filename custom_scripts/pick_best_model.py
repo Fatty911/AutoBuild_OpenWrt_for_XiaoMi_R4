@@ -269,9 +269,9 @@ def get_zen_free_models(top_set):
     try:
         import requests
 
+        # /models 是公开端点（实测 HTTP 200 无需 key），不携带密钥
         resp = requests.get(
             "https://opencode.ai/zen/v1/models",
-            headers={"Authorization": f"Bearer {zen_key}"},
             timeout=10,
         )
         resp.raise_for_status()
@@ -396,12 +396,10 @@ def get_openrouter_free_models(top_set):
     try:
         import requests
 
+        # /models 是公开端点（实测 HTTP 200 无需 key），不携带密钥
         resp = requests.get(
             "https://openrouter.ai/api/v1/models",
-            headers={
-                "Authorization": f"Bearer {openrouter_key}",
-                "User-Agent": "Mozilla/5.0",
-            },
+            headers={"User-Agent": "Mozilla/5.0"},
             timeout=15,
         )
         resp.raise_for_status()
