@@ -1,0 +1,127 @@
+# AutoBuild_OpenWrt_for_XiaoMi_R4 — CNB AI 自修复（分阶段+受保护文件+有界重试）
+# 小米路由器4 OpenWrt 固件脚本失败时用免费 CodeBuddy V4.1 Flash 分阶段自动分析+修复
+# 注意：编译流水线保留在 GitHub Actions（需要官方runner硬件资源），CNB 只做 AI 修复
+# 模型: deepseek-v4-flash
+
+main:
+  push:
+    - docker:
+        image: python:3.11
+      stages:
+        - name: 语法校验
+          script: |
+            python -m py_compile custom_scripts/*.py 2>/dev/null || true
+            bash -n custom_scripts/*.sh 2>/dev/null || true
+            echo "SYNTAX=PASS" >> _stage_context_.env
+      failStages:
+        - name: 诊断-收集失败上下文
+          script: |
+            {
+              echo "## 失败概览"
+              echo "| 项目 | 内容 |"
+              echo "| --- | --- |"
+              echo "| 失败阶段 | $CNB_BUILD_FAILED_STAGE_NAME |"
+              echo "| 失败原因 | \`$CNB_BUILD_FAILED_MSG\` |"
+              echo "| 触发分支 | $CNB_BRANCH |"
+              echo "| 提交 | $CNB_COMMIT_SHORT |"
+              echo "| 构建日志 | $CNB_BUILD_WEB_URL |"
+              echo ""
+              echo "## 阶段上下文"
+              cat _stage_context_.env 2>/dev/null || echo "(无)"
+            } > _fail_context_.md
+        - name: 备份受保护文件
+          script: |
+            for f in AGENTS.md ai_tools/opencode/opencode.json ai_tools/opencode/oh-my-openagent.json oh-my-openagent.json; do
+              [ -f "$f" ] && cp "$f" "${f}.protected_backup"
+            done
+        - name: AI-修复-第1轮
+          type: npc:go
+          options:
+            model: deepseek-v4-flash
+            thinkingLevel: max
+            maxTurns: 40
+            contextWindow: 256k
+            systemPrompt: |
+              你是 OpenWrt 小米路由器4 固件修复专家。阅读 _fail_context_.md。
+              这是第1轮修复（最多2轮）。分析失败：
+              1. 脚本语法错误 → 修改并运行 py_compile/bash -n 验证
+              2. 配置问题 → 检查 custom_configs/config_for_OpenWrt_org
+              3. 质量门失败 → 检查 sysupgrade 路径/大小/root.orig
+              规则：
+              - 只构建 OpenWrt 官方源 main 分支
+              - 目标设备 ramips/mt7621 xiaomi_mi-router-4
+              - LAN 默认 192.168.88.1
+              - 不恢复 Lienol/Phase/MEGA 等已弃用架构
+              - 不修改 AGENTS.md 和 ai_tools/opencode/ 配置
+              - 只提交真实源码差异
+              修复后写报告到 _fix_report_.md。
+            userPrompt: |
+              读取 _fail_context_.md，分析失败并修复。修复后写报告到 _fix_report_.md。
+        - name: 恢复受保护文件
+          script: |
+            for f in AGENTS.md ai_tools/opencode/opencode.json ai_tools/opencode/oh-my-openagent.json oh-my-openagent.json; do
+              if [ -f "${f}.protected_backup" ] && ! cmp -s "$f" "${f}.protected_backup" 2>/dev/null; then
+                echo "⚠️ 恢复受保护文件 $f"
+                cp "${f}.protected_backup" "$f"
+              fi
+            done
+            find . -name '*.protected_backup' -delete
+        - name: 验证-语法校验
+          script: |
+            python -m py_compile custom_scripts/*.py 2>/dev/null && echo "SYNTAX_VALIDATE=PASS" >> _fix_report_.md || { echo "SYNTAX_VALIDATE=FAIL" >> _fix_report_.md; exit 1; }
+        - name: 审查-NPC代码审查
+          type: npc:go
+          options:
+            model: deepseek-v4-flash
+            thinkingLevel: high
+            maxTurns: 15
+            contextWindow: 128k
+            systemPrompt: |
+              你是 OpenWrt 固件代码审查员。读取 _fail_context_.md、_fix_report_.md。
+              检查：质量门（ramips/mt7621、mi-router-4、sysupgrade、>=8MiB）、
+              已弃用架构未恢复、必须保留的包齐全、LAN地址192.168.88.1。
+              写审查结果到 _review_result_.md，第一行 VERDICT: PASS 或 VERDICT: FAIL。
+            userPrompt: |
+              审查修复结果，输出到 _review_result_.md。
+        - name: 最终判定
+          script: |
+            VERDICT=$(head -1 _review_result_.md 2>/dev/null | grep -o 'PASS\|FAIL' || echo "UNKNOWN")
+            echo "审查结果: $VERDICT"
+            [ "$VERDICT" = "PASS" ] && echo "✅ 修复通过" || { echo "❌ 修复未通过"; exit 1; }
+
+  pull_request:
+    - stages:
+        - name: NPC-PR审查
+          type: npc:go
+          options:
+            model: deepseek-v4-flash
+            thinkingLevel: high
+            maxTurns: 20
+            systemPrompt: |
+              你是 OpenWrt 固件代码审查员。检查PR：
+              1. 质量门（ramips/mt7621、mi-router-4、sysupgrade、>=8MiB）
+              2. 已弃用架构（Lienol/Phase/MEGA）未恢复
+              3. 必须保留的包齐全（PPPoE/LuCI中文/SmartDNS/adblock-fast/QoS等）
+              4. LAN地址192.168.88.1
+              给出 PASS 或 FAIL 及理由。
+            userPrompt: 审查本次 PR 的代码变更。
+
+$:
+  issue.open:
+    - stages:
+        - name: 检查fix标签
+          script: echo "$CNB_ISSUE_LABELS" | grep -q 'fix' || exit 0
+        - name: AI-Issue驱动修复
+          type: npc:go
+          options:
+            model: deepseek-v4-flash
+            thinkingLevel: max
+            maxTurns: 50
+            contextWindow: 256k
+            systemPrompt: |
+              你是 OpenWrt 固件修复 Agent。读取 Issue，理解需求，
+              读代码定位，修改，运行语法检查，创建 PR。
+              规则：只构建官方源main分支，目标ramips/mt7621，LAN 192.168.88.1
+            userPrompt: |
+              Issue 标题: $CNB_ISSUE_TITLE
+              Issue 描述: $CNB_ISSUE_DESCRIPTION
